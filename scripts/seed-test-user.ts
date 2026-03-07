@@ -2,6 +2,7 @@ import "dotenv/config";
 import {
   LeadStatus,
   LeadSourceType,
+  MembershipRole,
   MessageChannel,
   MessageDirection,
   QualificationFit,
@@ -76,7 +77,7 @@ async function main() {
     data: {
       userId: user.id,
       workspaceId: workspace.id,
-      role: "OWNER",
+      role: MembershipRole.OWNER,
     },
   });
 

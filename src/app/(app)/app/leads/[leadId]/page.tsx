@@ -1,23 +1,42 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { getLeadDetailViewData } from "@/lib/app-data";
+import {
+  getLeadWorkflowErrorUserMessage,
+  parseLeadWorkflowErrorCode,
+} from "@/lib/lead-workflow-errors";
 import {
   evaluateLeadAction,
   requestInfoAction,
   scheduleTourAction,
   sendApplicationAction,
   assignLeadPropertyAction,
+  confirmDuplicateLeadAction,
 } from "@/lib/lead-actions";
 
 type LeadDetailPageProps = {
   params: Promise<{
     leadId: string;
   }>;
+  searchParams: Promise<{
+    workflowError?: string;
+  }>;
 };
 
-export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
+export default async function LeadDetailPage({
+  params,
+  searchParams,
+}: LeadDetailPageProps) {
   const { leadId } = await params;
+  const resolvedSearchParams = await searchParams;
   const lead = await getLeadDetailViewData(leadId);
+  const workflowErrorCode = parseLeadWorkflowErrorCode(
+    resolvedSearchParams.workflowError,
+  );
+  const workflowErrorMessage = workflowErrorCode
+    ? getLeadWorkflowErrorUserMessage(workflowErrorCode)
+    : null;
 
   if (!lead) {
     notFound();
@@ -33,7 +52,8 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
           <div className="flex flex-wrap gap-2">
             <form action={evaluateLeadAction.bind(null, lead.id)}>
               <button
-                className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2 text-sm font-medium"
+                className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!lead.actions.evaluateFit}
                 type="submit"
               >
                 Evaluate fit
@@ -69,9 +89,58 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
           </div>
         }
       />
+      {workflowErrorMessage ? (
+        <div className="mb-5 rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.12)] px-4 py-3 text-sm text-[var(--color-accent-strong)]">
+          {workflowErrorMessage}
+        </div>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <section className="space-y-6">
+          {lead.possibleDuplicateCandidate ? (
+            <div className="rounded-[2rem] border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] p-6 shadow-[var(--shadow-panel)]">
+              <div className="text-lg font-semibold">Possible duplicate lead</div>
+              <p className="mt-2 text-sm text-[var(--color-muted)]">
+                This lead matched an existing record with medium confidence. Confirm if this
+                should be treated as a duplicate.
+              </p>
+              <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                <div className="font-medium">
+                  <Link
+                    className="underline decoration-[var(--color-line)] underline-offset-4"
+                    href={`/app/leads/${lead.possibleDuplicateCandidate.id}`}
+                  >
+                    {lead.possibleDuplicateCandidate.name}
+                  </Link>
+                </div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  {lead.possibleDuplicateCandidate.status} |{" "}
+                  {lead.possibleDuplicateCandidate.source} |{" "}
+                  {lead.possibleDuplicateCandidate.property} |{" "}
+                  {lead.possibleDuplicateCandidate.lastActivity}
+                </div>
+              </div>
+              <form
+                action={confirmDuplicateLeadAction.bind(null, lead.id)}
+                className="mt-4"
+              >
+                <input
+                  type="hidden"
+                  name="candidateLeadId"
+                  value={lead.possibleDuplicateCandidate.id}
+                />
+                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <button
+                  className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!lead.actions.confirmDuplicate}
+                  type="submit"
+                >
+                  Confirm duplicate and archive this lead
+                </button>
+              </form>
+            </div>
+          ) : null}
+
           <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
             <div className="text-lg font-semibold">Summary</div>
             <dl className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -114,7 +183,9 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
               </div>
             </dl>
             <p className="mt-4 text-sm text-[var(--color-muted)]">{lead.notes}</p>
-            {lead.availableProperties.length > 0 && lead.property === "Unassigned" ? (
+            {lead.availableProperties.length > 0 &&
+            lead.property === "Unassigned" &&
+            lead.actions.assignProperty ? (
               <form
                 action={assignLeadPropertyAction.bind(null, lead.id)}
                 className="mt-6 flex flex-wrap items-end gap-3"
@@ -147,6 +218,35 @@ export default async function LeadDetailPage({ params }: LeadDetailPageProps) {
               </form>
             ) : null}
           </div>
+
+          {lead.normalizedFieldMetadataRows.length > 0 ? (
+            <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+              <div className="text-lg font-semibold">Extraction confidence</div>
+              <p className="mt-2 text-sm text-[var(--color-muted)]">
+                Normalized lead fields from inbound parsing with confidence and source.
+              </p>
+              <div className="mt-4 space-y-3">
+                {lead.normalizedFieldMetadataRows.map((fieldRow) => (
+                  <div
+                    key={fieldRow.key}
+                    className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-medium">{fieldRow.label}</div>
+                      <div className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                        {fieldRow.confidencePercent}% confidence
+                      </div>
+                    </div>
+                    <div className="mt-2 text-sm">{fieldRow.value}</div>
+                    <div className="mt-2 text-xs text-[var(--color-muted)]">
+                      source: {fieldRow.source} | updated: {fieldRow.lastUpdatedAt}
+                      {fieldRow.isSuggested ? " | suggested review" : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
             <div className="flex items-center justify-between">

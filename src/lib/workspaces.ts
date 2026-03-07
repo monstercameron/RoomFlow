@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { MembershipRole } from "@/generated/prisma/client";
 
 type WorkspaceUser = {
   id: string;
@@ -73,7 +74,7 @@ export async function ensureWorkspaceForUser(user: WorkspaceUser) {
       create: {
         userId: user.id,
         workspaceId: workspace.id,
-        role: "OWNER",
+        role: MembershipRole.OWNER,
       },
     });
 

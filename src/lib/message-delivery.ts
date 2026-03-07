@@ -30,6 +30,15 @@ function getTwilioClient() {
   return twilio(accountSid, authToken);
 }
 
+export function isProviderConfigurationError(deliveryErrorMessage: string) {
+  const normalizedDeliveryErrorMessage = deliveryErrorMessage.toLowerCase();
+
+  return (
+    normalizedDeliveryErrorMessage.includes("not configured") ||
+    normalizedDeliveryErrorMessage.includes("replace-me")
+  );
+}
+
 export async function sendQueuedMessage(messageId: string, retryCount = 0) {
   const message = await prisma.message.findUnique({
     where: {
@@ -153,6 +162,41 @@ export async function markMessageDeliveryFailure(params: {
         state: params.retryCount > 0 ? "retrying" : "failed",
         provider: null,
         retryCount: params.retryCount,
+        error: params.error,
+      }),
+    },
+  });
+}
+
+export async function markMessageProviderUnresolved(params: {
+  messageId: string;
+  error: string;
+}) {
+  const existingMessageRecord = await prisma.message.findUnique({
+    where: {
+      id: params.messageId,
+    },
+    select: {
+      channel: true,
+    },
+  });
+
+  const unresolvedProviderLabel =
+    existingMessageRecord?.channel === MessageChannel.EMAIL
+      ? "resend"
+      : existingMessageRecord?.channel === MessageChannel.SMS
+        ? "twilio"
+        : "unknown";
+
+  await prisma.message.update({
+    where: {
+      id: params.messageId,
+    },
+    data: {
+      deliveryStatus: serializeDeliveryStatus({
+        state: "provider_unresolved",
+        provider: unresolvedProviderLabel,
+        retryCount: 0,
         error: params.error,
       }),
     },

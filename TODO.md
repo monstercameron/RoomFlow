@@ -163,6 +163,13 @@ The UI will be weak unless these backend capabilities exist.
 - [x] Implement message-template rendering with variables
 - [x] Log all important workflow actions to an append-only audit event stream
 
+### Follow-up adjustments
+
+- [x] Guard `schedule_tour` against missing property or scheduling link before performing workflow actions and mark the action unavailable when not configured.
+- [x] Extend normalized inbound ingestion to emit a diary/audit entry with delivery metadata for each email/SMS before outbound follow-up starts.
+- [x] Prevent queued outbound sends from failing outright when provider credentials are placeholders by tracking a “provider unresolved” state and exposing it for retry logic.
+- [x] Add idempotency tracking (external message/thread IDs) in webhook handlers so retries from email/SMS do not create duplicate leads.
+- [x] Fall back to a default source label when dashboard summaries encounter leads without an assigned source and consider logging those anomalies for future hygiene work.
 ## Phase 7: messaging and async jobs
 
 This is required for the README promise of automated follow-up.
@@ -218,6 +225,173 @@ These come after the first usable product slice.
   * webhook endpoint display
   * CSV import placeholder
 - [x] Defer `/app/settings/billing` until pricing and plan logic are real (see `reference/DEFERRALS.md`)
+
+## Business-logic TODOs (from `reference/BUSINESSLOGIC.md`)
+
+### State model and transitions (Sections 4, 5, 10, 26)
+
+- [x] Extend `LeadStatus` with missing states from business logic: `UNDER_REVIEW`, `CAUTION`, `CLOSED`.
+- [ ] Keep `fitResult` (`UNKNOWN`, `PASS`, `CAUTION`, `MISMATCH`) separate from status in all write paths.
+- [x] Add a shared transition guard (`isAllowedLeadTransition`) based on Section 26.
+- [x] Enforce transition guard in all lead status server actions.
+- [x] Reject invalid transitions with typed errors and user-facing action messages.
+- [x] Add `fromStatus`, `toStatus`, `reason`, and actor metadata to every transition write.
+- [x] Add tests covering each allowed transition and at least one blocked transition per status.
+
+### Roles and permissions (Sections 2, 20)
+
+- [x] Align membership roles with business logic (`OWNER`, `ADMIN`, `MANAGER`, `VIEWER`).
+- [x] Define permission matrix for lead actions (qualify, decline, override, schedule, invite, archive).
+- [x] Apply role checks to server actions and API routes.
+- [x] Hide or disable unavailable UI actions based on role.
+- [x] Emit audit events for denied privileged actions.
+
+### Inquiry ingestion and duplicate handling (Sections 6, 22)
+
+- [x] Support inbound source typing for manual, email, SMS, CSV import, and web form.
+- [x] Normalize inbound identity keys (email lowercase, phone E.164).
+- [x] Implement duplicate confidence scoring using exact email, exact phone, and recent thread association.
+- [x] Attach inquiry to existing lead when confidence is high.
+- [x] Flag `possible_duplicate` when confidence is ambiguous.
+- [x] Add operator merge/confirm duplicate action in lead review flow.
+- [x] Persist external message/thread IDs for idempotent webhook replay handling.
+- [x] Add duplicate metrics to audit/events for future reporting.
+
+### Lead normalization and extraction confidence (Section 7)
+
+- [x] Define normalized field schema for move-in, budget, stay length, smoking, pets, parking, guests, bathroom acceptance, and work status.
+- [x] Persist per-field metadata: `value`, `source`, `confidence`, `lastUpdatedAt`.
+- [x] Prevent low-confidence extraction from overwriting operator-confirmed values.
+- [x] Mark low-confidence fields as `suggested` for manual review.
+- [x] Surface extracted-field confidence in lead detail UI.
+- [x] Re-run normalization safely when new inquiry text arrives.
+- [x] Emit `lead.normalized` audit event with changed fields.
+
+### Qualification prerequisites and questionnaire flow (Section 8)
+
+- [x] Block qualification automation when lead has no assigned property.
+- [x] Block automation when property has no active question set.
+- [x] Block automation when no contactable channel exists unless manual-only mode is enabled.
+- [x] Enforce required vs optional question behavior on fit computation.
+- [x] Keep fit at `UNKNOWN` when required questions are unanswered.
+- [x] Add missing-question resolver used by inbox and lead detail actions.
+- [x] Prevent duplicate dispatch of the same missing-info prompt within throttle window.
+- [x] Add qualification completion check: required answers complete + fit computed + routed outcome.
+
+### Rule engine and fit evaluation (Sections 9, 25, 28)
+
+- [ ] Standardize property rule categories: smoking, pets, guests, bathroom sharing, parking, minimum stay, work schedule, acknowledgment.
+- [ ] Support rule behavior modes: blocking, warning-only, informational.
+- [ ] Compute fit deterministically from answers + active rules.
+- [ ] Set fit to `MISMATCH` for blocking rule violations.
+- [ ] Set fit to `CAUTION` for warning rules unless already mismatch.
+- [ ] Keep informational rules visible but non-blocking.
+- [ ] Emit detailed rule evaluation events (triggered rule IDs, severity, explanation).
+- [ ] Recompute fit on answer changes, rule changes, property reassignment, and override confirmation.
+
+### Routing and manual overrides (Sections 10, 18)
+
+- [x] Implement routing Case A (missing required data -> `AWAITING_RESPONSE` or `INCOMPLETE`).
+- [x] Implement routing Case B (blocking mismatch -> `UNDER_REVIEW` or `DECLINED` per policy).
+- [x] Implement routing Case C (all pass -> `QUALIFIED` with optional next-step send).
+- [x] Implement routing Case D (warning -> `UNDER_REVIEW`).
+- [ ] Add manual override action for fit and status with mandatory reason.
+- [ ] Capture prior/new values for override in immutable audit event payload.
+- [ ] Add dedicated review queue view filters for duplicate, caution, mismatch, and conflict cases.
+- [ ] Add operator actions from review queue: request info, qualify, decline, reassign property, schedule.
+
+### Messaging, throttling, and opt-out (Sections 11, 12)
+
+- [x] Add message origin enum support for `inbound`, `outbound_manual`, `outbound_automated`, `system_notice`.
+- [ ] Store and enforce per-workspace or per-property channel priority order.
+- [ ] Enforce send preconditions: lead active, channel valid, no opt-out, throttle window respected.
+- [ ] Add per-lead daily automated send cap.
+- [ ] Prevent automated duplicate template sends without meaningful state change.
+- [ ] Add lead-level opt-out state and disable automation when opted out.
+- [ ] Keep manual review and manual outbound available after opt-out.
+- [ ] Add safe template rendering with variable fallback/suppression rules.
+- [ ] Block outbound send when unresolved template tokens remain.
+- [ ] Record the rendered message snapshot in message/audit records.
+
+### Tour scheduling and application handoff (Sections 13, 14, 22)
+
+- [ ] Add `TourEvent` model with status, scheduled time, cancel reason, and optional external calendar ID.
+- [ ] Enforce scheduling prerequisites (qualified or manually allowed, scheduling enabled).
+- [ ] Set lead status to `TOUR_SCHEDULED` on successful schedule.
+- [ ] On cancel, retain event history and route lead back to `QUALIFIED` or `UNDER_REVIEW`.
+- [ ] Add reschedule flow that preserves timeline continuity.
+- [ ] Enforce application invite prerequisites before sending.
+- [ ] Set status to `APPLICATION_SENT` with invite timestamp and channel.
+- [ ] Track stale application invites and enqueue reminders.
+- [ ] Emit scheduling and application webhook events for downstream integrations.
+
+### Decline, archive, and stale policy (Sections 15, 16)
+
+- [ ] Add structured decline reason enum (`RULE_MISMATCH`, `MISSING_INFO`, `OPERATOR_DECISION`, `NO_AVAILABILITY`, `UNRESPONSIVE`, `DUPLICATE`, `WITHDREW`).
+- [ ] Require decline reason on all decline actions.
+- [ ] Add soft decline flag and allow reversible declines in v1.
+- [ ] Stop active automations immediately on decline.
+- [ ] Implement stale detection jobs for no-response, no-operator-action, and stale-invite cases.
+- [ ] Add stale markers and stale timestamps on leads.
+- [ ] Queue reminder and archive-suggestion jobs from stale policy rules.
+- [ ] Add archive automation after stale threshold with operator override option.
+
+### Activity timeline and audit guarantees (Sections 19, 28)
+
+- [ ] Define canonical event names (`lead_created`, `qualification_started`, `fit_computed`, etc.).
+- [ ] Ensure every material action writes an immutable timeline/audit event.
+- [ ] Include actor type (`system` or `user`) and actor ID when available.
+- [ ] Include old/new state snapshots for status/fit/routing changes.
+- [ ] Include structured metadata payload for rule results and message delivery outcomes.
+- [ ] Backfill missing events for existing seeded flows where practical.
+- [ ] Add timeline ordering and dedupe guarantees for near-simultaneous events.
+
+### Notifications and integrations (Sections 21, 22)
+
+- [ ] Add in-app notification events for new lead, caution review, mismatch, stale lead, scheduled tour, stale application invite.
+- [ ] Add email notification hooks for owner/admin alerts.
+- [ ] Add integration config validation for inbound email/SMS parsing sources.
+- [ ] Emit outbound webhooks for `lead.created`, `lead.qualified`, `lead.declined`, `tour.scheduled`, `application.sent`.
+- [ ] Add webhook retry/backoff and dead-letter handling for failed deliveries.
+- [ ] Add webhook signature verification for inbound provider calls.
+
+### Billing usage counters (Section 23)
+
+- [ ] Add non-blocking usage counters for active properties, monthly leads, automation sends, and seats.
+- [ ] Add periodic aggregation job for usage snapshots.
+- [ ] Surface soft plan warnings in settings/dashboard.
+- [ ] Keep operational flows unblocked when limits are reached in v1.
+
+### Error and conflict handling (Section 24)
+
+- [x] Add explicit handling for missing channel errors during automation.
+- [ ] Add invalid answer parsing pathway with clarification prompt support.
+- [ ] Preserve conflicting answers in history and mark field conflict state.
+- [ ] Trigger fit recomputation and review-queue entry on conflicting answers.
+- [ ] Add template render failure event and suppress unsafe send.
+- [x] Add provider-unresolved delivery state for missing Resend/Twilio credentials.
+- [x] Add retry strategy that skips non-retryable configuration errors.
+
+### KPI derivation and reporting (Section 27)
+
+- [ ] Add event-derived metric: leads created by source.
+- [ ] Add event-derived metric: average time to first response.
+- [ ] Add event-derived metric: qualification completion rate.
+- [ ] Add event-derived metric: fit distribution (pass/caution/mismatch/unknown).
+- [ ] Add event-derived metric: inquiry-to-tour conversion.
+- [ ] Add event-derived metric: inquiry-to-application conversion.
+- [ ] Add event-derived metric: average time spent in each lead status.
+- [ ] Add event-derived metric: decline reason distribution.
+
+### Delivery slices and tests (Section 29)
+
+- [ ] Slice 1 hardening: lead creation, normalization, property assignment, status writes, timeline events.
+- [ ] Slice 2 hardening: qualification questions, answer storage, missing-answer detection, follow-up triggers.
+- [ ] Slice 3 hardening: rule engine, fit compute, review routing, override path.
+- [ ] Slice 4 hardening: template controls, outbound safeguards, tour scheduling, application invite.
+- [ ] Slice 5 hardening: stale handling, KPI derivation, notifications.
+- [ ] Add integration tests for end-to-end lead lifecycle from inquiry to decline/tour/application.
+- [ ] Add regression tests for routing case matrix (A-D) and status machine constraints.
 
 ## First prototype build order
 

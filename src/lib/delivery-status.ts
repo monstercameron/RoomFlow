@@ -3,6 +3,7 @@ type DeliveryState =
   | "scheduled"
   | "received"
   | "sent"
+  | "provider_unresolved"
   | "failed"
   | "retrying";
 

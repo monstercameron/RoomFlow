@@ -1,7 +1,9 @@
 import { PgBoss, type JobWithMetadata, type SendOptions } from "pg-boss";
 import { processNormalizedInboundLead, type NormalizedLeadPayload } from "@/lib/lead-normalization";
 import {
+  isProviderConfigurationError,
   markMessageDeliveryFailure,
+  markMessageProviderUnresolved,
   sendQueuedMessage,
 } from "@/lib/message-delivery";
 
@@ -121,10 +123,21 @@ async function processOutboundMessageJobs(
     try {
       await sendQueuedMessage(job.data.messageId, job.retryCount);
     } catch (error) {
+      const deliveryErrorMessage =
+        error instanceof Error ? error.message : "Unknown delivery error";
+
+      if (isProviderConfigurationError(deliveryErrorMessage)) {
+        await markMessageProviderUnresolved({
+          messageId: job.data.messageId,
+          error: deliveryErrorMessage,
+        });
+        continue;
+      }
+
       await markMessageDeliveryFailure({
         messageId: job.data.messageId,
         retryCount: job.retryCount,
-        error: error instanceof Error ? error.message : "Unknown delivery error",
+        error: deliveryErrorMessage,
       });
 
       throw error;

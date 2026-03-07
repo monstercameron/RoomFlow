@@ -16,18 +16,22 @@ datasource db {
 enum MembershipRole {
   OWNER
   ADMIN
-  MEMBER
+  MANAGER
+  VIEWER
 }
 
 enum LeadStatus {
   NEW
   AWAITING_RESPONSE
   INCOMPLETE
+  UNDER_REVIEW
   QUALIFIED
+  CAUTION
   TOUR_SCHEDULED
   APPLICATION_SENT
   DECLINED
   ARCHIVED
+  CLOSED
 }
 
 enum QualificationFit {
@@ -41,6 +45,8 @@ enum LeadSourceType {
   MANUAL
   EMAIL
   SMS
+  WEB_FORM
+  CSV_IMPORT
   FACEBOOK
   ZILLOW
   SPAREROOM
@@ -58,6 +64,13 @@ enum ContactChannel {
 enum MessageDirection {
   INBOUND
   OUTBOUND
+}
+
+enum MessageOrigin {
+  INBOUND
+  OUTBOUND_MANUAL
+  OUTBOUND_AUTOMATED
+  SYSTEM_NOTICE
 }
 
 enum MessageChannel {
@@ -194,6 +207,7 @@ model Lead {
   answers                 QualificationAnswer[]
   statusHistory           LeadStatusHistory[]
   auditEvents             AuditEvent[]          @relation("LeadAuditEvents")
+  fieldMetadata           Json?
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
 
@@ -213,31 +227,39 @@ model Contact {
 }
 
 model Conversation {
-  id        String    @id @default(cuid())
-  leadId    String    @unique
-  subject   String?
-  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  messages  Message[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  leadId           String    @unique
+  subject          String?
+  externalThreadId String?
+  lead             Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  messages         Message[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([externalThreadId])
 }
 
 model Message {
-  id             String           @id @default(cuid())
-  conversationId String
-  templateId     String?
-  direction      MessageDirection
-  channel        MessageChannel
-  body           String
-  subject        String?
-  deliveryStatus String?
-  sentAt         DateTime?
-  receivedAt     DateTime?
-  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  template       MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  createdAt      DateTime         @default(now())
+  id                String           @id @default(cuid())
+  conversationId    String
+  templateId        String?
+  direction         MessageDirection
+  origin            MessageOrigin      @default(SYSTEM_NOTICE)
+  channel           MessageChannel
+  body              String
+  subject           String?
+  deliveryStatus    String?
+  externalMessageId String?
+  externalThreadId  String?
+  sentAt            DateTime?
+  receivedAt        DateTime?
+  conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  template          MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdAt         DateTime         @default(now())
 
   @@index([conversationId, createdAt])
+  @@index([externalThreadId])
+  @@index([channel, externalMessageId])
 }
 
 model QualificationQuestionSet {

@@ -1,0 +1,20 @@
+DO $$
+BEGIN
+  BEGIN
+    ALTER TYPE "LeadStatus" ADD VALUE IF NOT EXISTS 'UNDER_REVIEW';
+  EXCEPTION
+    WHEN duplicate_object THEN NULL;
+  END;
+
+  BEGIN
+    ALTER TYPE "LeadStatus" ADD VALUE IF NOT EXISTS 'CAUTION';
+  EXCEPTION
+    WHEN duplicate_object THEN NULL;
+  END;
+
+  BEGIN
+    ALTER TYPE "LeadStatus" ADD VALUE IF NOT EXISTS 'CLOSED';
+  EXCEPTION
+    WHEN duplicate_object THEN NULL;
+  END;
+END $$;

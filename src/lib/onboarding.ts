@@ -77,6 +77,22 @@ export const onboardingChannelOptions = [
     mode: "direct",
   },
   {
+    key: "web_form",
+    label: "Web form",
+    description: "Direct support channel for inquiry form submissions.",
+    type: LeadSourceType.WEB_FORM,
+    name: "Web form",
+    mode: "direct",
+  },
+  {
+    key: "csv_import",
+    label: "CSV import",
+    description: "Direct support channel for bulk imported lead files.",
+    type: LeadSourceType.CSV_IMPORT,
+    name: "CSV import",
+    mode: "direct",
+  },
+  {
     key: "facebook",
     label: "Facebook Marketplace",
     description: "Source tag only for v1, not a live integration.",

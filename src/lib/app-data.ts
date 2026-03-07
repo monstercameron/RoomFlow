@@ -13,6 +13,21 @@ import {
   getLeadWorkflowContext,
   renderTemplateForLead,
 } from "@/lib/lead-workflow";
+import {
+  DEFAULT_MISSING_INFO_PROMPT_THROTTLE_MINUTES,
+  isManualOnlyAutomationModeEnabled,
+  isMissingInfoPromptThrottled,
+  isQualificationCompleted,
+  resolveMissingRequiredQualificationQuestions,
+  resolveMostRecentMissingInfoRequestTimestamp,
+  resolveQualificationAutomationGate,
+} from "@/lib/lead-qualification-guard";
+import { buildLeadFieldMetadataRows } from "@/lib/lead-field-metadata-view";
+import {
+  extractDuplicateCandidateLeadIdFromAuditPayload,
+  shouldShowDuplicateReviewPrompt,
+} from "@/lib/lead-duplicate-review";
+import { getLeadActionPermissionsForMembershipRole } from "@/lib/membership-role-permissions";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "@/lib/session";
 import { ensureWorkspaceForUser } from "@/lib/workspaces";
@@ -179,6 +194,31 @@ function daysAgo(days: number) {
   return value;
 }
 
+function getMissingInfoPromptThrottleWindowMinutes() {
+  const configuredThrottleWindowMinutes = Number(
+    process.env.MISSING_INFO_PROMPT_THROTTLE_MINUTES,
+  );
+
+  if (
+    Number.isFinite(configuredThrottleWindowMinutes) &&
+    configuredThrottleWindowMinutes > 0
+  ) {
+    return configuredThrottleWindowMinutes;
+  }
+
+  return DEFAULT_MISSING_INFO_PROMPT_THROTTLE_MINUTES;
+}
+
+function resolveSourceSummaryLabel(leadSourceName: string | null | undefined) {
+  const trimmedLeadSourceName = leadSourceName?.trim();
+
+  if (trimmedLeadSourceName) {
+    return trimmedLeadSourceName;
+  }
+
+  return "Unattributed";
+}
+
 type SessionUser = {
   id: string;
   email: string;
@@ -248,7 +288,7 @@ export const getAppShellData = cache(async () => {
     where: {
       workspaceId: membership.workspaceId,
       status: {
-        not: LeadStatus.ARCHIVED,
+        notIn: [LeadStatus.ARCHIVED, LeadStatus.CLOSED],
       },
     },
   });
@@ -345,12 +385,24 @@ export const getDashboardViewData = cache(async () => {
   const newLeadDelta = newToday - newYesterday;
   const statusCounts = new Map<LeadStatus, number>();
   const sourceCounts = new Map<string, number>();
+  let unattributedSourceLeadCount = 0;
 
   for (const lead of summaryLeads) {
     statusCounts.set(lead.status, (statusCounts.get(lead.status) ?? 0) + 1);
 
-    const sourceName = lead.leadSource?.name ?? "Manual";
+    const sourceName = resolveSourceSummaryLabel(lead.leadSource?.name);
+
+    if (sourceName === "Unattributed") {
+      unattributedSourceLeadCount += 1;
+    }
+
     sourceCounts.set(sourceName, (sourceCounts.get(sourceName) ?? 0) + 1);
+  }
+
+  if (unattributedSourceLeadCount > 0) {
+    console.warn(
+      `[dashboard-source-summary] workspace ${membership.workspaceId} has ${unattributedSourceLeadCount} lead(s) without an assigned source label.`,
+    );
   }
 
   return {
@@ -468,7 +520,59 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
   }
 
   const evaluation = evaluateLeadQualification(lead);
-  const actionAvailability = getLeadActionAvailability(lead, evaluation);
+  const workflowActionAvailability = getLeadActionAvailability(lead, evaluation);
+  const roleActionPermissions = getLeadActionPermissionsForMembershipRole(
+    membership.role,
+  );
+  const latestPossibleDuplicateEvent = [...lead.auditEvents]
+    .reverse()
+    .find((auditEvent) => auditEvent.eventType === "possible_duplicate_flagged");
+  const hasDuplicateConfirmedEvent = lead.auditEvents.some(
+    (auditEvent) => auditEvent.eventType === "duplicate_confirmed",
+  );
+  const duplicateCandidateLeadId = latestPossibleDuplicateEvent
+    ? extractDuplicateCandidateLeadIdFromAuditPayload(
+        latestPossibleDuplicateEvent.payload,
+      )
+    : null;
+  const shouldShowDuplicatePrompt = shouldShowDuplicateReviewPrompt({
+    leadStatus: lead.status,
+    hasPossibleDuplicateEvent: Boolean(latestPossibleDuplicateEvent),
+    hasDuplicateConfirmedEvent,
+  });
+  const duplicateCandidateLead = duplicateCandidateLeadId
+    ? await prisma.lead.findFirst({
+        where: {
+          id: duplicateCandidateLeadId,
+          workspaceId: membership.workspaceId,
+        },
+        include: {
+          property: {
+            select: {
+              name: true,
+            },
+          },
+          leadSource: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      })
+    : null;
+  const possibleDuplicateCandidate =
+    shouldShowDuplicatePrompt && duplicateCandidateLead
+      ? {
+          id: duplicateCandidateLead.id,
+          name: duplicateCandidateLead.fullName,
+          status: formatStatusLabel(duplicateCandidateLead.status),
+          source: duplicateCandidateLead.leadSource?.name ?? "Manual",
+          property: duplicateCandidateLead.property?.name ?? "Unassigned",
+          lastActivity: formatRelativeTime(
+            duplicateCandidateLead.lastActivityAt ?? duplicateCandidateLead.updatedAt,
+          ),
+        }
+      : null;
   const answers = [...lead.answers]
     .sort((left, right) => left.question.sortOrder - right.question.sortOrder)
     .map((answer) => ({
@@ -477,6 +581,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     }));
 
   const timeline = buildLeadTimeline(lead);
+  const normalizedFieldMetadataRows = buildLeadFieldMetadataRows(lead.fieldMetadata);
 
   const messages =
     lead.conversation?.messages.map((message) => ({
@@ -531,7 +636,23 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     qualificationAnswers: answers,
     timeline,
     messages,
-    actions: actionAvailability,
+    normalizedFieldMetadataRows,
+    possibleDuplicateCandidate,
+    actions: {
+      evaluateFit:
+        workflowActionAvailability.evaluateFit && roleActionPermissions.evaluateFit,
+      requestInfo:
+        workflowActionAvailability.requestInfo && roleActionPermissions.requestInfo,
+      scheduleTour:
+        workflowActionAvailability.scheduleTour &&
+        roleActionPermissions.scheduleTour,
+      sendApplication:
+        workflowActionAvailability.sendApplication &&
+        roleActionPermissions.sendApplication,
+      assignProperty: roleActionPermissions.assignProperty,
+      confirmDuplicate:
+        Boolean(possibleDuplicateCandidate) && roleActionPermissions.archiveLead,
+    },
   };
 });
 
@@ -542,14 +663,53 @@ export const getInboxViewData = cache(async () => {
       workspaceId: membership.workspaceId,
     },
     include: {
+      contact: true,
       property: {
-        select: {
-          name: true,
+        include: {
+          questionSets: {
+            orderBy: {
+              createdAt: "asc",
+            },
+            include: {
+              questions: {
+                orderBy: {
+                  sortOrder: "asc",
+                },
+                select: {
+                  id: true,
+                  fieldKey: true,
+                  label: true,
+                  required: true,
+                },
+              },
+            },
+          },
         },
       },
       leadSource: {
         select: {
           name: true,
+        },
+      },
+      answers: {
+        select: {
+          questionId: true,
+          value: true,
+        },
+      },
+      auditEvents: {
+        where: {
+          eventType: {
+            in: ["Missing information requested", "missing information requested"],
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 3,
+        select: {
+          eventType: true,
+          createdAt: true,
         },
       },
       conversation: {
@@ -584,8 +744,63 @@ export const getInboxViewData = cache(async () => {
       name: true,
     },
   });
+  const roleActionPermissions = getLeadActionPermissionsForMembershipRole(
+    membership.role,
+  );
+  const manualOnlyModeEnabled = isManualOnlyAutomationModeEnabled(
+    process.env.ROOMFLOW_MANUAL_ONLY_MODE,
+  );
+  const missingInfoPromptThrottleWindowMinutes =
+    getMissingInfoPromptThrottleWindowMinutes();
 
   return threads.map((lead) => ({
+    ...(() => {
+      const qualificationAutomationGateResult = resolveQualificationAutomationGate({
+        leadPropertyId: lead.propertyId,
+        propertyQuestionSets: lead.property?.questionSets ?? [],
+        leadEmailAddress: lead.email,
+        leadPhoneNumber: lead.phone,
+        contactEmailAddress: lead.contact?.email ?? null,
+        contactPhoneNumber: lead.contact?.phone ?? null,
+        manualOnlyModeEnabled,
+      });
+      const missingRequiredQuestions = resolveMissingRequiredQualificationQuestions({
+        propertyQuestionSets: lead.property?.questionSets ?? [],
+        leadAnswers: lead.answers.map((leadAnswer) => ({
+          questionId: leadAnswer.questionId,
+          value: leadAnswer.value,
+        })),
+      });
+      const qualificationCompleted = isQualificationCompleted({
+        missingRequiredQuestionCount: missingRequiredQuestions.length,
+        fitResult: lead.fitResult,
+        currentLeadStatus: lead.status,
+      });
+      const mostRecentMissingInfoRequestAt = resolveMostRecentMissingInfoRequestTimestamp(
+        lead.auditEvents.map((auditEvent) => ({
+          eventType: auditEvent.eventType,
+          createdAt: auditEvent.createdAt,
+        })),
+      );
+      const missingInfoPromptIsThrottled = isMissingInfoPromptThrottled({
+        mostRecentMissingInfoRequestAt,
+        referenceTime: new Date(),
+        throttleWindowMinutes: missingInfoPromptThrottleWindowMinutes,
+      });
+      const leadStatusIsInactive =
+        lead.status === LeadStatus.DECLINED ||
+        lead.status === LeadStatus.ARCHIVED ||
+        lead.status === LeadStatus.CLOSED;
+
+      return {
+        canRequestInfo:
+          qualificationAutomationGateResult.canRunAutomation &&
+          !leadStatusIsInactive &&
+          !qualificationCompleted &&
+          !missingInfoPromptIsThrottled &&
+          roleActionPermissions.requestInfo,
+      };
+    })(),
     id: lead.id,
     name: lead.fullName,
     source: lead.leadSource?.name ?? "Manual",
@@ -598,8 +813,7 @@ export const getInboxViewData = cache(async () => {
     latestMessageDirection: lead.conversation?.messages[0]
       ? formatEnumLabel(lead.conversation.messages[0].direction)
       : "No thread",
-    canRequestInfo: lead.status !== LeadStatus.DECLINED,
-    needsAssignment: !lead.propertyId,
+    needsAssignment: !lead.propertyId && roleActionPermissions.assignProperty,
     availableProperties: properties,
   }));
 });
@@ -691,7 +905,11 @@ export const getPropertiesViewData = cache(async () => {
     );
 
     const activeLeads = propertyCounts
-      .filter((entry) => entry.status !== LeadStatus.ARCHIVED)
+      .filter(
+        (entry) =>
+          entry.status !== LeadStatus.ARCHIVED &&
+          entry.status !== LeadStatus.CLOSED,
+      )
       .reduce((total, entry) => total + entry._count._all, 0);
 
     const qualifiedLeads = propertyCounts

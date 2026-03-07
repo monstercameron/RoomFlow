@@ -5,10 +5,17 @@ import {
   LeadStatus,
   MessageChannel,
   MessageDirection,
+  MessageOrigin,
   type Prisma,
   QualificationFit,
 } from "@/generated/prisma/client";
 import { serializeDeliveryStatus } from "@/lib/delivery-status";
+import {
+  classifyDuplicateHandlingOutcome,
+  chooseBestDuplicateCandidate,
+} from "@/lib/lead-duplicate-matching";
+import { buildLeadNormalizationDiff } from "@/lib/lead-normalization-diff";
+import { buildNormalizedLeadFieldMetadata } from "@/lib/lead-field-metadata";
 import { prisma } from "@/lib/prisma";
 
 const normalizedLeadPayloadSchema = z.object({
@@ -53,13 +60,36 @@ function inferFullName(value: string | null | undefined) {
 }
 
 function normalizePhone(value: string | null | undefined) {
-  const normalized = value?.trim();
+  const trimmedPhoneNumber = value?.trim();
 
-  if (!normalized) {
+  if (!trimmedPhoneNumber) {
     return null;
   }
 
-  return normalized.replace(/[^\d+]/g, "");
+  const hasExplicitInternationalPrefix = trimmedPhoneNumber.startsWith("+");
+  const digitsOnlyPhoneNumber = trimmedPhoneNumber.replace(/\D/g, "");
+
+  if (!digitsOnlyPhoneNumber) {
+    return null;
+  }
+
+  if (hasExplicitInternationalPrefix) {
+    return `+${digitsOnlyPhoneNumber}`;
+  }
+
+  // v1 default: treat 10-digit local numbers as US/Canada and convert to +1.
+  if (digitsOnlyPhoneNumber.length === 10) {
+    return `+1${digitsOnlyPhoneNumber}`;
+  }
+
+  if (
+    digitsOnlyPhoneNumber.length === 11 &&
+    digitsOnlyPhoneNumber.startsWith("1")
+  ) {
+    return `+${digitsOnlyPhoneNumber}`;
+  }
+
+  return `+${digitsOnlyPhoneNumber}`;
 }
 
 function normalizeEmail(value: string | null | undefined) {
@@ -75,6 +105,57 @@ function getPreferredContactChannel(channel: MessageChannel) {
     default:
       return ContactChannel.PHONE;
   }
+}
+
+function resolveInboundMessageChannel(params: {
+  explicitChannel?: MessageChannel | null;
+  emailAddress: string | null;
+  phoneNumber: string | null;
+}) {
+  if (params.explicitChannel) {
+    return params.explicitChannel;
+  }
+
+  if (params.emailAddress) {
+    return MessageChannel.EMAIL;
+  }
+
+  if (params.phoneNumber) {
+    return MessageChannel.SMS;
+  }
+
+  return MessageChannel.INTERNAL_NOTE;
+}
+
+function getNormalizationEventLabel(params: {
+  leadSourceType: LeadSourceType;
+  channel: MessageChannel;
+}) {
+  if (params.leadSourceType === LeadSourceType.SMS) {
+    return "Inbound SMS normalized";
+  }
+
+  if (params.leadSourceType === LeadSourceType.EMAIL) {
+    return "Inbound email normalized";
+  }
+
+  if (params.leadSourceType === LeadSourceType.WEB_FORM) {
+    return "Inbound web form normalized";
+  }
+
+  if (params.leadSourceType === LeadSourceType.CSV_IMPORT) {
+    return "Inbound CSV import normalized";
+  }
+
+  if (params.channel === MessageChannel.SMS) {
+    return "Inbound SMS normalized";
+  }
+
+  if (params.channel === MessageChannel.EMAIL) {
+    return "Inbound email normalized";
+  }
+
+  return "Inbound lead normalized";
 }
 
 export function normalizeInboundEmailPayload(input: unknown) {
@@ -146,7 +227,132 @@ export function normalizeInboundSmsPayload(input: unknown) {
   });
 }
 
+export function normalizeInboundWebFormPayload(input: unknown) {
+  const payload = z
+    .object({
+      workspaceId: z.string().min(1),
+      propertyId: z.string().min(1).optional(),
+      sourceName: z.string().min(1).optional(),
+      fullName: z.string().optional(),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
+      subject: z.string().optional(),
+      message: z.string().optional(),
+      body: z.string().optional(),
+      submittedAt: z.coerce.date().optional(),
+      submissionId: z.string().optional(),
+      threadId: z.string().optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+    })
+    .parse(input);
+
+  const normalizedEmailAddress = normalizeEmail(payload.email);
+  const normalizedPhoneNumber = normalizePhone(payload.phone);
+  const resolvedBodyText =
+    payload.message?.trim() || payload.body?.trim() || "Web form lead imported";
+
+  return normalizedLeadPayloadSchema.parse({
+    workspaceId: payload.workspaceId,
+    propertyId: payload.propertyId ?? null,
+    leadSourceName: payload.sourceName ?? "Web form",
+    leadSourceType: LeadSourceType.WEB_FORM,
+    channel: resolveInboundMessageChannel({
+      explicitChannel: null,
+      emailAddress: normalizedEmailAddress,
+      phoneNumber: normalizedPhoneNumber,
+    }),
+    fullName: inferFullName(payload.fullName ?? normalizedEmailAddress ?? normalizedPhoneNumber),
+    email: normalizedEmailAddress,
+    phone: normalizedPhoneNumber,
+    subject: payload.subject ?? null,
+    body: resolvedBodyText,
+    externalMessageId: payload.submissionId ?? null,
+    externalThreadId: payload.threadId ?? null,
+    receivedAt: payload.submittedAt ?? new Date(),
+    metadata: payload.metadata ?? {},
+  });
+}
+
+export function normalizeInboundCsvImportPayload(input: unknown) {
+  const payload = z
+    .object({
+      workspaceId: z.string().min(1),
+      propertyId: z.string().min(1).optional(),
+      sourceName: z.string().min(1).optional(),
+      fullName: z.string().min(1),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
+      notes: z.string().optional(),
+      body: z.string().optional(),
+      importedAt: z.coerce.date().optional(),
+      rowId: z.string().optional(),
+      threadId: z.string().optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+    })
+    .parse(input);
+
+  const normalizedEmailAddress = normalizeEmail(payload.email);
+  const normalizedPhoneNumber = normalizePhone(payload.phone);
+  const resolvedBodyText =
+    payload.notes?.trim() || payload.body?.trim() || "CSV lead imported";
+
+  return normalizedLeadPayloadSchema.parse({
+    workspaceId: payload.workspaceId,
+    propertyId: payload.propertyId ?? null,
+    leadSourceName: payload.sourceName ?? "CSV import",
+    leadSourceType: LeadSourceType.CSV_IMPORT,
+    channel: resolveInboundMessageChannel({
+      explicitChannel: MessageChannel.INTERNAL_NOTE,
+      emailAddress: normalizedEmailAddress,
+      phoneNumber: normalizedPhoneNumber,
+    }),
+    fullName: inferFullName(payload.fullName),
+    email: normalizedEmailAddress,
+    phone: normalizedPhoneNumber,
+    subject: null,
+    body: resolvedBodyText,
+    externalMessageId: payload.rowId ?? null,
+    externalThreadId: payload.threadId ?? null,
+    receivedAt: payload.importedAt ?? new Date(),
+    metadata: payload.metadata ?? {},
+  });
+}
+
 export async function processNormalizedInboundLead(payload: NormalizedLeadPayload) {
+  const existingInboundMessage =
+    payload.externalMessageId
+      ? await prisma.message.findFirst({
+          where: {
+            direction: MessageDirection.INBOUND,
+            channel: payload.channel,
+            externalMessageId: payload.externalMessageId,
+            conversation: {
+              lead: {
+                workspaceId: payload.workspaceId,
+              },
+            },
+          },
+          select: {
+            id: true,
+            conversationId: true,
+            conversation: {
+              select: {
+                leadId: true,
+              },
+            },
+          },
+        })
+      : null;
+
+  if (existingInboundMessage) {
+    return {
+      leadId: existingInboundMessage.conversation.leadId,
+      messageId: existingInboundMessage.id,
+      conversationId: existingInboundMessage.conversationId,
+      idempotentReplay: true,
+    };
+  }
+
   const property =
     payload.propertyId
       ? await prisma.property.findFirst({
@@ -194,19 +400,91 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
     });
   }
 
-  const existingLead =
+  if (payload.externalThreadId) {
+    leadLookupConditions.push({
+      conversation: {
+        is: {
+          OR: [
+            {
+              externalThreadId: payload.externalThreadId,
+            },
+            {
+              subject: payload.externalThreadId,
+            },
+          ],
+        },
+      },
+    });
+  }
+
+  const duplicateCandidateLeads =
     leadLookupConditions.length > 0
-      ? await prisma.lead.findFirst({
+      ? await prisma.lead.findMany({
           where: {
             workspaceId: payload.workspaceId,
             OR: leadLookupConditions,
           },
           include: {
             contact: true,
-            conversation: true,
+            conversation: {
+              select: {
+                id: true,
+                subject: true,
+                externalThreadId: true,
+              },
+            },
+          },
+          orderBy: {
+            lastActivityAt: "desc",
           },
         })
+      : [];
+
+  const bestDuplicateCandidate = chooseBestDuplicateCandidate({
+    incomingEmailAddress: payload.email ?? null,
+    incomingPhoneNumber: payload.phone ?? null,
+    incomingExternalThreadId: payload.externalThreadId ?? null,
+    duplicateCandidates: duplicateCandidateLeads.map((duplicateCandidateLead) => ({
+      id: duplicateCandidateLead.id,
+      email: duplicateCandidateLead.email,
+      phone: duplicateCandidateLead.phone,
+      lastActivityAt: duplicateCandidateLead.lastActivityAt,
+      conversationSubject:
+        duplicateCandidateLead.conversation?.externalThreadId ??
+        duplicateCandidateLead.conversation?.subject ??
+        null,
+    })),
+  });
+
+  const duplicateHandlingOutcome = classifyDuplicateHandlingOutcome(
+    bestDuplicateCandidate,
+  );
+
+  const existingLead =
+    duplicateHandlingOutcome === "attach_existing" && bestDuplicateCandidate
+      ? duplicateCandidateLeads.find(
+          (duplicateCandidateLead) =>
+            duplicateCandidateLead.id === bestDuplicateCandidate.candidateLeadId,
+        ) ?? null
       : null;
+
+  const shouldFlagPossibleDuplicate =
+    duplicateHandlingOutcome === "flag_possible_duplicate";
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: payload.workspaceId,
+      eventType: "duplicate_confidence_evaluated",
+      payload: {
+        candidateCount: duplicateCandidateLeads.length,
+        handlingOutcome: duplicateHandlingOutcome,
+        bestCandidateLeadId: bestDuplicateCandidate?.candidateLeadId ?? null,
+        bestConfidenceScore: bestDuplicateCandidate?.confidenceScore ?? null,
+        bestConfidenceBand: bestDuplicateCandidate?.confidenceBand ?? null,
+        matchedSignals: bestDuplicateCandidate?.matchedSignals ?? [],
+      },
+    },
+  });
 
   const baseLead =
     existingLead ??
@@ -223,23 +501,98 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
         fitResult: QualificationFit.UNKNOWN,
         lastActivityAt: payload.receivedAt,
         notes: `Normalized inbound ${payload.channel.toLowerCase()} lead`,
+        fieldMetadata: buildNormalizedLeadFieldMetadata({
+          existingFieldMetadata: null,
+          normalizedAt: payload.receivedAt,
+          sourceLabel: payload.leadSourceName,
+          fieldValues: {
+            fullName: payload.fullName,
+            email: payload.email ?? null,
+            phone: payload.phone ?? null,
+            moveInDate: null,
+            monthlyBudget: null,
+            stayLengthMonths: null,
+            smokingStatus: null,
+            petStatus: null,
+            parkingNeed: null,
+            guestExpectations: null,
+            bathroomSharingAcceptance: null,
+            workStatus: null,
+          },
+          fieldConfidences: {
+            fullName: 0.75,
+            email: payload.email ? 0.99 : 0,
+            phone: payload.phone ? 0.99 : 0,
+          },
+        }),
       },
     }));
+
+  const resolvedLeadFullName =
+    baseLead.fullName === "Unknown lead" ? payload.fullName : baseLead.fullName;
+  const resolvedLeadEmailAddress = baseLead.email ?? payload.email ?? null;
+  const resolvedLeadPhoneNumber = baseLead.phone ?? payload.phone ?? null;
+  const resolvedLeadPropertyId = baseLead.propertyId ?? property?.id ?? null;
+  const resolvedPreferredContactChannel = getPreferredContactChannel(payload.channel);
+  const mergedLeadFieldMetadata = buildNormalizedLeadFieldMetadata({
+    existingFieldMetadata: baseLead.fieldMetadata,
+    normalizedAt: payload.receivedAt,
+    sourceLabel: payload.leadSourceName,
+    fieldValues: {
+      fullName: resolvedLeadFullName,
+      email: resolvedLeadEmailAddress,
+      phone: resolvedLeadPhoneNumber,
+      moveInDate: baseLead.moveInDate ? baseLead.moveInDate.toISOString() : null,
+      monthlyBudget: baseLead.monthlyBudget ?? null,
+      stayLengthMonths: baseLead.stayLengthMonths ?? null,
+      workStatus: baseLead.workStatus ?? null,
+    },
+    fieldConfidences: {
+      fullName: resolvedLeadFullName === payload.fullName ? 0.75 : 0.9,
+      email: resolvedLeadEmailAddress ? 0.99 : 0,
+      phone: resolvedLeadPhoneNumber ? 0.99 : 0,
+      moveInDate: baseLead.moveInDate ? 0.9 : 0,
+      monthlyBudget: baseLead.monthlyBudget !== null ? 0.9 : 0,
+      stayLengthMonths: baseLead.stayLengthMonths !== null ? 0.9 : 0,
+      workStatus: baseLead.workStatus ? 0.9 : 0,
+    },
+  });
 
   await prisma.lead.update({
     where: {
       id: baseLead.id,
     },
     data: {
-      propertyId: baseLead.propertyId ?? property?.id ?? null,
+      propertyId: resolvedLeadPropertyId,
       leadSourceId: leadSource.id,
-      fullName:
-        baseLead.fullName === "Unknown lead" ? payload.fullName : baseLead.fullName,
-      email: baseLead.email ?? payload.email ?? null,
-      phone: baseLead.phone ?? payload.phone ?? null,
-      preferredContactChannel: getPreferredContactChannel(payload.channel),
+      fullName: resolvedLeadFullName,
+      email: resolvedLeadEmailAddress,
+      phone: resolvedLeadPhoneNumber,
+      preferredContactChannel: resolvedPreferredContactChannel,
       lastActivityAt: payload.receivedAt,
+      fieldMetadata: mergedLeadFieldMetadata,
     },
+  });
+
+  const normalizationDiffEntries = buildLeadNormalizationDiff({
+    beforeLead: {
+      propertyId: baseLead.propertyId,
+      leadSourceId: baseLead.leadSourceId,
+      fullName: baseLead.fullName,
+      email: baseLead.email,
+      phone: baseLead.phone,
+      preferredContactChannel: baseLead.preferredContactChannel,
+    },
+    afterLead: {
+      propertyId: resolvedLeadPropertyId,
+      leadSourceId: leadSource.id,
+      fullName: resolvedLeadFullName,
+      email: resolvedLeadEmailAddress,
+      phone: resolvedLeadPhoneNumber,
+      preferredContactChannel: resolvedPreferredContactChannel,
+    },
+    beforeFieldMetadata: baseLead.fieldMetadata,
+    afterFieldMetadata: mergedLeadFieldMetadata,
   });
 
   const lead = await prisma.lead.findUniqueOrThrow({
@@ -280,21 +633,42 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
       data: {
         leadId: lead.id,
         subject: payload.subject ?? payload.externalThreadId ?? payload.leadSourceName,
+        externalThreadId: payload.externalThreadId ?? null,
       },
     }));
+
+  if (
+    lead.conversation &&
+    payload.externalThreadId &&
+    !lead.conversation.externalThreadId
+  ) {
+    await prisma.conversation.update({
+      where: {
+        id: lead.conversation.id,
+      },
+      data: {
+        externalThreadId: payload.externalThreadId,
+      },
+    });
+  }
+
+  const inboundMessageDeliveryStatus = serializeDeliveryStatus({
+    state: "received",
+    provider: payload.leadSourceName,
+  });
 
   const message = await prisma.message.create({
     data: {
       conversationId: conversation.id,
       direction: MessageDirection.INBOUND,
+      origin: MessageOrigin.INBOUND,
       channel: payload.channel,
       subject: payload.subject ?? null,
       body: payload.body,
+      externalMessageId: payload.externalMessageId ?? null,
+      externalThreadId: payload.externalThreadId ?? null,
       receivedAt: payload.receivedAt,
-      deliveryStatus: serializeDeliveryStatus({
-        state: "received",
-        provider: payload.leadSourceName,
-      }),
+      deliveryStatus: inboundMessageDeliveryStatus,
     },
   });
 
@@ -303,7 +677,78 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
       workspaceId: payload.workspaceId,
       leadId: lead.id,
       propertyId: property?.id ?? lead.propertyId,
-      eventType: `${payload.channel === MessageChannel.SMS ? "Inbound SMS" : "Inbound email"} normalized`,
+      eventType: "inbound_message_recorded",
+      payload: {
+        messageId: message.id,
+        channel: payload.channel,
+        externalMessageId: payload.externalMessageId ?? null,
+        externalThreadId: payload.externalThreadId ?? null,
+        deliveryStatus: inboundMessageDeliveryStatus,
+      },
+    },
+  });
+
+  if (bestDuplicateCandidate && existingLead) {
+    await prisma.auditEvent.create({
+      data: {
+        workspaceId: payload.workspaceId,
+        leadId: existingLead.id,
+        propertyId: property?.id ?? existingLead.propertyId,
+        eventType: "inquiry_attached",
+        payload: {
+          confidenceScore: bestDuplicateCandidate.confidenceScore,
+          confidenceBand: bestDuplicateCandidate.confidenceBand,
+          matchedSignals: bestDuplicateCandidate.matchedSignals,
+          externalMessageId: payload.externalMessageId ?? null,
+          externalThreadId: payload.externalThreadId ?? null,
+        },
+      },
+    });
+  }
+
+  if (bestDuplicateCandidate && shouldFlagPossibleDuplicate) {
+    await prisma.auditEvent.create({
+      data: {
+        workspaceId: payload.workspaceId,
+        leadId: lead.id,
+        propertyId: property?.id ?? lead.propertyId,
+        eventType: "possible_duplicate_flagged",
+        payload: {
+          candidateLeadId: bestDuplicateCandidate.candidateLeadId,
+          confidenceScore: bestDuplicateCandidate.confidenceScore,
+          confidenceBand: bestDuplicateCandidate.confidenceBand,
+          matchedSignals: bestDuplicateCandidate.matchedSignals,
+        },
+      },
+    });
+  }
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: payload.workspaceId,
+      leadId: lead.id,
+      propertyId: property?.id ?? lead.propertyId,
+      eventType: "lead.normalized",
+      payload: {
+        sourceName: payload.leadSourceName,
+        sourceType: payload.leadSourceType,
+        externalMessageId: payload.externalMessageId ?? null,
+        externalThreadId: payload.externalThreadId ?? null,
+        changedFieldCount: normalizationDiffEntries.length,
+        changedFields: normalizationDiffEntries,
+      },
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: payload.workspaceId,
+      leadId: lead.id,
+      propertyId: property?.id ?? lead.propertyId,
+      eventType: getNormalizationEventLabel({
+        leadSourceType: payload.leadSourceType,
+        channel: payload.channel,
+      }),
       payload: {
         externalMessageId: payload.externalMessageId ?? null,
         externalThreadId: payload.externalThreadId ?? null,
@@ -318,5 +763,6 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
     leadId: lead.id,
     messageId: message.id,
     conversationId: conversation.id,
+    idempotentReplay: false,
   };
 }

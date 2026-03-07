@@ -2,12 +2,29 @@ import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { getInboxViewData } from "@/lib/app-data";
 import {
+  getLeadWorkflowErrorUserMessage,
+  parseLeadWorkflowErrorCode,
+} from "@/lib/lead-workflow-errors";
+import {
   assignLeadPropertyAction,
   requestInfoAction,
 } from "@/lib/lead-actions";
 
-export default async function InboxPage() {
+type InboxPageProps = {
+  searchParams: Promise<{
+    workflowError?: string;
+  }>;
+};
+
+export default async function InboxPage({ searchParams }: InboxPageProps) {
   const threads = await getInboxViewData();
+  const resolvedSearchParams = await searchParams;
+  const workflowErrorCode = parseLeadWorkflowErrorCode(
+    resolvedSearchParams.workflowError,
+  );
+  const workflowErrorMessage = workflowErrorCode
+    ? getLeadWorkflowErrorUserMessage(workflowErrorCode)
+    : null;
 
   return (
     <main>
@@ -16,6 +33,11 @@ export default async function InboxPage() {
         title="Conversation triage"
         description="A unified message view for the current workspace. This is the first pass: enough to review the latest thread, request missing information, and assign unassigned leads."
       />
+      {workflowErrorMessage ? (
+        <div className="mb-5 rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.12)] px-4 py-3 text-sm text-[var(--color-accent-strong)]">
+          {workflowErrorMessage}
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         {threads.map((thread) => (

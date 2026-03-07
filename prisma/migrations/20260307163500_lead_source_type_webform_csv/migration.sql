@@ -1,0 +1,14 @@
+DO $$
+BEGIN
+  BEGIN
+    ALTER TYPE "LeadSourceType" ADD VALUE IF NOT EXISTS 'WEB_FORM';
+  EXCEPTION
+    WHEN duplicate_object THEN NULL;
+  END;
+
+  BEGIN
+    ALTER TYPE "LeadSourceType" ADD VALUE IF NOT EXISTS 'CSV_IMPORT';
+  EXCEPTION
+    WHEN duplicate_object THEN NULL;
+  END;
+END $$;
