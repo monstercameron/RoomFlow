@@ -1,0 +1,394 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum LeadStatus {
+  NEW
+  AWAITING_RESPONSE
+  INCOMPLETE
+  QUALIFIED
+  TOUR_SCHEDULED
+  APPLICATION_SENT
+  DECLINED
+  ARCHIVED
+}
+
+enum QualificationFit {
+  UNKNOWN
+  PASS
+  CAUTION
+  MISMATCH
+}
+
+enum LeadSourceType {
+  MANUAL
+  EMAIL
+  SMS
+  FACEBOOK
+  ZILLOW
+  SPAREROOM
+  ROOMSTER
+  CRAIGSLIST
+  OTHER
+}
+
+enum ContactChannel {
+  EMAIL
+  SMS
+  PHONE
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageChannel {
+  EMAIL
+  SMS
+  INTERNAL_NOTE
+}
+
+enum QuestionType {
+  TEXT
+  SELECT
+  YES_NO
+  NUMBER
+  DATE
+}
+
+enum RuleSeverity {
+  REQUIRED
+  WARNING
+  PREFERENCE
+}
+
+enum TemplateType {
+  INITIAL_REPLY
+  MISSING_INFO_FOLLOW_UP
+  TOUR_CONFIRMATION
+  APPLICATION_INVITE
+  DECLINE
+  REMINDER
+}
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  emailVerified Boolean      @default(false)
+  name          String
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  memberships   Membership[]
+  auditEvents   AuditEvent[] @relation("AuditActor")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model Workspace {
+  id                    String            @id @default(cuid())
+  name                  String
+  slug                  String            @unique
+  onboardingCompletedAt DateTime?
+  memberships           Membership[]
+  properties            Property[]
+  leadSources           LeadSource[]
+  leads                 Lead[]
+  messageTemplates      MessageTemplate[]
+  auditEvents           AuditEvent[]
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+}
+
+model Membership {
+  id          String         @id @default(cuid())
+  userId      String
+  workspaceId String
+  role        MembershipRole @default(OWNER)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId, role])
+}
+
+model Property {
+  id                  String                     @id @default(cuid())
+  workspaceId         String
+  name                String
+  propertyType        String?
+  addressLine1        String?
+  locality            String?
+  rentableRoomCount   Int?
+  sharedBathroomCount Int?
+  parkingAvailable    Boolean                    @default(false)
+  smokingAllowed      Boolean                    @default(false)
+  petsAllowed         Boolean                    @default(false)
+  schedulingUrl       String?
+  workspace           Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  rules               PropertyRule[]
+  questionSets        QualificationQuestionSet[]
+  leads               Lead[]
+  auditEvents         AuditEvent[]
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  @@index([workspaceId])
+}
+
+model LeadSource {
+  id          String         @id @default(cuid())
+  workspaceId String
+  name        String
+  type        LeadSourceType @default(MANUAL)
+  active      Boolean        @default(true)
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leads       Lead[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([workspaceId, name])
+}
+
+model Lead {
+  id                      String                @id @default(cuid())
+  workspaceId             String
+  propertyId              String?
+  leadSourceId            String?
+  fullName                String
+  email                   String?
+  phone                   String?
+  preferredContactChannel ContactChannel?
+  moveInDate              DateTime?
+  monthlyBudget           Int?
+  stayLengthMonths        Int?
+  workStatus              String?
+  notes                   String?
+  status                  LeadStatus            @default(NEW)
+  fitResult               QualificationFit      @default(UNKNOWN)
+  lastActivityAt          DateTime?
+  workspace               Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  property                Property?             @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  leadSource              LeadSource?           @relation(fields: [leadSourceId], references: [id], onDelete: SetNull)
+  contact                 Contact?
+  conversation            Conversation?
+  answers                 QualificationAnswer[]
+  statusHistory           LeadStatusHistory[]
+  auditEvents             AuditEvent[]          @relation("LeadAuditEvents")
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+
+  @@index([workspaceId, status])
+  @@index([propertyId, status])
+}
+
+model Contact {
+  id               String          @id @default(cuid())
+  leadId           String          @unique
+  email            String?
+  phone            String?
+  preferredChannel ContactChannel?
+  lead             Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  leadId    String    @unique
+  subject   String?
+  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId String
+  templateId     String?
+  direction      MessageDirection
+  channel        MessageChannel
+  body           String
+  subject        String?
+  deliveryStatus String?
+  sentAt         DateTime?
+  receivedAt     DateTime?
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  template       MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model QualificationQuestionSet {
+  id         String                  @id @default(cuid())
+  propertyId String
+  name       String
+  isDefault  Boolean                 @default(true)
+  property   Property                @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  questions  QualificationQuestion[]
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@index([propertyId])
+}
+
+model QualificationQuestion {
+  id            String                   @id @default(cuid())
+  questionSetId String
+  label         String
+  fieldKey      String
+  type          QuestionType
+  required      Boolean                  @default(true)
+  sortOrder     Int                      @default(0)
+  options       Json?
+  questionSet   QualificationQuestionSet @relation(fields: [questionSetId], references: [id], onDelete: Cascade)
+  answers       QualificationAnswer[]
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@unique([questionSetId, fieldKey])
+  @@index([questionSetId, sortOrder])
+}
+
+model QualificationAnswer {
+  id         String                @id @default(cuid())
+  leadId     String
+  questionId String
+  value      Json
+  lead       Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  question   QualificationQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  @@unique([leadId, questionId])
+}
+
+model PropertyRule {
+  id          String       @id @default(cuid())
+  propertyId  String
+  label       String
+  description String?
+  category    String?
+  severity    RuleSeverity @default(REQUIRED)
+  autoDecline Boolean      @default(false)
+  warningOnly Boolean      @default(false)
+  property    Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([propertyId])
+}
+
+model MessageTemplate {
+  id          String         @id @default(cuid())
+  workspaceId String
+  name        String
+  type        TemplateType
+  channel     MessageChannel
+  subject     String?
+  body        String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, type])
+}
+
+model LeadStatusHistory {
+  id         String      @id @default(cuid())
+  leadId     String
+  fromStatus LeadStatus?
+  toStatus   LeadStatus
+  reason     String?
+  lead       Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdAt  DateTime    @default(now())
+
+  @@index([leadId, createdAt])
+}
+
+model AuditEvent {
+  id          String    @id @default(cuid())
+  workspaceId String
+  leadId      String?
+  propertyId  String?
+  actorUserId String?
+  eventType   String
+  payload     Json?
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead        Lead?     @relation("LeadAuditEvents", fields: [leadId], references: [id], onDelete: SetNull)
+  property    Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  actorUser   User?     @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([leadId, createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@unique([providerId, accountId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}

@@ -1,0 +1,860 @@
+2026-03-07T17:15:08.183Z ERROR [Better Auth]: INTERNAL_SERVER_ERROR Error [PrismaClientKnownRequestError]: 
+Invalid `db[model].findFirst()` invocation in
+C:\Users\Cam\Desktop\shared-housing-qualifier\.next\dev\server\chunks\ssr\[root-of-the-server]__fe406225._.js:8172:52
+
+  8169     map.set(key, getModelName(joinModel));
+  8170 }
+  8171 const selects = convertSelect(select, model, join);
+→ 8172 const result = await db[model].findFirst(
+
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+⨯ [Error [APIError]: Failed to get session] {
+  status: 'INTERNAL_SERVER_ERROR',
+  body: [Object],
+  headers: {},
+  statusCode: 500,
+  digest: '3914836991'
+}
+⨯ [Error [APIError]: Failed to get session] {
+  status: 'INTERNAL_SERVER_ERROR',
+  body: [Object],
+  headers: {},
+  statusCode: 500,
+  digest: '3914836991'
+}
+2026-03-07T17:16:23.119Z ERROR [Better Auth]: INTERNAL_SERVER_ERROR Error [PrismaClientKnownRequestError]: 
+Invalid `db[model].findFirst()` invocation in
+C:\Users\Cam\Desktop\shared-housing-qualifier\.next\dev\server\chunks\ssr\[root-of-the-server]__fe406225._.js:8172:52
+
+  8169     map.set(key, getModelName(joinModel));
+  8170 }
+  8171 const selects = convertSelect(select, model, join);
+→ 8172 const result = await db[model].findFirst(
+
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+⨯ [Error [APIError]: Failed to get session] {
+  status: 'INTERNAL_SERVER_ERROR',
+  body: [Object],
+  headers: {},
+  statusCode: 500,
+  digest: '3914836991'
+}
+⨯ [Error [APIError]: Failed to get session] {
+  status: 'INTERNAL_SERVER_ERROR',
+  body: [Object],
+  headers: {},
+  statusCode: 500,
+  digest: '3914836991'
+}
+2026-03-07T17:16:29.282Z ERROR [Better Auth]: PrismaClientKnownRequestError Error [PrismaClientKnownRequestError]: 
+Invalid `db[model].findFirst()` invocation in
+C:\Users\Cam\Desktop\shared-housing-qualifier\.next\dev\server\chunks\[root-of-the-server]__0a32b13f._.js:6749:52
+
+  6746     map.set(key, getModelName(joinModel));
+  6747 }
+  6748 const selects = convertSelect(select, model, join);
+→ 6749 const result = await db[model].findFirst(
+
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+# SERVER_ERROR:  Error [PrismaClientKnownRequestError]: 
+Invalid `db[model].findFirst()` invocation in
+C:\Users\Cam\Desktop\shared-housing-qualifier\.next\dev\server\chunks\[root-of-the-server]__0a32b13f._.js:6749:52
+
+  6746     map.set(key, getModelName(joinModel));
+  6747 }
+  6748 const selects = convertSelect(select, model, join);
+→ 6749 const result = await db[model].findFirst(
+
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+2026-03-07T17:17:01.176Z ERROR [Better Auth]: INTERNAL_SERVER_ERROR Error [PrismaClientKnownRequestError]: 
+Invalid `db[model].findFirst()` invocation in
+C:\Users\Cam\Desktop\shared-housing-qualifier\.next\dev\server\chunks\ssr\[root-of-the-server]__fe406225._.js:8172:52
+
+  8169     map.set(key, getModelName(joinModel));
+  8170 }
+  8171 const selects = convertSelect(select, model, join);
+→ 8172 const result = await db[model].findFirst(
+
+    at ignore-listed frames {
+  code: 'ECONNREFUSED',
+  meta: [Object],
+  clientVersion: '7.4.2'
+}
+⨯ [Error [APIError]: Failed to get session] {
+  status: 'INTERNAL_SERVER_ERROR',
+  body: [Object],
+  headers: {},
+  statusCode: 500,
+  digest: '3914836991'
+}
+⨯ [Error [APIError]: Failed to get session] {
+  status: 'INTERNAL_SERVER_ERROR',
+  body: [Object],
+  headers: {},
+  statusCode: 500,
+  digest: '3914836991'
+}
+⨯ Error: Authenticated session is required.
+    at getCurrentUser (src\lib\app-data.ts:192:11)
+    at async (src\lib\app-data.ts:217:16)
+    at async (src\lib\app-data.ts:273:22)
+    at async DashboardPage (src\app\(app)\app\page.tsx:5:21)
+  190 |
+  191 |   if (!session?.user) {
+> 192 |     throw new Error("Authenticated session is required.");
+      |           ^
+  193 |   }
+  194 |
+  195 |   return session.user as SessionUser; {
+  digest: '4173608996'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:64)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const [propertyCount, activeLeadCount, qualifiedLeadCount] = await Promise.all([
+      |                                                                ^
+  243 |     prisma.property.count({
+  244 |       where: {
+  245 |         workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '3575879659'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:279:5)
+    at async DashboardPage (src\app\(app)\app\page.tsx:5:21)
+  277 |
+  278 |   const [newToday, newYesterday, awaitingResponse, qualified, declined, recentEvents] =
+> 279 |     await Promise.all([
+      |     ^
+  280 |       prisma.lead.count({
+  281 |         where: {
+  282 |           workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '3643024435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:279:5)
+    at async DashboardPage (src\app\(app)\app\page.tsx:5:21)
+  277 |
+  278 |   const [newToday, newYesterday, awaitingResponse, qualified, declined, recentEvents] =
+> 279 |     await Promise.all([
+      |     ^
+  280 |       prisma.lead.count({
+  281 |         where: {
+  282 |           workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '3643024435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:279:5)
+    at async DashboardPage (src\app\(app)\app\page.tsx:5:21)
+  277 |
+  278 |   const [newToday, newYesterday, awaitingResponse, qualified, declined, recentEvents] =
+> 279 |     await Promise.all([
+      |     ^
+  280 |       prisma.lead.count({
+  281 |         where: {
+  282 |           workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '3643024435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:279:5)
+    at async DashboardPage (src\app\(app)\app\page.tsx:5:21)
+  277 |
+  278 |   const [newToday, newYesterday, awaitingResponse, qualified, declined, recentEvents] =
+> 279 |     await Promise.all([
+      |     ^
+  280 |       prisma.lead.count({
+  281 |         where: {
+  282 |           workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '616785620'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:279:5)
+    at async DashboardPage (src\app\(app)\app\page.tsx:5:21)
+  277 |
+  278 |   const [newToday, newYesterday, awaitingResponse, qualified, declined, recentEvents] =
+> 279 |     await Promise.all([
+      |     ^
+  280 |       prisma.lead.count({
+  281 |         where: {
+  282 |           workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '3643024435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:64)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const [propertyCount, activeLeadCount, qualifiedLeadCount] = await Promise.all([
+      |                                                                ^
+  243 |     prisma.property.count({
+  244 |       where: {
+  245 |         workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '3575879659'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:279:5)
+    at async DashboardPage (src\app\(app)\app\page.tsx:5:21)
+  277 |
+  278 |   const [newToday, newYesterday, awaitingResponse, qualified, declined, recentEvents] =
+> 279 |     await Promise.all([
+      |     ^
+  280 |       prisma.lead.count({
+  281 |         where: {
+  282 |           workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '766112113'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:279:5)
+    at async DashboardPage (src\app\(app)\app\page.tsx:5:21)
+  277 |
+  278 |   const [newToday, newYesterday, awaitingResponse, qualified, declined, recentEvents] =
+> 279 |     await Promise.all([
+      |     ^
+  280 |       prisma.lead.count({
+  281 |         where: {
+  282 |           workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '3643024435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:64)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const [propertyCount, activeLeadCount, qualifiedLeadCount] = await Promise.all([
+      |                                                                ^
+  243 |     prisma.property.count({
+  244 |       where: {
+  245 |         workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '3575879659'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:279:5)
+    at async DashboardPage (src\app\(app)\app\page.tsx:5:21)
+  277 |
+  278 |   const [newToday, newYesterday, awaitingResponse, qualified, declined, recentEvents] =
+> 279 |     await Promise.all([
+      |     ^
+  280 |       prisma.lead.count({
+  281 |         where: {
+  282 |           workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '3815341586'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:279:5)
+    at async DashboardPage (src\app\(app)\app\page.tsx:5:21)
+  277 |
+  278 |   const [newToday, newYesterday, awaitingResponse, qualified, declined, recentEvents] =
+> 279 |     await Promise.all([
+      |     ^
+  280 |       prisma.lead.count({
+  281 |         where: {
+  282 |           workspaceId: membership.workspaceId, {
+  clientVersion: '7.4.2',
+  digest: '616785620'
+}
+⨯ Error [PrismaClientKnownRequestError]: 
+Invalid `{imported module ./src/lib/prisma.ts}["prisma"].property.count()` invocation in
+C:\Users\Cam\Desktop\shared-housing-qualifier\.next\dev\server\chunks\ssr\[root-of-the-server]__2efdafab._.js:1892:145
+
+  1889     {imported module ./src/generated/prisma/enums.ts}["LeadStatus"].APPLICATION_SENT
+  1890 ];
+  1891 const [propertyCount, activeLeadCount, qualifiedLeadCount] = await {imported module ./src/lib/prisma.ts}["prisma"].$transaction([
+→ 1892     {imported module ./src/lib/prisma.ts}["prisma"].property.count(
+Transaction API error: Unable to start a transaction in the given time.
+    at <unknown> (src\lib\app-data.ts:244:23)
+  242 |   const [propertyCount, activeLeadCount, qualifiedLeadCount] =
+  243 |     await prisma.$transaction([
+> 244 |       prisma.property.count({
+      |                       ^
+  245 |         where: {
+  246 |           workspaceId: membership.workspaceId,
+  247 |         }, {
+  code: 'P2028',
+  meta: [Object],
+  clientVersion: '7.4.2',
+  digest: '2142350102'
+}
+⨯ Error [PrismaClientKnownRequestError]: 
+Invalid `{imported module ./src/lib/prisma.ts}["prisma"].property.count()` invocation in
+C:\Users\Cam\Desktop\shared-housing-qualifier\.next\dev\server\chunks\ssr\[root-of-the-server]__2efdafab._.js:1892:145
+
+  1889     {imported module ./src/generated/prisma/enums.ts}["LeadStatus"].APPLICATION_SENT
+  1890 ];
+  1891 const [propertyCount, activeLeadCount, qualifiedLeadCount] = await {imported module ./src/lib/prisma.ts}["prisma"].$transaction([
+→ 1892     {imported module ./src/lib/prisma.ts}["prisma"].property.count(
+Transaction API error: Unable to start a transaction in the given time.
+    at <unknown> (src\lib\app-data.ts:244:23)
+  242 |   const [propertyCount, activeLeadCount, qualifiedLeadCount] =
+  243 |     await prisma.$transaction([
+> 244 |       prisma.property.count({
+      |                       ^
+  245 |         where: {
+  246 |           workspaceId: membership.workspaceId,
+  247 |         }, {
+  code: 'P2028',
+  meta: [Object],
+  clientVersion: '7.4.2',
+  digest: '2142350102'
+}
+⨯ Error [PrismaClientKnownRequestError]: 
+Invalid `{imported module ./src/lib/prisma.ts}["prisma"].property.count()` invocation in
+C:\Users\Cam\Desktop\shared-housing-qualifier\.next\dev\server\chunks\ssr\[root-of-the-server]__2efdafab._.js:1892:145
+
+  1889     {imported module ./src/generated/prisma/enums.ts}["LeadStatus"].APPLICATION_SENT
+  1890 ];
+  1891 const [propertyCount, activeLeadCount, qualifiedLeadCount] = await {imported module ./src/lib/prisma.ts}["prisma"].$transaction([
+→ 1892     {imported module ./src/lib/prisma.ts}["prisma"].property.count(
+Transaction API error: Unable to start a transaction in the given time.
+    at <unknown> (src\lib\app-data.ts:244:23)
+  242 |   const [propertyCount, activeLeadCount, qualifiedLeadCount] =
+  243 |     await prisma.$transaction([
+> 244 |       prisma.property.count({
+      |                       ^
+  245 |         where: {
+  246 |           workspaceId: membership.workspaceId,
+  247 |         }, {
+  code: 'P2028',
+  meta: [Object],
+  clientVersion: '7.4.2',
+  digest: '2142350102'
+}
+⨯ Error [PrismaClientKnownRequestError]: 
+Invalid `{imported module ./src/lib/prisma.ts}["prisma"].property.count()` invocation in
+C:\Users\Cam\Desktop\shared-housing-qualifier\.next\dev\server\chunks\ssr\[root-of-the-server]__2efdafab._.js:1892:145
+
+  1889     {imported module ./src/generated/prisma/enums.ts}["LeadStatus"].APPLICATION_SENT
+  1890 ];
+  1891 const [propertyCount, activeLeadCount, qualifiedLeadCount] = await {imported module ./src/lib/prisma.ts}["prisma"].$transaction([
+→ 1892     {imported module ./src/lib/prisma.ts}["prisma"].property.count(
+Transaction API error: Unable to start a transaction in the given time.
+    at <unknown> (src\lib\app-data.ts:244:23)
+  242 |   const [propertyCount, activeLeadCount, qualifiedLeadCount] =
+  243 |     await prisma.$transaction([
+> 244 |       prisma.property.count({
+      |                       ^
+  245 |         where: {
+  246 |           workspaceId: membership.workspaceId,
+  247 |         }, {
+  code: 'P2028',
+  meta: [Object],
+  clientVersion: '7.4.2',
+  digest: '2142350102'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:360:7)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  358 |             : `${qualified} ready for a next action`,
+  359 |       },
+> 360 |       {
+      |       ^
+  361 |         label: "Declined leads",
+  362 |         value: String(declined),
+  363 |         delta: {
+  clientVersion: '7.4.2',
+  digest: '1111771002'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:213:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:2:1)
+  211 |   const workspaceState = await getCurrentWorkspaceState();
+  212 |
+> 213 |   return workspaceState.onboardingComplete ? "/app" : "/onboarding";
+      |                         ^
+  214 | });
+  215 |
+  216 | export const getCurrentWorkspaceMembership = cache(async () => { {
+  clientVersion: '7.4.2',
+  digest: '4273762088'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:360:7)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  358 |             : `${qualified} ready for a next action`,
+  359 |       },
+> 360 |       {
+      |       ^
+  361 |         label: "Declined leads",
+  362 |         value: String(declined),
+  363 |         delta: {
+  clientVersion: '7.4.2',
+  digest: '1111771002'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:360:7)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  358 |             : `${qualified} ready for a next action`,
+  359 |       },
+> 360 |       {
+      |       ^
+  361 |         label: "Declined leads",
+  362 |         value: String(declined),
+  363 |         delta: {
+  clientVersion: '7.4.2',
+  digest: '1111771002'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:213:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:2:1)
+  211 |   const workspaceState = await getCurrentWorkspaceState();
+  212 |
+> 213 |   return workspaceState.onboardingComplete ? "/app" : "/onboarding";
+      |                         ^
+  214 | });
+  215 |
+  216 | export const getCurrentWorkspaceMembership = cache(async () => { {
+  clientVersion: '7.4.2',
+  digest: '4273762088'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:213:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:2:1)
+  211 |   const workspaceState = await getCurrentWorkspaceState();
+  212 |
+> 213 |   return workspaceState.onboardingComplete ? "/app" : "/onboarding";
+      |                         ^
+  214 | });
+  215 |
+  216 | export const getCurrentWorkspaceMembership = cache(async () => { {
+  clientVersion: '7.4.2',
+  digest: '4273762088'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+2026-03-07T17:40:35.634Z ERROR [Better Auth]: INTERNAL_SERVER_ERROR Error: Connection terminated unexpectedly
+    at ignore-listed frames {
+  clientVersion: '7.4.2'
+}
+⨯ [Error [APIError]: Failed to get session] {
+  status: 'INTERNAL_SERVER_ERROR',
+  body: [Object],
+  headers: {},
+  statusCode: 500,
+  digest: '3914836991'
+}
+⨯ [Error [APIError]: Failed to get session] {
+  status: 'INTERNAL_SERVER_ERROR',
+  body: [Object],
+  headers: {},
+  statusCode: 500,
+  digest: '3914836991'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Module [project]/node_modules/next/dist/esm/lib/framework/boundary-components.js [app-ssr] (ecmascript) was instantiated because it was required from module [project]/node_modules/next/dist/esm/build/templates/app-page.js?page=/(app)/app/leads/page { GLOBAL_ERROR_MODULE => "[project]/node_modules/next/dist/client/components/builtin/global-error.js [app-rsc] (ecmascript, Next.js Server Component)", MODULE_0 => "[project]/src/app/layout.tsx [app-rsc] (ecmascript, Next.js Server Component)", MODULE_1 => "[project]/node_modules/next/dist/client/components/builtin/not-found.js [app-rsc] (ecmascript, Next.js Server Component)", MODULE_2 => "[project]/node_modules/next/dist/client/components/builtin/forbidden.js [app-rsc] (ecmascript, Next.js Server Component)", MODULE_3 => "[project]/node_modules/next/dist/client/components/builtin/unauthorized.js [app-rsc] (ecmascript, Next.js Server Component)", MODULE_4 => "[project]/node_modules/next/dist/client/components/builtin/global-error.js [app-rsc] (ecmascript, Next.js Server Component)", MODULE_5 => "[project]/node_modules/next/dist/client/components/builtin/not-found.js [app-rsc] (ecmascript, Next.js Server Component)", MODULE_6 => "[project]/node_modules/next/dist/client/components/builtin/forbidden.js [app-rsc] (ecmascript, Next.js Server Component)", MODULE_7 => "[project]/node_modules/next/dist/client/components/builtin/unauthorized.js [app-rsc] (ecmascript, Next.js Server Component)", MODULE_8 => "[project]/src/app/(app)/app/layout.tsx [app-rsc] (ecmascript, Next.js Server Component)", MODULE_9 => "[project]/src/app/(app)/app/leads/page.tsx [app-rsc] (ecmascript, Next.js Server Component)" } [app-rsc] (ecmascript) <locals>, but the module factory is not available.
+    at ignore-listed frames {
+  digest: '2843069545'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:242:25)
+    at async OperatorAppLayout (src\app\(app)\app\layout.tsx:24:21)
+  240 |   ];
+  241 |
+> 242 |   const propertyCount = await prisma.property.count({
+      |                         ^
+  243 |     where: {
+  244 |       workspaceId: membership.workspaceId,
+  245 |     }, {
+  clientVersion: '7.4.2',
+  digest: '4180018435'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:388:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  386 | export const getLeadListViewData = cache(async () => {
+  387 |   const membership = await getCurrentWorkspaceMembership();
+> 388 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  389 |     where: {
+  390 |       workspaceId: membership.workspaceId,
+  391 |     }, {
+  clientVersion: '7.4.2',
+  digest: '2469665592'
+}
+⨯ Error: Connection terminated unexpectedly
+    at async (src\lib\app-data.ts:423:17)
+    at async LeadsPage (src\app\(app)\app\leads\page.tsx:6:17)
+  421 | export const getLeadListViewData = cache(async () => {
+  422 |   const membership = await getCurrentWorkspaceMembership();
+> 423 |   const leads = await prisma.lead.findMany({
+      |                 ^
+  424 |     where: {
+  425 |       workspaceId: membership.workspaceId,
+  426 |     }, {
+  clientVersion: '7.4.2',
+  digest: '3558434031'
+}

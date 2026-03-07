@@ -1,0 +1,35 @@
+import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
+import { AppShell } from "@/components/app-shell";
+import { getAppShellData, getCurrentWorkspaceState } from "@/lib/app-data";
+import { getServerSession } from "@/lib/session";
+
+export default async function OperatorAppLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const session = await getServerSession();
+
+  if (!session) {
+    redirect("/login");
+  }
+
+  const workspaceState = await getCurrentWorkspaceState();
+
+  if (!workspaceState.onboardingComplete) {
+    redirect("/onboarding");
+  }
+
+  const shellData = await getAppShellData();
+
+  return (
+    <AppShell
+      userLabel={session.user.email}
+      workspaceName={shellData.workspaceName}
+      workspaceSummary={shellData.workspaceSummary}
+    >
+      {children}
+    </AppShell>
+  );
+}
