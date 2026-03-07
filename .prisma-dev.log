@@ -1,0 +1,21 @@
+🔌 To connect to your local Prisma Postgres database via HTTP + Prisma ORM
+   use the following connection string:
+
+[3m[2m[32m# 📄 .env:[39m[22m[23m
+
+[36mDATABASE_URL[39m="[35mprisma+postgres:[39m//[36mlocalhost[39m:[36m51216[39m[37m/[39m[37m?api_key=eyJuYW1lIjoicm9vbWZsb3ciLCJkYXRhYmFzZVVybCI6InBvc3RncmVzOi8vcG9zdGdyZXM6cG9zdGdyZXNAbG9jYWxob3N0OjUxMjE3L3RlbXBsYXRlMT9zc2xtb2RlPWRpc2FibGUmY29ubmVjdGlvbl9saW1pdD0xJmNvbm5lY3RfdGltZW91dD0wJm1heF9pZGxlX2Nvbm5lY3Rpb25fbGlmZXRpbWU9MCZwb29sX3RpbWVvdXQ9MCZzaW5nbGVfdXNlX2Nvbm5lY3Rpb25zPXRydWUmc29ja2V0X3RpbWVvdXQ9MCIsInNoYWRvd0RhdGFiYXNlVXJsIjoicG9zdGdyZXM6Ly9wb3N0Z3Jlczpwb3N0Z3Jlc0Bsb2NhbGhvc3Q6NTEyMTgvdGVtcGxhdGUxP3NzbG1vZGU9ZGlzYWJsZSZjb25uZWN0aW9uX2xpbWl0PTEmY29ubmVjdF90aW1lb3V0PTAmbWF4X2lkbGVfY29ubmVjdGlvbl9saWZldGltZT0wJnBvb2xfdGltZW91dD0wJnNpbmdsZV91c2VfY29ubmVjdGlvbnM9dHJ1ZSZzb2NrZXRfdGltZW91dD0wIn0[39m"
+
+✨ The [36mapi_key[39m above does not contain any sensitive information.
+🔌 To connect to your local Prisma Postgres database via TCP + Prisma ORM
+   use the following connection strings:
+
+[3m[2m[32m# 📄 .env:[39m[22m[23m
+
+[36mDATABASE_URL[39m="[35mpostgres:[39m[37m//postgres:postgres@[39m[36mlocalhost[39m[37m:[39m[36m51217[39m[37m/template1[39m[37m?sslmode=disable&connection_limit=1&connect_timeout=0&max_idle_connection_lifetime=0&pool_timeout=0&single_use_connections=true&socket_timeout=0[39m"
+
+[36mSHADOW_DATABASE_URL[39m="[35mpostgres:[39m[37m//postgres:postgres@[39m[36mlocalhost[39m[37m:[39m[36m51218[39m[37m/template1[39m[37m?sslmode=disable&connection_limit=1&connect_timeout=0&max_idle_connection_lifetime=0&pool_timeout=0&single_use_connections=true&socket_timeout=0[39m"
+
+🐘 You can also use the TCP [36mDATABASE_URL[39m with the [36mpg[39m or [36mpostgres.js[39m JavaScript drivers!
+
+   Set the maximum number of connections to [36m1[39m, connect timeout to [36m0[39m and
+   idle timeout to the smallest positive value supported.

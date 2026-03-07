@@ -18,6 +18,7 @@ export default async function PropertiesPage() {
           <Link
             key={property.id}
             href={`/app/properties/${property.id}/rules`}
+            prefetch={false}
             className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]"
           >
             <div className="text-2xl font-semibold">{property.name}</div>

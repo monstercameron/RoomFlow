@@ -37,6 +37,7 @@ export default async function LeadsPage() {
                   <Link
                     className="underline decoration-[var(--color-line)] underline-offset-4"
                     href={`/app/leads/${lead.id}`}
+                    prefetch={false}
                   >
                     {lead.name}
                   </Link>

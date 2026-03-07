@@ -36,6 +36,7 @@ export function AppSidebar({
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               className={`rounded-2xl border px-4 py-3 transition ${
                 isActive
                   ? "border-[rgba(248,243,235,0.18)] bg-[rgba(248,243,235,0.12)]"

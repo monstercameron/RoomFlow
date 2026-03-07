@@ -22,6 +22,7 @@ export default async function CalendarPage() {
                 key={property.id}
                 className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
                 href={`/app/properties/${property.id}/rules`}
+                prefetch={false}
               >
                 {property.name}
               </Link>

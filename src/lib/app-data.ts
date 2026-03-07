@@ -386,43 +386,41 @@ export const getDashboardViewData = cache(async () => {
       },
     },
   });
-  const [statusHistory, kpiAuditEvents, latestUsageSnapshot] = await Promise.all([
-    prisma.leadStatusHistory.findMany({
-      where: {
-        lead: {
-          workspaceId: membership.workspaceId,
-        },
-      },
-      select: {
-        leadId: true,
-        fromStatus: true,
-        toStatus: true,
-        createdAt: true,
-      },
-    }),
-    prisma.auditEvent.findMany({
-      where: {
+  const statusHistory = await prisma.leadStatusHistory.findMany({
+    where: {
+      lead: {
         workspaceId: membership.workspaceId,
       },
-      select: {
-        leadId: true,
-        eventType: true,
-        createdAt: true,
-      },
-      take: 500,
-      orderBy: {
-        createdAt: "desc",
-      },
-    }),
-    prisma.workspaceUsageSnapshot.findFirst({
-      where: {
-        workspaceId: membership.workspaceId,
-      },
-      orderBy: {
-        snapshotDate: "desc",
-      },
-    }),
-  ]);
+    },
+    select: {
+      leadId: true,
+      fromStatus: true,
+      toStatus: true,
+      createdAt: true,
+    },
+  });
+  const kpiAuditEvents = await prisma.auditEvent.findMany({
+    where: {
+      workspaceId: membership.workspaceId,
+    },
+    select: {
+      leadId: true,
+      eventType: true,
+      createdAt: true,
+    },
+    take: 500,
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+  const latestUsageSnapshot = await prisma.workspaceUsageSnapshot.findFirst({
+    where: {
+      workspaceId: membership.workspaceId,
+    },
+    orderBy: {
+      snapshotDate: "desc",
+    },
+  });
 
   const newLeadDelta = newToday - newYesterday;
   const statusCounts = new Map<LeadStatus, number>();
@@ -737,25 +735,9 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
     include: {
       contact: true,
       property: {
-        include: {
-          questionSets: {
-            orderBy: {
-              createdAt: "asc",
-            },
-            include: {
-              questions: {
-                orderBy: {
-                  sortOrder: "asc",
-                },
-                select: {
-                  id: true,
-                  fieldKey: true,
-                  label: true,
-                  required: true,
-                },
-              },
-            },
-          },
+        select: {
+          id: true,
+          name: true,
         },
       },
       leadSource: {
@@ -809,6 +791,64 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
       },
     ],
   });
+  const propertyIds = [
+    ...new Set(
+      threads
+        .map((lead) => lead.propertyId)
+        .filter((propertyId): propertyId is string => typeof propertyId === "string"),
+    ),
+  ];
+  const questionSetsByPropertyId = new Map<
+    string,
+    Array<{
+      id: string;
+      questions: Array<{
+        id: string;
+        fieldKey: string;
+        label: string;
+        required: boolean;
+      }>;
+    }>
+  >();
+
+  if (propertyIds.length > 0) {
+    const propertyQuestionSets = await prisma.qualificationQuestionSet.findMany({
+      where: {
+        propertyId: {
+          in: propertyIds,
+        },
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+      select: {
+        id: true,
+        propertyId: true,
+        questions: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+          select: {
+            id: true,
+            fieldKey: true,
+            label: true,
+            required: true,
+          },
+        },
+      },
+    });
+
+    for (const propertyQuestionSet of propertyQuestionSets) {
+      const existingQuestionSets =
+        questionSetsByPropertyId.get(propertyQuestionSet.propertyId) ?? [];
+      existingQuestionSets.push({
+        id: propertyQuestionSet.id,
+        questions: propertyQuestionSet.questions,
+      });
+      questionSetsByPropertyId.set(propertyQuestionSet.propertyId, existingQuestionSets);
+    }
+  }
+
   const properties = await prisma.property.findMany({
     where: {
       workspaceId: membership.workspaceId,
@@ -832,9 +872,12 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
 
   const mappedThreads = threads.map((lead) => ({
     ...(() => {
+      const propertyQuestionSetsForLead = lead.propertyId
+        ? questionSetsByPropertyId.get(lead.propertyId) ?? []
+        : [];
       const qualificationAutomationGateResult = resolveQualificationAutomationGate({
         leadPropertyId: lead.propertyId,
-        propertyQuestionSets: lead.property?.questionSets ?? [],
+        propertyQuestionSets: propertyQuestionSetsForLead,
         leadEmailAddress: lead.email,
         leadPhoneNumber: lead.phone,
         contactEmailAddress: lead.contact?.email ?? null,
@@ -842,7 +885,7 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
         manualOnlyModeEnabled,
       });
       const missingRequiredQuestions = resolveMissingRequiredQualificationQuestions({
-        propertyQuestionSets: lead.property?.questionSets ?? [],
+        propertyQuestionSets: propertyQuestionSetsForLead,
         leadAnswers: lead.answers.map((leadAnswer) => ({
           questionId: leadAnswer.questionId,
           value: leadAnswer.value,
