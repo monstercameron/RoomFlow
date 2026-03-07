@@ -56,7 +56,7 @@ Do not start with:
   * top utility bar
   * workspace/property context placeholder
 - [x] Define the initial design tokens and reusable layout primitives
-- [ ] Add core UI primitives:
+- [x] Add core UI primitives:
   * button
   * input
   * select
@@ -85,7 +85,7 @@ Do not start with:
   * message template
   * lead status history
   * audit event
-- [ ] Decide early whether `room` is a real v1 model or explicitly deferred
+- [x] Decide early whether `room` is a real v1 model or explicitly deferred (see `reference/DEFERRALS.md`)
 - [x] Add the first Prisma migration for local development
 - [x] Create a small set of realistic seed records for:
   * one workspace
@@ -101,7 +101,7 @@ Do not start with:
 - [x] Build `/signup`
 - [x] Add protected-route enforcement for `/app`
 - [x] Add the minimal account bootstrap needed to create a workspace
-- [ ] Defer team management until after single-user flow works
+- [x] Defer team management until after single-user flow works (see `reference/DEFERRALS.md`)
 
 ## Phase 4: onboarding flow
 
@@ -217,7 +217,7 @@ These come after the first usable product slice.
   * SMS provider setup
   * webhook endpoint display
   * CSV import placeholder
-- [ ] Defer `/app/settings/billing` until pricing and plan logic are real
+- [x] Defer `/app/settings/billing` until pricing and plan logic are real (see `reference/DEFERRALS.md`)
 
 ## First prototype build order
 
