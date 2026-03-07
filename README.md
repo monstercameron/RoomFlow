@@ -20,11 +20,14 @@ Current implementation focus:
 ## Local development
 
 1. Copy `.env.example` to `.env`
-2. Start the local Prisma dev database with `npx prisma dev -d --name roomflow-auth`
+2. Start the local database with `npm run db:start`
 3. Install dependencies with `npm install`
 4. Apply the schema with `npm run db:push`
 5. Seed the local test account with `npm run db:seed:test-user`
 6. Start the app with `npm run dev -- --hostname 127.0.0.1 --port 3001`
+
+The default local path uses the bundled PGlite socket server on `127.0.0.1:5432`.
+If `.local_pg` is stale or corrupted, stop the local Node processes, delete `.local_pg`, then rerun steps 2 through 5.
 
 ### Local test login
 

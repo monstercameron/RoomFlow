@@ -12,6 +12,13 @@
 
 # testing
 /coverage
+/test-results/
+e2e-*.txt
+smoke-out.txt
+test-log.txt
+seed-logs.txt
+seed-run.txt
+out.txt
 
 # next.js
 /.next/
@@ -23,6 +30,13 @@
 # misc
 .DS_Store
 *.pem
+*.zip
+/.local_pg/
+/.pglite/
+/.server.log
+/.server.err.log
+/pglite.log
+/pglite.err
 
 # debug
 npm-debug.log*

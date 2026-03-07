@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function getMessageDeliveryModule() {
+function getMessageDeliveryModule() {
   process.env.DATABASE_URL ??=
     "postgresql://postgres:postgres@localhost:5432/template1";
 
-  return import("./message-delivery");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("./message-delivery");
 }
 
-test("isProviderConfigurationError detects missing provider configuration errors", async () => {
-  const { isProviderConfigurationError } = await getMessageDeliveryModule();
+test("isProviderConfigurationError detects missing provider configuration errors", () => {
+  const { isProviderConfigurationError } = getMessageDeliveryModule();
 
   assert.equal(
     isProviderConfigurationError("RESEND_API_KEY is not configured."),
@@ -25,8 +26,8 @@ test("isProviderConfigurationError detects missing provider configuration errors
   );
 });
 
-test("isProviderConfigurationError ignores runtime delivery failures", async () => {
-  const { isProviderConfigurationError } = await getMessageDeliveryModule();
+test("isProviderConfigurationError ignores runtime delivery failures", () => {
+  const { isProviderConfigurationError } = getMessageDeliveryModule();
 
   assert.equal(
     isProviderConfigurationError("Lead is missing an email address."),

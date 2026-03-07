@@ -116,6 +116,7 @@ async function run() {
   }
 
   if (failures.length > 0) {
+    require('node:fs').writeFileSync('smoke-fails.json', JSON.stringify(failures, null, 2));
     throw new Error(
       `Smoke checks hit ${failures.length} runtime issue(s):\n${JSON.stringify(
         failures,

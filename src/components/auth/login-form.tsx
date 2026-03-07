@@ -16,30 +16,39 @@ export function LoginForm() {
         setPending(true);
         setError(null);
 
-        const response = await fetch("/api/auth/sign-in/email", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include",
-          body: JSON.stringify({
-            email,
-            password,
-          }),
-        });
+        try {
+          const response = await fetch("/api/auth/sign-in/email", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify({
+              email,
+              password,
+            }),
+          });
 
-        setPending(false);
+          if (response.ok) {
+            window.location.assign("/app");
+            return;
+          }
 
-        if (response.ok) {
-          window.location.assign("/app");
-          return;
+          if (response.status >= 500) {
+            setError("Server unavailable. Please check if the database is running.");
+            return;
+          }
+
+          const result = (await response.json().catch(() => null)) as {
+            message?: string;
+          } | null;
+
+          setError(result?.message ?? "Unable to sign in.");
+        } catch (error) {
+          setError("Network error. Could not reach the server.");
+        } finally {
+          setPending(false);
         }
-
-        const result = (await response.json().catch(() => null)) as {
-          message?: string;
-        } | null;
-
-        setError(result?.message ?? "Unable to sign in.");
       }}
     >
       <label className="block space-y-2">
