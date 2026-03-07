@@ -4,22 +4,44 @@ import {
   normalizeInboundSmsPayload,
   processNormalizedInboundLead,
 } from "@/lib/lead-normalization";
+import { verifyIncomingWebhookSignature } from "@/lib/webhook-signature";
 
-async function readPayload(request: Request) {
-  const contentType = request.headers.get("content-type") ?? "";
-
+function parseSmsWebhookPayload(
+  contentType: string,
+  rawBody: string,
+): Record<string, unknown> {
   if (contentType.includes("application/x-www-form-urlencoded")) {
-    const formData = await request.formData();
-
-    return Object.fromEntries(formData.entries());
+    return Object.fromEntries(new URLSearchParams(rawBody).entries());
   }
 
-  return request.json().catch(() => ({}));
+  try {
+    return JSON.parse(rawBody || "{}");
+  } catch {
+    return {};
+  }
 }
 
 export async function POST(request: Request) {
   const url = new URL(request.url);
-  const body = await readPayload(request);
+  const contentType = request.headers.get("content-type") ?? "";
+  const rawBody = await request.text();
+  const body = parseSmsWebhookPayload(contentType, rawBody);
+  const isSignatureValid = verifyIncomingWebhookSignature({
+    rawBody,
+    providedSignature: request.headers.get("x-roomflow-signature"),
+    signingSecret: process.env.INBOUND_WEBHOOK_SIGNING_SECRET,
+  });
+
+  if (!isSignatureValid) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Invalid webhook signature.",
+      },
+      { status: 401 },
+    );
+  }
+
   const workspaceId =
     url.searchParams.get("workspaceId") ??
     (typeof body.workspaceId === "string" ? body.workspaceId : null);

@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { getPropertyRulesViewData } from "@/lib/app-data";
-import { updatePropertySchedulingLinkAction } from "@/lib/property-actions";
+import {
+  togglePropertyRuleActiveAction,
+  updatePropertySchedulingLinkAction,
+} from "@/lib/property-actions";
 
 type PropertyRulesPageProps = {
   params: Promise<{
@@ -107,6 +110,28 @@ export default async function PropertyRulesPage({
             <div className="mt-4 text-sm uppercase tracking-[0.18em] text-[var(--color-muted)]">
               {rule.category}
             </div>
+            <form
+              action={togglePropertyRuleActiveAction.bind(null, property.propertyId)}
+              className="mt-4"
+            >
+              <input type="hidden" name="propertyRuleId" value={rule.id} />
+              <input
+                type="hidden"
+                name="nextActive"
+                value={rule.active ? "false" : "true"}
+              />
+              <input
+                type="hidden"
+                name="redirectTo"
+                value={`/app/properties/${property.propertyId}/rules`}
+              />
+              <button
+                className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-2 text-sm font-medium"
+                type="submit"
+              >
+                {rule.active ? "Deactivate rule" : "Activate rule"}
+              </button>
+            </form>
           </div>
         ))}
       </div>

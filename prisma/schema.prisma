@@ -73,6 +73,62 @@ enum MessageOrigin {
   SYSTEM_NOTICE
 }
 
+enum DeclineReason {
+  RULE_MISMATCH
+  MISSING_INFO
+  OPERATOR_DECISION
+  NO_AVAILABILITY
+  UNRESPONSIVE
+  DUPLICATE
+  WITHDREW
+}
+
+enum RuleCategory {
+  SMOKING
+  PETS
+  GUESTS
+  BATHROOM_SHARING
+  PARKING
+  MINIMUM_STAY
+  WORK_SCHEDULE
+  ACKNOWLEDGMENT
+  GENERAL
+}
+
+enum RuleMode {
+  BLOCKING
+  WARNING_ONLY
+  INFORMATIONAL
+}
+
+enum TourEventStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELED
+  RESCHEDULED
+}
+
+enum NotificationType {
+  NEW_LEAD
+  CAUTION_REVIEW
+  MISMATCH_REVIEW
+  STALE_LEAD
+  TOUR_SCHEDULED
+  APPLICATION_INVITE_STALE
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  DEAD_LETTER
+}
+
+enum AuditActorType {
+  SYSTEM
+  USER
+}
+
 enum MessageChannel {
   EMAIL
   SMS
@@ -121,12 +177,19 @@ model Workspace {
   name                  String
   slug                  String            @unique
   onboardingCompletedAt DateTime?
+  channelPriority       Json?
+  dailyAutomatedSendCap Int               @default(3)
+  webhookSigningSecret  String?
   memberships           Membership[]
   properties            Property[]
   leadSources           LeadSource[]
   leads                 Lead[]
   messageTemplates      MessageTemplate[]
   auditEvents           AuditEvent[]
+  notifications         NotificationEvent[]
+  usageSnapshots        WorkspaceUsageSnapshot[]
+  webhookDeliveries     OutboundWebhookDelivery[]
+  tours                 TourEvent[]
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 }
@@ -157,11 +220,14 @@ model Property {
   smokingAllowed      Boolean                    @default(false)
   petsAllowed         Boolean                    @default(false)
   schedulingUrl       String?
+  channelPriority     Json?
+  schedulingEnabled   Boolean                    @default(false)
   workspace           Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   rules               PropertyRule[]
   questionSets        QualificationQuestionSet[]
   leads               Lead[]
   auditEvents         AuditEvent[]
+  tours               TourEvent[]
   createdAt           DateTime                   @default(now())
   updatedAt           DateTime                   @updatedAt
 
@@ -198,6 +264,19 @@ model Lead {
   notes                   String?
   status                  LeadStatus            @default(NEW)
   fitResult               QualificationFit      @default(UNKNOWN)
+  declineReason           DeclineReason?
+  declinedAt              DateTime?
+  isSoftDeclined          Boolean               @default(false)
+  optOutAt                DateTime?
+  optOutReason            String?
+  isStale                 Boolean               @default(false)
+  staleAt                 DateTime?
+  staleReason             String?
+  staleAutoArchiveBlocked Boolean               @default(false)
+  applicationInviteSentAt DateTime?
+  applicationInviteChannel MessageChannel?
+  automatedSendCountDate  DateTime?
+  automatedSendCount      Int                   @default(0)
   lastActivityAt          DateTime?
   workspace               Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   property                Property?             @relation(fields: [propertyId], references: [id], onDelete: SetNull)
@@ -207,6 +286,9 @@ model Lead {
   answers                 QualificationAnswer[]
   statusHistory           LeadStatusHistory[]
   auditEvents             AuditEvent[]          @relation("LeadAuditEvents")
+  tours                   TourEvent[]
+  notifications           NotificationEvent[]
+  webhookDeliveries       OutboundWebhookDelivery[]
   fieldMetadata           Json?
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
@@ -249,6 +331,8 @@ model Message {
   body              String
   subject           String?
   deliveryStatus    String?
+  stateSignature    String?
+  renderedSnapshot  Json?
   externalMessageId String?
   externalThreadId  String?
   sentAt            DateTime?
@@ -260,6 +344,7 @@ model Message {
   @@index([conversationId, createdAt])
   @@index([externalThreadId])
   @@index([channel, externalMessageId])
+  @@index([stateSignature])
 }
 
 model QualificationQuestionSet {
@@ -312,6 +397,9 @@ model PropertyRule {
   label       String
   description String?
   category    String?
+  ruleCategory RuleCategory @default(GENERAL)
+  mode         RuleMode     @default(BLOCKING)
+  active       Boolean      @default(true)
   severity    RuleSeverity @default(REQUIRED)
   autoDecline Boolean      @default(false)
   warningOnly Boolean      @default(false)
@@ -357,6 +445,7 @@ model AuditEvent {
   leadId      String?
   propertyId  String?
   actorUserId String?
+  actorType   AuditActorType @default(SYSTEM)
   eventType   String
   payload     Json?
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -367,6 +456,85 @@ model AuditEvent {
 
   @@index([workspaceId, createdAt])
   @@index([leadId, createdAt])
+}
+
+model TourEvent {
+  id                 String          @id @default(cuid())
+  workspaceId        String
+  leadId             String
+  propertyId         String?
+  status             TourEventStatus @default(SCHEDULED)
+  scheduledAt        DateTime?
+  canceledAt         DateTime?
+  cancelReason       String?
+  externalCalendarId String?
+  previousTourEventId String?
+  workspace          Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead               Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  property           Property?       @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([workspaceId, status, createdAt])
+  @@index([leadId, createdAt])
+  @@index([propertyId, createdAt])
+}
+
+model NotificationEvent {
+  id          String           @id @default(cuid())
+  workspaceId String
+  leadId      String?
+  type        NotificationType
+  title       String
+  body        String
+  readAt      DateTime?
+  payload     Json?
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead        Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, type, createdAt])
+  @@index([leadId, createdAt])
+}
+
+model OutboundWebhookDelivery {
+  id            String                @id @default(cuid())
+  workspaceId   String
+  leadId        String?
+  eventType     String
+  destinationUrl String
+  signature     String?
+  payload       Json
+  status        WebhookDeliveryStatus @default(PENDING)
+  attemptCount  Int                   @default(0)
+  lastAttemptAt DateTime?
+  nextAttemptAt DateTime?
+  lastError     String?
+  deadLetteredAt DateTime?
+  workspace     Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead          Lead?                 @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([workspaceId, status, nextAttemptAt])
+  @@index([leadId, createdAt])
+}
+
+model WorkspaceUsageSnapshot {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  snapshotDate    DateTime
+  activeProperties Int
+  monthlyLeads    Int
+  automationSends Int
+  seats           Int
+  payload         Json?
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt       DateTime  @default(now())
+
+  @@unique([workspaceId, snapshotDate])
+  @@index([workspaceId, createdAt])
 }
 
 model Session {

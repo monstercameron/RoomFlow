@@ -23,6 +23,7 @@ export type NormalizedLeadFieldMetadataEntry = {
   confidence: number;
   lastUpdatedAt: string;
   isSuggested: boolean;
+  isConflicted: boolean;
 };
 
 export type NormalizedLeadFieldMetadata = Record<
@@ -69,6 +70,7 @@ function parseExistingMetadataEntry(
   const confidenceCandidate = existingEntry.confidence;
   const lastUpdatedAtCandidate = existingEntry.lastUpdatedAt;
   const isSuggestedCandidate = existingEntry.isSuggested;
+  const isConflictedCandidate = existingEntry.isConflicted;
 
   const isAllowedValueType =
     valueCandidate === null ||
@@ -93,6 +95,8 @@ function parseExistingMetadataEntry(
     lastUpdatedAt: lastUpdatedAtCandidate,
     isSuggested:
       typeof isSuggestedCandidate === "boolean" ? isSuggestedCandidate : false,
+    isConflicted:
+      typeof isConflictedCandidate === "boolean" ? isConflictedCandidate : false,
   };
 }
 
@@ -105,6 +109,7 @@ function buildDefaultMetadataEntry(
     confidence: 0,
     lastUpdatedAt: normalizedAtIsoString,
     isSuggested: false,
+    isConflicted: false,
   };
 }
 
@@ -155,10 +160,23 @@ export function buildNormalizedLeadFieldMetadata(
           incomingConfidence,
         })
       ) {
-        normalizedLeadFieldMetadata[normalizedLeadFieldKey] =
-          existingMetadataEntry as NormalizedLeadFieldMetadataEntry;
+        normalizedLeadFieldMetadata[normalizedLeadFieldKey] = {
+          ...(existingMetadataEntry as NormalizedLeadFieldMetadataEntry),
+          isConflicted: Boolean(
+            existingMetadataEntry?.value !== (nextValue ?? null) &&
+              existingMetadataEntry?.value !== null &&
+              nextValue !== null,
+          ),
+        };
         continue;
       }
+
+      const hasConflictingValue = Boolean(
+        existingMetadataEntry &&
+          existingMetadataEntry.value !== null &&
+          nextValue !== null &&
+          existingMetadataEntry.value !== nextValue,
+      );
 
       normalizedLeadFieldMetadata[normalizedLeadFieldKey] = {
         value: nextValue ?? null,
@@ -166,6 +184,7 @@ export function buildNormalizedLeadFieldMetadata(
         confidence: incomingConfidence,
         lastUpdatedAt: normalizedAtIsoString,
         isSuggested: shouldTreatFieldConfidenceAsSuggested(incomingConfidence),
+        isConflicted: hasConflictingValue,
       };
       continue;
     }
@@ -175,4 +194,21 @@ export function buildNormalizedLeadFieldMetadata(
   }
 
   return normalizedLeadFieldMetadata;
+}
+
+export function extractConflictedNormalizedLeadFieldKeys(
+  metadata: unknown,
+): NormalizedLeadFieldKey[] {
+  if (!isObjectRecord(metadata)) {
+    return [];
+  }
+
+  return normalizedLeadFieldKeys.filter((normalizedLeadFieldKey) => {
+    const metadataEntry = parseExistingMetadataEntry(
+      normalizedLeadFieldKey,
+      metadata,
+    );
+
+    return metadataEntry?.isConflicted === true;
+  });
 }

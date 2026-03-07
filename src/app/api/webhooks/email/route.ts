@@ -4,10 +4,34 @@ import {
   normalizeInboundEmailPayload,
   processNormalizedInboundLead,
 } from "@/lib/lead-normalization";
+import { verifyIncomingWebhookSignature } from "@/lib/webhook-signature";
 
 export async function POST(request: Request) {
   const url = new URL(request.url);
-  const body = await request.json().catch(() => ({}));
+  const rawBody = await request.text();
+  const body = (() => {
+    try {
+      return JSON.parse(rawBody || "{}");
+    } catch {
+      return {};
+    }
+  })();
+  const isSignatureValid = verifyIncomingWebhookSignature({
+    rawBody,
+    providedSignature: request.headers.get("x-roomflow-signature"),
+    signingSecret: process.env.INBOUND_WEBHOOK_SIGNING_SECRET,
+  });
+
+  if (!isSignatureValid) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Invalid webhook signature.",
+      },
+      { status: 401 },
+    );
+  }
+
   const workspaceId =
     url.searchParams.get("workspaceId") ?? body.workspaceId ?? null;
   const propertyId =

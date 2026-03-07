@@ -111,3 +111,12 @@ test("normalizeInboundWebFormPayload keeps explicit international numbers in E.1
   assert.equal(normalizedPayload.phone, "+442079460018");
   assert.equal(normalizedPayload.channel, MessageChannel.SMS);
 });
+
+test("resolveInboundOptOutDirective recognizes stop and start directives", async () => {
+  const { resolveInboundOptOutDirective } = await getLeadNormalizationModule();
+
+  assert.equal(resolveInboundOptOutDirective("STOP"), "opt_out");
+  assert.equal(resolveInboundOptOutDirective("unsubscribe"), "opt_out");
+  assert.equal(resolveInboundOptOutDirective("START"), "opt_in");
+  assert.equal(resolveInboundOptOutDirective("hello there"), null);
+});

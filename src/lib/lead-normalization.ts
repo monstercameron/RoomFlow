@@ -6,17 +6,24 @@ import {
   MessageChannel,
   MessageDirection,
   MessageOrigin,
+  NotificationType,
   type Prisma,
   QualificationFit,
+  WebhookDeliveryStatus,
 } from "@/generated/prisma/client";
 import { serializeDeliveryStatus } from "@/lib/delivery-status";
 import {
   classifyDuplicateHandlingOutcome,
   chooseBestDuplicateCandidate,
 } from "@/lib/lead-duplicate-matching";
+import { shouldRecomputeFitForTrigger } from "@/lib/lead-rule-engine";
 import { buildLeadNormalizationDiff } from "@/lib/lead-normalization-diff";
-import { buildNormalizedLeadFieldMetadata } from "@/lib/lead-field-metadata";
+import {
+  buildNormalizedLeadFieldMetadata,
+  extractConflictedNormalizedLeadFieldKeys,
+} from "@/lib/lead-field-metadata";
 import { prisma } from "@/lib/prisma";
+import { workflowEventTypes } from "@/lib/workflow-events";
 
 const normalizedLeadPayloadSchema = z.object({
   workspaceId: z.string().min(1),
@@ -96,6 +103,35 @@ function normalizeEmail(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? null;
 }
 
+function extractMetadataFieldValue(
+  metadata: unknown,
+  fieldKey: string,
+): string | number | boolean | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+
+  const metadataRecord = metadata as Record<string, unknown>;
+  const metadataEntry = metadataRecord[fieldKey];
+
+  if (!metadataEntry || typeof metadataEntry !== "object" || Array.isArray(metadataEntry)) {
+    return null;
+  }
+
+  const value = (metadataEntry as Record<string, unknown>).value;
+
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  return null;
+}
+
 function getPreferredContactChannel(channel: MessageChannel) {
   switch (channel) {
     case MessageChannel.SMS:
@@ -156,6 +192,20 @@ function getNormalizationEventLabel(params: {
   }
 
   return "Inbound lead normalized";
+}
+
+export function resolveInboundOptOutDirective(messageBody: string) {
+  const normalizedMessageBody = messageBody.trim().toLowerCase();
+
+  if (["stop", "unsubscribe", "opt out", "cancel"].includes(normalizedMessageBody)) {
+    return "opt_out";
+  }
+
+  if (["start", "unstop", "subscribe"].includes(normalizedMessageBody)) {
+    return "opt_in";
+  }
+
+  return null;
 }
 
 export function normalizeInboundEmailPayload(input: unknown) {
@@ -527,6 +577,7 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
         }),
       },
     }));
+  const createdNewLeadRecord = !existingLead;
 
   const resolvedLeadFullName =
     baseLead.fullName === "Unknown lead" ? payload.fullName : baseLead.fullName;
@@ -557,6 +608,18 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
       workStatus: baseLead.workStatus ? 0.9 : 0,
     },
   });
+  const optOutDirective = resolveInboundOptOutDirective(payload.body);
+  const conflictedFieldKeys = extractConflictedNormalizedLeadFieldKeys(
+    mergedLeadFieldMetadata,
+  );
+  const conflictHistoryEntries = conflictedFieldKeys.map((conflictedFieldKey) => ({
+    fieldKey: conflictedFieldKey,
+    previousValue: extractMetadataFieldValue(baseLead.fieldMetadata, conflictedFieldKey),
+    incomingValue: extractMetadataFieldValue(
+      mergedLeadFieldMetadata,
+      conflictedFieldKey,
+    ),
+  }));
 
   await prisma.lead.update({
     where: {
@@ -570,9 +633,56 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
       phone: resolvedLeadPhoneNumber,
       preferredContactChannel: resolvedPreferredContactChannel,
       lastActivityAt: payload.receivedAt,
+      optOutAt:
+        optOutDirective === "opt_out"
+          ? payload.receivedAt
+          : optOutDirective === "opt_in"
+            ? null
+            : baseLead.optOutAt,
+      optOutReason:
+        optOutDirective === "opt_out"
+          ? "Inbound STOP/UNSUBSCRIBE signal"
+          : optOutDirective === "opt_in"
+            ? null
+            : baseLead.optOutReason,
       fieldMetadata: mergedLeadFieldMetadata,
     },
   });
+
+  if (conflictedFieldKeys.length > 0) {
+    const leadForConflictTransition = await prisma.lead.findUnique({
+      where: {
+        id: baseLead.id,
+      },
+      select: {
+        status: true,
+      },
+    });
+
+    if (
+      leadForConflictTransition &&
+      leadForConflictTransition.status !== LeadStatus.UNDER_REVIEW
+    ) {
+      await prisma.lead.update({
+        where: {
+          id: baseLead.id,
+        },
+        data: {
+          status: LeadStatus.UNDER_REVIEW,
+          fitResult: QualificationFit.UNKNOWN,
+        },
+      });
+
+      await prisma.leadStatusHistory.create({
+        data: {
+          leadId: baseLead.id,
+          fromStatus: leadForConflictTransition.status,
+          toStatus: LeadStatus.UNDER_REVIEW,
+          reason: "Conflicting answer values detected during normalization.",
+        },
+      });
+    }
+  }
 
   const normalizationDiffEntries = buildLeadNormalizationDiff({
     beforeLead: {
@@ -604,6 +714,76 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
       conversation: true,
     },
   });
+
+  if (
+    normalizationDiffEntries.length > 0 &&
+    conflictedFieldKeys.length === 0 &&
+    shouldRecomputeFitForTrigger("answer_changed")
+  ) {
+    try {
+      const { applyLeadEvaluation } = await import("./lead-workflow");
+      await applyLeadEvaluation({
+        workspaceId: payload.workspaceId,
+        leadId: lead.id,
+        actorUserId: "system-normalization",
+      });
+    } catch {
+      await prisma.auditEvent.create({
+        data: {
+          workspaceId: payload.workspaceId,
+          leadId: lead.id,
+          propertyId: property?.id ?? lead.propertyId,
+          eventType: "fit_recompute_failed_after_normalization",
+          payload: {
+            triggerType: "answer_changed",
+          },
+        },
+      });
+    }
+  }
+
+  if (createdNewLeadRecord) {
+    await prisma.auditEvent.create({
+      data: {
+        workspaceId: payload.workspaceId,
+        leadId: lead.id,
+        propertyId: property?.id ?? lead.propertyId,
+        eventType: workflowEventTypes.leadCreated,
+        payload: {
+          sourceType: payload.leadSourceType,
+          sourceName: payload.leadSourceName,
+        },
+      },
+    });
+
+    await prisma.notificationEvent.create({
+      data: {
+        workspaceId: payload.workspaceId,
+        leadId: lead.id,
+        type: NotificationType.NEW_LEAD,
+        title: "New lead created",
+        body: `${lead.fullName} was added from ${payload.leadSourceName}.`,
+      },
+    });
+
+    if (process.env.ROOMFLOW_OUTBOUND_WEBHOOK_URL) {
+      await prisma.outboundWebhookDelivery.create({
+        data: {
+          workspaceId: payload.workspaceId,
+          leadId: lead.id,
+          eventType: "lead.created",
+          destinationUrl: process.env.ROOMFLOW_OUTBOUND_WEBHOOK_URL,
+          payload: {
+            leadId: lead.id,
+            workspaceId: payload.workspaceId,
+            sourceType: payload.leadSourceType,
+          },
+          status: WebhookDeliveryStatus.PENDING,
+          nextAttemptAt: new Date(),
+        },
+      });
+    }
+  }
 
   if (lead.contact) {
     await prisma.contact.update({
@@ -723,6 +903,22 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
     });
   }
 
+  if (conflictedFieldKeys.length > 0) {
+    await prisma.auditEvent.create({
+      data: {
+        workspaceId: payload.workspaceId,
+        leadId: lead.id,
+        propertyId: property?.id ?? lead.propertyId,
+        eventType: "lead_conflict_detected",
+        payload: {
+          conflictedFieldKeys,
+          conflictHistoryEntries,
+          fitRecomputeTriggered: true,
+        },
+      },
+    });
+  }
+
   await prisma.auditEvent.create({
     data: {
       workspaceId: payload.workspaceId,
@@ -758,6 +954,36 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
       },
     },
   });
+
+  if (optOutDirective === "opt_out") {
+    await prisma.auditEvent.create({
+      data: {
+        workspaceId: payload.workspaceId,
+        leadId: lead.id,
+        propertyId: property?.id ?? lead.propertyId,
+        eventType: "lead_opted_out",
+        payload: {
+          channel: payload.channel,
+          messageId: message.id,
+        },
+      },
+    });
+  }
+
+  if (optOutDirective === "opt_in") {
+    await prisma.auditEvent.create({
+      data: {
+        workspaceId: payload.workspaceId,
+        leadId: lead.id,
+        propertyId: property?.id ?? lead.propertyId,
+        eventType: "lead_opted_in",
+        payload: {
+          channel: payload.channel,
+          messageId: message.id,
+        },
+      },
+    });
+  }
 
   return {
     leadId: lead.id,

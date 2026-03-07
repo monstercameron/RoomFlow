@@ -29,6 +29,7 @@ import {
 } from "@/lib/lead-duplicate-review";
 import { getLeadActionPermissionsForMembershipRole } from "@/lib/membership-role-permissions";
 import { prisma } from "@/lib/prisma";
+import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
 import { getServerSession } from "@/lib/session";
 import { ensureWorkspaceForUser } from "@/lib/workspaces";
 
@@ -373,7 +374,11 @@ export const getDashboardViewData = cache(async () => {
       workspaceId: membership.workspaceId,
     },
     select: {
+      id: true,
+      createdAt: true,
       status: true,
+      fitResult: true,
+      declineReason: true,
       leadSource: {
         select: {
           name: true,
@@ -381,6 +386,43 @@ export const getDashboardViewData = cache(async () => {
       },
     },
   });
+  const [statusHistory, kpiAuditEvents, latestUsageSnapshot] = await Promise.all([
+    prisma.leadStatusHistory.findMany({
+      where: {
+        lead: {
+          workspaceId: membership.workspaceId,
+        },
+      },
+      select: {
+        leadId: true,
+        fromStatus: true,
+        toStatus: true,
+        createdAt: true,
+      },
+    }),
+    prisma.auditEvent.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+      select: {
+        leadId: true,
+        eventType: true,
+        createdAt: true,
+      },
+      take: 500,
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+    prisma.workspaceUsageSnapshot.findFirst({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+      orderBy: {
+        snapshotDate: "desc",
+      },
+    }),
+  ]);
 
   const newLeadDelta = newToday - newYesterday;
   const statusCounts = new Map<LeadStatus, number>();
@@ -398,6 +440,18 @@ export const getDashboardViewData = cache(async () => {
 
     sourceCounts.set(sourceName, (sourceCounts.get(sourceName) ?? 0) + 1);
   }
+
+  const derivedWorkflowKpis = deriveWorkflowKpis({
+    leads: summaryLeads.map((lead) => ({
+      id: lead.id,
+      createdAt: lead.createdAt,
+      leadSourceName: lead.leadSource?.name ?? null,
+      fitResult: lead.fitResult,
+      declineReason: lead.declineReason,
+    })),
+    statusHistory,
+    auditEvents: kpiAuditEvents,
+  });
 
   if (unattributedSourceLeadCount > 0) {
     console.warn(
@@ -466,6 +520,17 @@ export const getDashboardViewData = cache(async () => {
       "Lead detail reads answers, messages, and history from Postgres",
       "Templates and property rules are workspace-scoped records",
     ],
+    kpiHighlights: [
+      `Avg first response: ${Math.round(derivedWorkflowKpis.averageTimeToFirstResponseMinutes)} min`,
+      `Qualification completion: ${Math.round(derivedWorkflowKpis.qualificationCompletionRate)}%`,
+      `Inquiry->tour: ${Math.round(derivedWorkflowKpis.inquiryToTourConversionRate)}%`,
+      `Inquiry->application: ${Math.round(derivedWorkflowKpis.inquiryToApplicationConversionRate)}%`,
+    ],
+    planWarnings:
+      latestUsageSnapshot &&
+      latestUsageSnapshot.activeProperties > 10
+        ? ["Property count is above the soft starter-plan threshold (10)."]
+        : [],
     seedWindowLabel: `Demo data compares today (${formatDate(startToday)}) against yesterday (${formatDate(startYesterday)}).`,
   };
 });
@@ -506,7 +571,9 @@ export const getLeadListViewData = cache(async () => {
     moveInDate: formatDate(lead.moveInDate),
     budget: formatCurrency(lead.monthlyBudget),
     status: formatStatusLabel(lead.status),
+    statusValue: lead.status,
     fit: formatFitLabel(lead.fitResult),
+    fitValue: lead.fitResult,
     lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt),
   }));
 });
@@ -615,6 +682,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       },
     }),
     status: formatStatusLabel(lead.status),
+    statusValue: lead.status,
     contactMethod: preferredContact
       ? formatEnumLabel(preferredContact)
       : "Not set",
@@ -625,6 +693,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     notes: lead.notes ?? "No operator notes yet.",
     schedulingUrl: lead.property?.schedulingUrl ?? null,
     fit: formatFitLabel(lead.fitResult),
+    fitValue: lead.fitResult,
     evaluationSummary: evaluation.summary,
     evaluationIssues: evaluation.issues.map((issue) => ({
       label: issue.label,
@@ -649,14 +718,17 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       sendApplication:
         workflowActionAvailability.sendApplication &&
         roleActionPermissions.sendApplication,
+      manualOutbound: roleActionPermissions.requestInfo,
       assignProperty: roleActionPermissions.assignProperty,
+      overrideFit: roleActionPermissions.overrideFit,
+      declineLead: roleActionPermissions.declineLead,
       confirmDuplicate:
         Boolean(possibleDuplicateCandidate) && roleActionPermissions.archiveLead,
     },
   };
 });
 
-export const getInboxViewData = cache(async () => {
+export const getInboxViewData = cache(async (queueFilter?: string) => {
   const membership = await getCurrentWorkspaceMembership();
   const threads = await prisma.lead.findMany({
     where: {
@@ -700,13 +772,18 @@ export const getInboxViewData = cache(async () => {
       auditEvents: {
         where: {
           eventType: {
-            in: ["Missing information requested", "missing information requested"],
+            in: [
+              "Missing information requested",
+              "missing information requested",
+              "possible_duplicate_flagged",
+              "lead_conflict_detected",
+            ],
           },
         },
         orderBy: {
           createdAt: "desc",
         },
-        take: 3,
+        take: 8,
         select: {
           eventType: true,
           createdAt: true,
@@ -753,7 +830,7 @@ export const getInboxViewData = cache(async () => {
   const missingInfoPromptThrottleWindowMinutes =
     getMissingInfoPromptThrottleWindowMinutes();
 
-  return threads.map((lead) => ({
+  const mappedThreads = threads.map((lead) => ({
     ...(() => {
       const qualificationAutomationGateResult = resolveQualificationAutomationGate({
         leadPropertyId: lead.propertyId,
@@ -799,6 +876,25 @@ export const getInboxViewData = cache(async () => {
           !qualificationCompleted &&
           !missingInfoPromptIsThrottled &&
           roleActionPermissions.requestInfo,
+        isReviewQueueItem:
+          lead.fitResult === QualificationFit.CAUTION ||
+          lead.fitResult === QualificationFit.MISMATCH ||
+          lead.status === LeadStatus.UNDER_REVIEW ||
+          lead.auditEvents.some(
+            (auditEvent) =>
+              auditEvent.eventType === "possible_duplicate_flagged" ||
+              auditEvent.eventType === "lead_conflict_detected",
+          ),
+        reviewFlags: {
+          caution: lead.fitResult === QualificationFit.CAUTION,
+          mismatch: lead.fitResult === QualificationFit.MISMATCH,
+          duplicate: lead.auditEvents.some(
+            (auditEvent) => auditEvent.eventType === "possible_duplicate_flagged",
+          ),
+          conflict: lead.auditEvents.some(
+            (auditEvent) => auditEvent.eventType === "lead_conflict_detected",
+          ),
+        },
       };
     })(),
     id: lead.id,
@@ -816,6 +912,32 @@ export const getInboxViewData = cache(async () => {
     needsAssignment: !lead.propertyId && roleActionPermissions.assignProperty,
     availableProperties: properties,
   }));
+
+  if (!queueFilter || queueFilter === "all") {
+    return mappedThreads;
+  }
+
+  if (queueFilter === "review") {
+    return mappedThreads.filter((thread) => thread.isReviewQueueItem);
+  }
+
+  if (queueFilter === "duplicate") {
+    return mappedThreads.filter((thread) => thread.reviewFlags.duplicate);
+  }
+
+  if (queueFilter === "caution") {
+    return mappedThreads.filter((thread) => thread.reviewFlags.caution);
+  }
+
+  if (queueFilter === "mismatch") {
+    return mappedThreads.filter((thread) => thread.reviewFlags.mismatch);
+  }
+
+  if (queueFilter === "conflict") {
+    return mappedThreads.filter((thread) => thread.reviewFlags.conflict);
+  }
+
+  return mappedThreads;
 });
 
 export const getPropertyQuestionsViewData = cache(async (propertyId: string) => {
@@ -956,6 +1078,7 @@ export const getPropertyRulesViewData = cache(async (propertyId: string) => {
     rules: property.rules.map((rule) => ({
       id: rule.id,
       label: rule.label,
+      active: rule.active,
       category: rule.category ?? "General",
       description: rule.description ?? "No description provided.",
       mode: formatRuleMode(rule),

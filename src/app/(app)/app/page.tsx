@@ -91,6 +91,41 @@ export default async function DashboardPage() {
           </div>
         </section>
       </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-lg font-semibold">Event-derived KPI highlights</div>
+          <div className="mt-4 space-y-3">
+            {dashboard.kpiHighlights.map((kpiHighlight) => (
+              <div
+                key={kpiHighlight}
+                className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm"
+              >
+                {kpiHighlight}
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-lg font-semibold">Plan warnings</div>
+          <div className="mt-4 space-y-3">
+            {dashboard.planWarnings.length === 0 ? (
+              <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm">
+                No soft-plan warnings right now.
+              </div>
+            ) : (
+              dashboard.planWarnings.map((planWarning) => (
+                <div
+                  key={planWarning}
+                  className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm"
+                >
+                  {planWarning}
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

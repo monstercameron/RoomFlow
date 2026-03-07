@@ -8,7 +8,18 @@ export type LeadWorkflowErrorCode =
   | "ACTION_REQUIRES_CONTACT_CHANNEL"
   | "SCHEDULING_LINK_REQUIRED"
   | "MISSING_INFO_PROMPT_THROTTLED"
+  | "ACTION_BLOCKED_INACTIVE_LEAD"
+  | "ACTION_BLOCKED_OPT_OUT"
+  | "ACTION_BLOCKED_CHANNEL_INVALID"
+  | "ACTION_BLOCKED_DAILY_SEND_CAP"
+  | "ACTION_BLOCKED_DUPLICATE_TEMPLATE"
+  | "TEMPLATE_UNRESOLVED_TOKENS"
   | "ACTION_REQUIRES_QUALIFIED_LEAD"
+  | "OVERRIDE_REASON_REQUIRED"
+  | "OVERRIDE_STATUS_REQUIRED"
+  | "OVERRIDE_FIT_REQUIRED"
+  | "DECLINE_REASON_REQUIRED"
+  | "DECLINE_REASON_INVALID"
   | "ACTION_FORBIDDEN_BY_ROLE"
   | "DUPLICATE_CANDIDATE_REQUIRED"
   | "DUPLICATE_CANDIDATE_INVALID"
@@ -37,8 +48,28 @@ const userFacingMessageByWorkflowErrorCode: Record<
     "Add a scheduling link to the property before sending a tour handoff.",
   MISSING_INFO_PROMPT_THROTTLED:
     "A missing-info prompt was sent recently. Wait for the throttle window before sending another.",
+  ACTION_BLOCKED_INACTIVE_LEAD:
+    "This lead is not active for automated actions.",
+  ACTION_BLOCKED_OPT_OUT:
+    "This lead opted out of automated messaging.",
+  ACTION_BLOCKED_CHANNEL_INVALID:
+    "No valid outbound channel is available for this action.",
+  ACTION_BLOCKED_DAILY_SEND_CAP:
+    "This lead has reached today's automated send cap.",
+  ACTION_BLOCKED_DUPLICATE_TEMPLATE:
+    "A similar automated message was already sent recently.",
+  TEMPLATE_UNRESOLVED_TOKENS:
+    "Template rendering failed because some variables are unresolved.",
   ACTION_REQUIRES_QUALIFIED_LEAD:
     "Only qualified leads can receive this scheduling handoff.",
+  OVERRIDE_REASON_REQUIRED:
+    "A reason is required before applying a manual override.",
+  OVERRIDE_STATUS_REQUIRED:
+    "Select an override status before submitting.",
+  OVERRIDE_FIT_REQUIRED:
+    "Select an override fit result before submitting.",
+  DECLINE_REASON_REQUIRED: "Select a structured decline reason before declining.",
+  DECLINE_REASON_INVALID: "The selected decline reason is invalid.",
   ACTION_FORBIDDEN_BY_ROLE:
     "Your role does not allow this lead action.",
   DUPLICATE_CANDIDATE_REQUIRED:

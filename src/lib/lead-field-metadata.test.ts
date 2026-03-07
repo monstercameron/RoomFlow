@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildNormalizedLeadFieldMetadata,
+  extractConflictedNormalizedLeadFieldKeys,
   normalizedLeadFieldKeys,
 } from "./lead-field-metadata";
 
@@ -13,6 +14,7 @@ type MetadataRecord = Record<
     confidence: number;
     lastUpdatedAt: string;
     isSuggested: boolean;
+    isConflicted: boolean;
   }
 >;
 
@@ -44,6 +46,7 @@ test("buildNormalizedLeadFieldMetadata defines the full normalized field schema"
       "2026-03-07T12:00:00.000Z",
     );
     assert.equal(typeof metadata[fieldKey].isSuggested, "boolean");
+    assert.equal(typeof metadata[fieldKey].isConflicted, "boolean");
   }
 
   assert.equal(metadata.fullName.value, "Avery Mason");
@@ -64,6 +67,8 @@ test("buildNormalizedLeadFieldMetadata preserves existing values when no new val
         source: "manual_operator_update",
         confidence: 0.95,
         lastUpdatedAt: "2026-03-06T11:00:00.000Z",
+        isSuggested: false,
+        isConflicted: false,
       },
     },
     normalizedAt,
@@ -81,6 +86,7 @@ test("buildNormalizedLeadFieldMetadata preserves existing values when no new val
   assert.equal(metadata.workStatus.confidence, 0.95);
   assert.equal(metadata.workStatus.lastUpdatedAt, "2026-03-06T11:00:00.000Z");
   assert.equal(metadata.workStatus.isSuggested, false);
+  assert.equal(metadata.workStatus.isConflicted, false);
 });
 
 test("buildNormalizedLeadFieldMetadata does not overwrite existing high-confidence values with lower-confidence input", () => {
@@ -92,6 +98,7 @@ test("buildNormalizedLeadFieldMetadata does not overwrite existing high-confiden
         confidence: 0.98,
         lastUpdatedAt: "2026-03-06T11:00:00.000Z",
         isSuggested: false,
+        isConflicted: false,
       },
     },
     normalizedAt: new Date("2026-03-07T14:00:00.000Z"),
@@ -109,4 +116,28 @@ test("buildNormalizedLeadFieldMetadata does not overwrite existing high-confiden
   assert.equal(metadata.fullName.confidence, 0.98);
   assert.equal(metadata.fullName.lastUpdatedAt, "2026-03-06T11:00:00.000Z");
   assert.equal(metadata.fullName.isSuggested, false);
+  assert.equal(metadata.fullName.isConflicted, true);
+});
+
+test("extractConflictedNormalizedLeadFieldKeys returns fields marked as conflicted", () => {
+  const conflictedFieldKeys = extractConflictedNormalizedLeadFieldKeys({
+    fullName: {
+      value: "Jordan",
+      source: "Inbound email",
+      confidence: 0.9,
+      lastUpdatedAt: "2026-03-07T12:00:00.000Z",
+      isSuggested: false,
+      isConflicted: true,
+    },
+    email: {
+      value: "jordan@example.com",
+      source: "Inbound email",
+      confidence: 0.99,
+      lastUpdatedAt: "2026-03-07T12:00:00.000Z",
+      isSuggested: false,
+      isConflicted: false,
+    },
+  });
+
+  assert.deepEqual(conflictedFieldKeys, ["fullName"]);
 });

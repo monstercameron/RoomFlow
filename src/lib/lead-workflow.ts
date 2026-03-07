@@ -1,16 +1,25 @@
+import { createHmac } from "node:crypto";
 import {
+  AuditActorType,
   ContactChannel,
   LeadStatus,
   MessageChannel,
   MessageDirection,
   MessageOrigin,
+  NotificationType,
   type Prisma,
   QualificationFit,
   RuleSeverity,
   TemplateType,
+  TourEventStatus,
+  WebhookDeliveryStatus,
 } from "@/generated/prisma/client";
 import { serializeDeliveryStatus } from "@/lib/delivery-status";
-import { enqueueOutboundMessageSend } from "@/lib/jobs";
+import {
+  enqueueOutboundMessageSend,
+  enqueueOutboundWebhookDelivery,
+  scheduleReminderSend,
+} from "@/lib/jobs";
 import { buildLeadStatusTransitionAuditPayload } from "@/lib/lead-status-transition-audit";
 import { LeadWorkflowError } from "@/lib/lead-workflow-errors";
 import {
@@ -24,6 +33,12 @@ import {
   type QualificationAutomationBlockingReason,
 } from "@/lib/lead-qualification-guard";
 import {
+  evaluateLeadRules,
+  type LeadRuleEvaluationResult,
+  resolveRuleCategoryFromLabel,
+  resolveRuleMode,
+} from "@/lib/lead-rule-engine";
+import {
   assertLeadStatusTransitionIsAllowed,
   resolveLeadStatusAfterEvaluation,
 } from "@/lib/lead-status-machine";
@@ -33,7 +48,13 @@ import {
   markMessageProviderUnresolved,
   sendQueuedMessage,
 } from "@/lib/message-delivery";
+import { sendOwnerAdminNotificationEmail } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
+import {
+  dedupeNearSimultaneousTimelineEvents,
+  sortTimelineEventsDeterministically,
+  workflowEventTypes,
+} from "@/lib/workflow-events";
 
 type WorkflowLead = Awaited<ReturnType<typeof getLeadWorkflowContext>>;
 type TemplateRenderLeadContext = {
@@ -64,6 +85,7 @@ type EvaluationResult = {
   recommendedStatus: LeadStatus;
   summary: string;
   issues: EvaluationIssue[];
+  ruleEvaluation?: LeadRuleEvaluationResult;
 };
 
 export type WorkflowActionName =
@@ -76,6 +98,11 @@ const schedulableLeadStatuses = new Set<LeadStatus>([
   LeadStatus.QUALIFIED,
   LeadStatus.TOUR_SCHEDULED,
 ]);
+
+const defaultChannelPriorityOrder: MessageChannel[] = [
+  MessageChannel.SMS,
+  MessageChannel.EMAIL,
+];
 
 function getMissingInfoPromptThrottleWindowMinutes() {
   const configuredThrottleWindowMinutes = Number(
@@ -110,6 +137,7 @@ function resolveOutboundMessageChannelForAction(params: {
   templateChannel: MessageChannel | null | undefined;
   lead: NonNullable<WorkflowLead>;
   manualOnlyModeEnabled: boolean;
+  channelPriorityOrder: MessageChannel[];
 }) {
   if (params.templateChannel) {
     return params.templateChannel;
@@ -134,12 +162,17 @@ function resolveOutboundMessageChannelForAction(params: {
     return MessageChannel.EMAIL;
   }
 
-  if (hasDeliverableEmailChannel) {
-    return MessageChannel.EMAIL;
-  }
+  for (const prioritizedMessageChannel of params.channelPriorityOrder) {
+    if (prioritizedMessageChannel === MessageChannel.SMS && hasDeliverableSmsChannel) {
+      return MessageChannel.SMS;
+    }
 
-  if (hasDeliverableSmsChannel) {
-    return MessageChannel.SMS;
+    if (
+      prioritizedMessageChannel === MessageChannel.EMAIL &&
+      hasDeliverableEmailChannel
+    ) {
+      return MessageChannel.EMAIL;
+    }
   }
 
   if (params.manualOnlyModeEnabled) {
@@ -149,6 +182,62 @@ function resolveOutboundMessageChannelForAction(params: {
   return params.action === "request_info"
     ? MessageChannel.SMS
     : MessageChannel.EMAIL;
+}
+
+function resolveChannelPriorityOrder(channelPriorityValue: unknown) {
+  if (!Array.isArray(channelPriorityValue)) {
+    return defaultChannelPriorityOrder;
+  }
+
+  const parsedPriorityOrder = channelPriorityValue
+    .map((channelPriorityEntry) =>
+      typeof channelPriorityEntry === "string"
+        ? channelPriorityEntry.toUpperCase()
+        : "",
+    )
+    .filter(
+      (channelPriorityEntry) =>
+        channelPriorityEntry === MessageChannel.SMS ||
+        channelPriorityEntry === MessageChannel.EMAIL,
+    ) as MessageChannel[];
+
+  return parsedPriorityOrder.length > 0
+    ? parsedPriorityOrder
+    : defaultChannelPriorityOrder;
+}
+
+function isLeadActiveForAutomation(leadStatus: LeadStatus) {
+  return (
+    leadStatus !== LeadStatus.DECLINED &&
+    leadStatus !== LeadStatus.ARCHIVED &&
+    leadStatus !== LeadStatus.CLOSED
+  );
+}
+
+function isChannelDeliverableForLead(params: {
+  outboundMessageChannel: MessageChannel;
+  lead: NonNullable<WorkflowLead>;
+}) {
+  const resolvedContactEmailAddress = params.lead.contact?.email ?? params.lead.email;
+  const resolvedContactPhoneNumber = params.lead.contact?.phone ?? params.lead.phone;
+
+  if (params.outboundMessageChannel === MessageChannel.EMAIL) {
+    return Boolean(resolvedContactEmailAddress);
+  }
+
+  if (params.outboundMessageChannel === MessageChannel.SMS) {
+    return Boolean(resolvedContactPhoneNumber);
+  }
+
+  return true;
+}
+
+function isSameUtcDay(leftDate: Date, rightDate: Date) {
+  return (
+    leftDate.getUTCFullYear() === rightDate.getUTCFullYear() &&
+    leftDate.getUTCMonth() === rightDate.getUTCMonth() &&
+    leftDate.getUTCDate() === rightDate.getUTCDate()
+  );
 }
 
 function normalizeText(value: string | null | undefined) {
@@ -177,100 +266,6 @@ function stringifyAnswerValue(value: unknown): string {
   }
 
   return "";
-}
-
-function isAffirmative(value: string) {
-  const normalized = normalizeText(value);
-  return ["yes", "y", "true", "smoker", "allowed", "need", "needs"].some(
-    (token) => normalized === token || normalized.includes(token),
-  );
-}
-
-function isNegative(value: string) {
-  const normalized = normalizeText(value);
-  return ["no", "n", "false", "none", "not needed", "not okay"].some(
-    (token) => normalized === token || normalized.includes(token),
-  );
-}
-
-function hasPets(value: string) {
-  const normalized = normalizeText(value);
-
-  if (!normalized) {
-    return false;
-  }
-
-  if (
-    ["no", "none", "no pets", "n/a", "na"].includes(normalized) ||
-    normalized.includes("no pet")
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function needsParking(value: string) {
-  const normalized = normalizeText(value);
-
-  if (!normalized) {
-    return false;
-  }
-
-  if (
-    ["no", "none", "no parking needed", "street only is fine"].includes(
-      normalized,
-    ) ||
-    normalized.includes("street only")
-  ) {
-    return false;
-  }
-
-  return normalized.includes("parking") || isAffirmative(normalized);
-}
-
-function acceptsSharedBathroom(value: string) {
-  const normalized = normalizeText(value);
-
-  if (!normalized) {
-    return null;
-  }
-
-  if (
-    isAffirmative(normalized) ||
-    normalized.includes("okay") ||
-    normalized.includes("shared bathroom is fine")
-  ) {
-    return true;
-  }
-
-  if (isNegative(normalized) || normalized.includes("not okay")) {
-    return false;
-  }
-
-  return null;
-}
-
-function acknowledgesQuietHours(value: string) {
-  const normalized = normalizeText(value);
-
-  if (!normalized) {
-    return null;
-  }
-
-  if (
-    isAffirmative(normalized) ||
-    normalized.includes("understand") ||
-    normalized.includes("acknowledge")
-  ) {
-    return true;
-  }
-
-  if (isNegative(normalized)) {
-    return false;
-  }
-
-  return null;
 }
 
 function formatDisplayDate(value: Date | null) {
@@ -362,10 +357,6 @@ function buildAnswerIndex(
   return answers;
 }
 
-function getRequiredRule(lead: NonNullable<WorkflowLead>, pattern: RegExp) {
-  return lead.property?.rules.find((rule) => pattern.test(rule.label.toLowerCase())) ?? null;
-}
-
 function resolveMissingRequiredQuestionsForLead(lead: NonNullable<WorkflowLead>) {
   if (!lead.property) {
     return [];
@@ -380,15 +371,6 @@ function resolveMissingRequiredQuestionsForLead(lead: NonNullable<WorkflowLead>)
   });
 }
 
-function pushIssue(
-  issues: EvaluationIssue[],
-  issue: EvaluationIssue | null,
-) {
-  if (issue) {
-    issues.push(issue);
-  }
-}
-
 export async function getLeadWorkflowContext(workspaceId: string, leadId: string) {
   return prisma.lead.findFirst({
     where: {
@@ -400,10 +382,21 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
         select: {
           id: true,
           name: true,
+          channelPriority: true,
+          dailyAutomatedSendCap: true,
+          webhookSigningSecret: true,
         },
       },
       property: {
-        include: {
+        select: {
+          id: true,
+          name: true,
+          smokingAllowed: true,
+          petsAllowed: true,
+          parkingAvailable: true,
+          schedulingUrl: true,
+          channelPriority: true,
+          schedulingEnabled: true,
           rules: {
             orderBy: {
               createdAt: "asc",
@@ -473,7 +466,6 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
 
 export function evaluateLeadQualification(lead: NonNullable<WorkflowLead>): EvaluationResult {
   const issues: EvaluationIssue[] = [];
-  const answers = buildAnswerIndex(lead);
 
   if (!lead.property) {
     return {
@@ -491,6 +483,7 @@ export function evaluateLeadQualification(lead: NonNullable<WorkflowLead>): Eval
     };
   }
 
+  const answers = buildAnswerIndex(lead);
   const hasAtLeastOnePropertyQuestion =
     lead.property.questionSets.flatMap((questionSet) => questionSet.questions).length > 0;
 
@@ -515,7 +508,7 @@ export function evaluateLeadQualification(lead: NonNullable<WorkflowLead>): Eval
   const missingRequiredQuestions = resolveMissingRequiredQuestionsForLead(lead);
 
   for (const missingRequiredQuestion of missingRequiredQuestions) {
-    pushIssue(issues, {
+    issues.push({
       label: missingRequiredQuestion.label,
       detail: "Required qualification answer is still missing.",
       severity: "required",
@@ -523,183 +516,7 @@ export function evaluateLeadQualification(lead: NonNullable<WorkflowLead>): Eval
     });
   }
 
-  const smokingAnswer = answers.get("smoking");
-  const petsAnswer = answers.get("pets");
-  const parkingAnswer =
-    answers.get("parking_need") ?? answers.get("parking need");
-  const bathroomAnswer =
-    answers.get("shared_bathroom_acceptance") ??
-    answers.get("shared bathroom acceptance");
-  const quietHoursAnswer =
-    answers.get("quiet_hours") ?? answers.get("quiet hours acknowledgment");
-
-  const smokingRule = getRequiredRule(lead, /smoking/);
-  const petRule = getRequiredRule(lead, /pet/);
-  const bathroomRule = getRequiredRule(lead, /bathroom/);
-  const quietHoursRule = getRequiredRule(lead, /quiet hours/);
-  const minimumStayRule = getRequiredRule(lead, /minimum stay/);
-
-  pushIssue(
-    issues,
-    smokingRule
-      ? !smokingAnswer
-        ? {
-            label: smokingRule.label,
-            detail: "Smoking answer is still missing.",
-            severity: toSeverityLabel(smokingRule.severity),
-            outcome: "unknown",
-          }
-        : isAffirmative(smokingAnswer) && !lead.property.smokingAllowed
-          ? {
-              label: smokingRule.label,
-              detail: "Lead indicated smoking for a non-smoking property.",
-              severity: toSeverityLabel(smokingRule.severity),
-              outcome: smokingRule.autoDecline ? "mismatch" : "caution",
-            }
-          : {
-              label: smokingRule.label,
-              detail: "Lead confirmed the no-smoking requirement.",
-              severity: toSeverityLabel(smokingRule.severity),
-              outcome: "pass",
-            }
-      : null,
-  );
-
-  pushIssue(
-    issues,
-    petRule
-      ? !petsAnswer
-        ? {
-            label: petRule.label,
-            detail: "Pet information is still missing.",
-            severity: toSeverityLabel(petRule.severity),
-            outcome: "unknown",
-          }
-        : hasPets(petsAnswer) && !lead.property.petsAllowed
-          ? {
-              label: petRule.label,
-              detail: "Lead reported a pet for a pet-free property.",
-              severity: toSeverityLabel(petRule.severity),
-              outcome: petRule.autoDecline ? "mismatch" : "caution",
-            }
-          : {
-              label: petRule.label,
-              detail: "Lead matches the current pet policy.",
-              severity: toSeverityLabel(petRule.severity),
-              outcome: "pass",
-            }
-      : null,
-  );
-
-  pushIssue(
-    issues,
-    bathroomRule
-      ? !bathroomAnswer
-        ? {
-            label: bathroomRule.label,
-            detail: "Bathroom-sharing answer is still missing.",
-            severity: toSeverityLabel(bathroomRule.severity),
-            outcome: "unknown",
-          }
-        : acceptsSharedBathroom(bathroomAnswer) === false
-          ? {
-              label: bathroomRule.label,
-              detail: "Lead is not comfortable with the shared bathroom setup.",
-              severity: toSeverityLabel(bathroomRule.severity),
-              outcome: bathroomRule.severity === RuleSeverity.REQUIRED
-                ? "mismatch"
-                : "caution",
-            }
-          : {
-              label: bathroomRule.label,
-              detail: "Lead is okay with the shared bathroom setup.",
-              severity: toSeverityLabel(bathroomRule.severity),
-              outcome: acceptsSharedBathroom(bathroomAnswer) === null ? "unknown" : "pass",
-            }
-      : null,
-  );
-
-  pushIssue(
-    issues,
-    quietHoursRule
-      ? !quietHoursAnswer
-        ? {
-            label: quietHoursRule.label,
-            detail: "Quiet-hours acknowledgment is still missing.",
-            severity: toSeverityLabel(quietHoursRule.severity),
-            outcome: "unknown",
-          }
-        : acknowledgesQuietHours(quietHoursAnswer) === false
-          ? {
-              label: quietHoursRule.label,
-              detail: "Lead pushed back on quiet-hours expectations.",
-              severity: toSeverityLabel(quietHoursRule.severity),
-              outcome: "caution",
-            }
-          : {
-              label: quietHoursRule.label,
-              detail: "Lead acknowledged quiet-hours expectations.",
-              severity: toSeverityLabel(quietHoursRule.severity),
-              outcome: acknowledgesQuietHours(quietHoursAnswer) === null ? "unknown" : "pass",
-            }
-      : null,
-  );
-
-  pushIssue(
-    issues,
-    minimumStayRule
-      ? lead.stayLengthMonths === null
-        ? {
-            label: minimumStayRule.label,
-            detail: "Stay length is still missing.",
-            severity: toSeverityLabel(minimumStayRule.severity),
-            outcome: "unknown",
-          }
-        : lead.stayLengthMonths < 6
-          ? {
-              label: minimumStayRule.label,
-              detail: "Requested stay length is shorter than the preferred floor.",
-              severity: toSeverityLabel(minimumStayRule.severity),
-              outcome: minimumStayRule.severity === RuleSeverity.REQUIRED
-                ? "mismatch"
-                : "caution",
-            }
-          : {
-              label: minimumStayRule.label,
-              detail: "Stay length meets the preferred floor.",
-              severity: toSeverityLabel(minimumStayRule.severity),
-              outcome: "pass",
-            }
-      : null,
-  );
-
-  if (!lead.property.parkingAvailable && parkingAnswer) {
-    pushIssue(issues, {
-      label: "Parking availability",
-      detail: needsParking(parkingAnswer)
-        ? "Lead asked for parking but the property does not include it."
-        : "Lead does not require on-site parking.",
-      severity: "warning",
-      outcome: needsParking(parkingAnswer) ? "caution" : "pass",
-    });
-  }
-
-  const hasMismatch = issues.some((issue) => issue.outcome === "mismatch");
-  const hasUnknownRequired = issues.some(
-    (issue) => issue.outcome === "unknown" && issue.severity === "required",
-  );
-  const hasCaution = issues.some((issue) => issue.outcome === "caution");
-
-  if (hasMismatch) {
-    return {
-      fitResult: QualificationFit.MISMATCH,
-      recommendedStatus: LeadStatus.UNDER_REVIEW,
-      summary: "Lead misses one or more required property rules and needs review.",
-      issues,
-    };
-  }
-
-  if (hasUnknownRequired) {
+  if (missingRequiredQuestions.length > 0) {
     return {
       fitResult: QualificationFit.UNKNOWN,
       recommendedStatus: LeadStatus.INCOMPLETE,
@@ -708,12 +525,65 @@ export function evaluateLeadQualification(lead: NonNullable<WorkflowLead>): Eval
     };
   }
 
-  if (hasCaution) {
+  const ruleEvaluation = evaluateLeadRules({
+    rules: lead.property.rules.map((propertyRule) => ({
+      id: propertyRule.id,
+      label: propertyRule.label,
+      ruleCategory: resolveRuleCategoryFromLabel(
+        propertyRule.ruleCategory,
+        propertyRule.category ?? propertyRule.label,
+      ),
+      mode: resolveRuleMode({
+        explicitMode: propertyRule.mode,
+        severity: propertyRule.severity,
+        warningOnly: propertyRule.warningOnly,
+        autoDecline: propertyRule.autoDecline,
+      }),
+      severity: propertyRule.severity,
+      warningOnly: propertyRule.warningOnly,
+      autoDecline: propertyRule.autoDecline,
+      active: propertyRule.active,
+    })),
+    answersByFieldKey: answers,
+    propertyDefaults: {
+      smokingAllowed: lead.property.smokingAllowed,
+      petsAllowed: lead.property.petsAllowed,
+      parkingAvailable: lead.property.parkingAvailable,
+      minimumStayMonths: 6,
+    },
+  });
+
+  for (const ruleIssue of ruleEvaluation.issues) {
+    issues.push({
+      label: ruleIssue.ruleLabel,
+      detail: ruleIssue.explanation,
+      severity: toSeverityLabel(ruleIssue.severity),
+      outcome:
+        ruleIssue.triggered && ruleIssue.blocking
+          ? "mismatch"
+          : ruleIssue.triggered
+            ? "caution"
+            : "pass",
+    });
+  }
+
+  if (ruleEvaluation.fitResult === QualificationFit.MISMATCH) {
+    return {
+      fitResult: QualificationFit.MISMATCH,
+      recommendedStatus: LeadStatus.UNDER_REVIEW,
+      summary: "Lead misses one or more blocking property rules and needs review.",
+      issues,
+      ruleEvaluation,
+    };
+  }
+
+  if (ruleEvaluation.fitResult === QualificationFit.CAUTION) {
     return {
       fitResult: QualificationFit.CAUTION,
       recommendedStatus: LeadStatus.UNDER_REVIEW,
       summary: "Lead looks workable, but there are caution items to review.",
       issues,
+      ruleEvaluation,
     };
   }
 
@@ -722,6 +592,7 @@ export function evaluateLeadQualification(lead: NonNullable<WorkflowLead>): Eval
     recommendedStatus: LeadStatus.QUALIFIED,
     summary: "Lead currently matches the configured property rules.",
     issues,
+    ruleEvaluation,
   };
 }
 
@@ -776,12 +647,46 @@ export function renderTemplateForLead(
 
   const replaceTokens = (value: string | null) =>
     (value ?? "").replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, key) => {
-      return tokens.get(key) ?? "";
+      if (tokens.has(key)) {
+        return tokens.get(key) ?? "";
+      }
+
+      return `{{${key}}}`;
     });
 
   return {
     subject: replaceTokens(template.subject),
     body: replaceTokens(template.body),
+  };
+}
+
+function extractTemplateTokens(value: string) {
+  const tokens = new Set<string>();
+  const tokenRegex = /\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g;
+  let match: RegExpExecArray | null = tokenRegex.exec(value);
+
+  while (match) {
+    tokens.add(match[1]);
+    match = tokenRegex.exec(value);
+  }
+
+  return [...tokens];
+}
+
+export function renderTemplateForLeadSafely(
+  template: { subject: string | null; body: string; type: TemplateType },
+  lead: TemplateRenderLeadContext,
+) {
+  const rendered = renderTemplateForLead(template, lead);
+  const unresolvedSubjectTokens = extractTemplateTokens(rendered.subject);
+  const unresolvedBodyTokens = extractTemplateTokens(rendered.body);
+  const unresolvedTokens = [
+    ...new Set([...unresolvedSubjectTokens, ...unresolvedBodyTokens]),
+  ];
+
+  return {
+    ...rendered,
+    unresolvedTokens,
   };
 }
 
@@ -807,9 +712,83 @@ async function appendAuditEvent(params: {
       leadId: params.leadId,
       propertyId: params.propertyId,
       actorUserId: params.actorUserId,
+      actorType: params.actorUserId ? AuditActorType.USER : AuditActorType.SYSTEM,
       eventType: params.eventType,
       payload: params.payload,
     },
+  });
+}
+
+async function appendNotificationEvent(params: {
+  workspaceId: string;
+  leadId: string | null;
+  type: NotificationType;
+  title: string;
+  body: string;
+  payload?: Prisma.InputJsonValue;
+}) {
+  await prisma.notificationEvent.create({
+    data: {
+      workspaceId: params.workspaceId,
+      leadId: params.leadId,
+      type: params.type,
+      title: params.title,
+      body: params.body,
+      payload: params.payload,
+    },
+  });
+
+  try {
+    await sendOwnerAdminNotificationEmail({
+      workspaceId: params.workspaceId,
+      subject: `[Roomflow] ${params.title}`,
+      body: params.body,
+    });
+  } catch {
+    // Email notifications are best-effort and should not block workflow actions.
+  }
+}
+
+async function queueOutboundWorkflowWebhook(params: {
+  workspaceId: string;
+  leadId: string;
+  eventType: string;
+  payload: Prisma.InputJsonValue;
+  signingSecret: string | null | undefined;
+}) {
+  const destinationUrl = process.env.ROOMFLOW_OUTBOUND_WEBHOOK_URL;
+
+  if (!destinationUrl) {
+    return;
+  }
+
+  const payloadString = JSON.stringify(params.payload);
+  const signature = params.signingSecret
+    ? createHmac("sha256", params.signingSecret).update(payloadString).digest("hex")
+    : null;
+
+  await prisma.outboundWebhookDelivery.create({
+    data: {
+      workspaceId: params.workspaceId,
+      leadId: params.leadId,
+      eventType: params.eventType,
+      destinationUrl,
+      signature,
+      payload: params.payload,
+      status: WebhookDeliveryStatus.PENDING,
+      nextAttemptAt: new Date(),
+    },
+    select: {
+      id: true,
+    },
+  }).then(async (createdWebhookDelivery) => {
+    try {
+      await enqueueOutboundWebhookDelivery({
+        outboundWebhookDeliveryId: createdWebhookDelivery.id,
+      });
+    } catch {
+      // Worker enqueue is best effort; the row is still persisted for retry jobs.
+    }
   });
 }
 
@@ -850,7 +829,7 @@ async function transitionLeadStatus(params: {
     leadId: params.lead.id,
     propertyId: params.propertyId,
     actorUserId: params.actorUserId,
-    eventType: "lead.status_changed",
+    eventType: workflowEventTypes.statusChanged,
     payload: buildLeadStatusTransitionAuditPayload({
       actorUserId: params.actorUserId,
       fromStatus: params.lead.status,
@@ -924,14 +903,110 @@ export async function applyLeadEvaluation(params: {
     leadId: lead.id,
     propertyId: lead.propertyId,
     actorUserId: params.actorUserId,
-    eventType: `Lead re-evaluated: ${formatEnumLabel(evaluation.fitResult)}`,
+    eventType: workflowEventTypes.fitComputed,
     payload: {
       summary: evaluation.summary,
+      previousStatus: lead.status,
+      nextStatus,
+      previousFitResult: lead.fitResult,
+      nextFitResult: evaluation.fitResult,
       recommendedStatus: evaluation.recommendedStatus,
       missingRequiredQuestionCount: missingRequiredQuestions.length,
       qualificationCompleted: qualificationCompletedAfterRouting,
+      ruleEvaluation: evaluation.ruleEvaluation
+        ? {
+            triggeredRuleIds: evaluation.ruleEvaluation.triggeredRuleIds,
+            blockingRuleIds: evaluation.ruleEvaluation.blockingRuleIds,
+            warningRuleIds: evaluation.ruleEvaluation.warningRuleIds,
+            issues: evaluation.ruleEvaluation.issues.map((ruleIssue) => ({
+              ruleId: ruleIssue.ruleId,
+              category: ruleIssue.category,
+              mode: ruleIssue.mode,
+              severity: ruleIssue.severity,
+              explanation: ruleIssue.explanation,
+              triggered: ruleIssue.triggered,
+            })),
+          }
+        : null,
     },
   });
+
+  if ((evaluation.ruleEvaluation?.warningRuleIds.length ?? 0) > 0) {
+    await appendAuditEvent({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      propertyId: lead.propertyId,
+      actorUserId: params.actorUserId,
+      eventType: workflowEventTypes.warningTriggered,
+      payload: {
+        warningRuleIds: evaluation.ruleEvaluation?.warningRuleIds ?? [],
+      },
+    });
+  }
+
+  if ((evaluation.ruleEvaluation?.blockingRuleIds.length ?? 0) > 0) {
+    await appendAuditEvent({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      propertyId: lead.propertyId,
+      actorUserId: params.actorUserId,
+      eventType: workflowEventTypes.mismatchTriggered,
+      payload: {
+        blockingRuleIds: evaluation.ruleEvaluation?.blockingRuleIds ?? [],
+      },
+    });
+  }
+
+  if (evaluation.fitResult === QualificationFit.CAUTION) {
+    await appendNotificationEvent({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      type: NotificationType.CAUTION_REVIEW,
+      title: "Lead requires caution review",
+      body: `${lead.fullName} triggered caution rules and is routed to review.`,
+      payload: {
+        leadId: lead.id,
+      },
+    });
+  }
+
+  if (evaluation.fitResult === QualificationFit.MISMATCH) {
+    await appendNotificationEvent({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      type: NotificationType.MISMATCH_REVIEW,
+      title: "Lead mismatch detected",
+      body: `${lead.fullName} triggered blocking mismatch conditions.`,
+      payload: {
+        leadId: lead.id,
+      },
+    });
+
+    await queueOutboundWorkflowWebhook({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      eventType: "lead.declined",
+      signingSecret: lead.workspace.webhookSigningSecret,
+      payload: {
+        leadId: lead.id,
+        workspaceId: params.workspaceId,
+        fitResult: evaluation.fitResult,
+      },
+    });
+  }
+
+  if (nextStatus === LeadStatus.QUALIFIED) {
+    await queueOutboundWorkflowWebhook({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      eventType: "lead.qualified",
+      signingSecret: lead.workspace.webhookSigningSecret,
+      payload: {
+        leadId: lead.id,
+        workspaceId: params.workspaceId,
+      },
+    });
+  }
 
   return {
     leadId: lead.id,
@@ -969,6 +1044,20 @@ export async function performLeadWorkflowAction(params: {
     manualOnlyModeEnabled,
   });
   const missingRequiredQuestions = resolveMissingRequiredQuestionsForLead(lead);
+  const invalidAnswerIssues = evaluation.issues.filter((evaluationIssue) =>
+    evaluationIssue.detail.toLowerCase().includes("could not be parsed"),
+  );
+  const outboundMessageChannelPriorityOrder = resolveChannelPriorityOrder(
+    lead.property?.channelPriority ?? lead.workspace.channelPriority,
+  );
+  const outboundMessageChannel = resolveOutboundMessageChannelForAction({
+    action: params.action,
+    templateChannel: null,
+    lead,
+    manualOnlyModeEnabled,
+    channelPriorityOrder: outboundMessageChannelPriorityOrder,
+  });
+  const now = new Date();
 
   if (
     (params.action === "schedule_tour" || params.action === "send_application") &&
@@ -1030,6 +1119,43 @@ export async function performLeadWorkflowAction(params: {
     }
   }
 
+  if (!isLeadActiveForAutomation(lead.status)) {
+    throw new LeadWorkflowError(
+      "ACTION_BLOCKED_INACTIVE_LEAD",
+      `Lead status ${lead.status} is not active for automation.`,
+    );
+  }
+
+  if (lead.optOutAt) {
+    throw new LeadWorkflowError(
+      "ACTION_BLOCKED_OPT_OUT",
+      "Lead has opted out and cannot receive automated outbound messages.",
+    );
+  }
+
+  if (
+    !isChannelDeliverableForLead({
+      outboundMessageChannel,
+      lead,
+    })
+  ) {
+    throw new LeadWorkflowError(
+      "ACTION_BLOCKED_CHANNEL_INVALID",
+      `Lead is missing required contact information for ${outboundMessageChannel}.`,
+    );
+  }
+
+  if (
+    lead.automatedSendCountDate &&
+    isSameUtcDay(lead.automatedSendCountDate, now) &&
+    lead.automatedSendCount >= lead.workspace.dailyAutomatedSendCap
+  ) {
+    throw new LeadWorkflowError(
+      "ACTION_BLOCKED_DAILY_SEND_CAP",
+      `Daily automated send cap (${lead.workspace.dailyAutomatedSendCap}) is reached for this lead.`,
+    );
+  }
+
   if (params.action === "schedule_tour") {
     if (!lead.property) {
       throw new LeadWorkflowError(
@@ -1038,10 +1164,10 @@ export async function performLeadWorkflowAction(params: {
       );
     }
 
-    if (!lead.property.schedulingUrl) {
+    if (!lead.property.schedulingEnabled || !lead.property.schedulingUrl) {
       throw new LeadWorkflowError(
         "SCHEDULING_LINK_REQUIRED",
-        "The assigned property is missing a scheduling link.",
+        "The assigned property is missing an enabled scheduling link.",
       );
     }
 
@@ -1060,17 +1186,20 @@ export async function performLeadWorkflowAction(params: {
   switch (params.action) {
     case "request_info":
       nextStatus = LeadStatus.AWAITING_RESPONSE;
-      eventType = "Missing information requested";
-      reason = "Requested the remaining qualification details.";
+      eventType = workflowEventTypes.qualificationQuestionSent;
+      reason =
+        invalidAnswerIssues.length > 0
+          ? "Requested clarification for invalid or ambiguous answers."
+          : "Requested the remaining qualification details.";
       break;
     case "schedule_tour":
       nextStatus = LeadStatus.TOUR_SCHEDULED;
-      eventType = "Scheduling handoff sent";
+      eventType = workflowEventTypes.tourScheduled;
       reason = "Sent the tour scheduling handoff.";
       break;
     case "send_application":
       nextStatus = LeadStatus.APPLICATION_SENT;
-      eventType = "Application invite sent";
+      eventType = workflowEventTypes.applicationSent;
       reason = "Sent the application invite.";
       break;
   }
@@ -1096,18 +1225,80 @@ export async function performLeadWorkflowAction(params: {
       })
     : null;
 
-  const rendered = renderTemplateForLead(
+  const finalOutboundMessageChannel = resolveOutboundMessageChannelForAction({
+    action: params.action,
+    templateChannel: template?.channel,
+    lead,
+    manualOnlyModeEnabled,
+    channelPriorityOrder: outboundMessageChannelPriorityOrder,
+  });
+
+  if (
+    !isChannelDeliverableForLead({
+      outboundMessageChannel: finalOutboundMessageChannel,
+      lead,
+    })
+  ) {
+    throw new LeadWorkflowError(
+      "ACTION_BLOCKED_CHANNEL_INVALID",
+      `Lead is missing required contact information for ${finalOutboundMessageChannel}.`,
+    );
+  }
+
+  const rendered = renderTemplateForLeadSafely(
     template ?? {
       ...getTemplateFallback(actionTemplateType ?? TemplateType.REMINDER, lead),
       type: actionTemplateType ?? TemplateType.REMINDER,
     },
     lead,
   );
+
+  if (rendered.unresolvedTokens.length > 0) {
+    await appendAuditEvent({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      propertyId: lead.propertyId,
+      actorUserId: params.actorUserId,
+      eventType: workflowEventTypes.templateRenderFailed,
+      payload: {
+        templateType: actionTemplateType,
+        unresolvedTokens: rendered.unresolvedTokens,
+      },
+    });
+    throw new LeadWorkflowError(
+      "TEMPLATE_UNRESOLVED_TOKENS",
+      `Template rendering failed because unresolved tokens remain: ${rendered.unresolvedTokens.join(", ")}`,
+    );
+  }
+
   const schedulingUrl = lead.property?.schedulingUrl ?? null;
   const body =
     params.action === "schedule_tour" && schedulingUrl
       ? ensureSchedulingLinkInBody(rendered.body, schedulingUrl)
       : rendered.body;
+  const stateSignature = `${params.action}|${lead.status}|${evaluation.fitResult}|${missingRequiredQuestions.length}`;
+
+  if (
+    lead.conversation?.messages.some((message) => {
+      if (
+        message.direction !== MessageDirection.OUTBOUND ||
+        message.origin !== MessageOrigin.OUTBOUND_AUTOMATED
+      ) {
+        return false;
+      }
+
+      if (message.stateSignature !== stateSignature) {
+        return false;
+      }
+
+      return now.getTime() - message.createdAt.getTime() < 24 * 60 * 60 * 1000;
+    })
+  ) {
+    throw new LeadWorkflowError(
+      "ACTION_BLOCKED_DUPLICATE_TEMPLATE",
+      "An equivalent automated template was already sent recently without a meaningful state change.",
+    );
+  }
 
   const conversation = lead.conversation
     ? lead.conversation
@@ -1124,17 +1315,19 @@ export async function performLeadWorkflowAction(params: {
       templateId: template?.id,
       direction: MessageDirection.OUTBOUND,
       origin: MessageOrigin.OUTBOUND_AUTOMATED,
-      channel: resolveOutboundMessageChannelForAction({
-        action: params.action,
-        templateChannel: template?.channel,
-        lead,
-        manualOnlyModeEnabled,
-      }),
+      channel: finalOutboundMessageChannel,
       subject: rendered.subject || null,
       body,
+      stateSignature,
+      renderedSnapshot: {
+        templateType: actionTemplateType,
+        subject: rendered.subject,
+        body,
+        unresolvedTokens: rendered.unresolvedTokens,
+      },
       deliveryStatus: serializeDeliveryStatus({
         state: "queued",
-        provider: template?.channel ?? null,
+        provider: finalOutboundMessageChannel,
       }),
     },
   });
@@ -1179,7 +1372,19 @@ export async function performLeadWorkflowAction(params: {
     data: {
       status: nextStatus,
       fitResult: evaluation.fitResult,
-      lastActivityAt: new Date(),
+      lastActivityAt: now,
+      applicationInviteSentAt:
+        params.action === "send_application" ? now : lead.applicationInviteSentAt,
+      applicationInviteChannel:
+        params.action === "send_application"
+          ? finalOutboundMessageChannel
+          : lead.applicationInviteChannel,
+      automatedSendCountDate: now,
+      automatedSendCount:
+        lead.automatedSendCountDate &&
+        isSameUtcDay(lead.automatedSendCountDate, now)
+          ? lead.automatedSendCount + 1
+          : 1,
     },
   });
 
@@ -1209,10 +1414,105 @@ export async function performLeadWorkflowAction(params: {
       fitResult: evaluation.fitResult,
       missingRequiredQuestionCount: missingRequiredQuestions.length,
       qualificationCompleted: qualificationCompletedAfterAction,
+      renderedMessageSnapshot: {
+        subject: rendered.subject,
+        body,
+      },
       schedulingUrl:
         params.action === "schedule_tour" ? schedulingUrl : null,
     },
   });
+
+  if (params.action === "request_info" && invalidAnswerIssues.length > 0) {
+    await appendAuditEvent({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      propertyId: lead.propertyId,
+      actorUserId: params.actorUserId,
+      eventType: workflowEventTypes.qualificationAnswerInvalid,
+      payload: {
+        invalidQuestions: invalidAnswerIssues.map((invalidIssue) => invalidIssue.label),
+        clarificationPrompt:
+          "Some answers were unclear. Please reply with a clear value for the highlighted fields.",
+      },
+    });
+  }
+
+  await appendAuditEvent({
+    workspaceId: params.workspaceId,
+    leadId: lead.id,
+    propertyId: lead.propertyId,
+    actorUserId: params.actorUserId,
+    eventType: workflowEventTypes.outboundMessageQueued,
+    payload: {
+      messageId: message.id,
+      channel: finalOutboundMessageChannel,
+      stateSignature,
+      templateType: actionTemplateType,
+    },
+  });
+
+  if (params.action === "schedule_tour") {
+    await prisma.tourEvent.create({
+      data: {
+        workspaceId: params.workspaceId,
+        leadId: lead.id,
+        propertyId: lead.propertyId,
+        status: TourEventStatus.SCHEDULED,
+        scheduledAt: now,
+      },
+    });
+
+    await appendNotificationEvent({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      type: NotificationType.TOUR_SCHEDULED,
+      title: "Tour scheduled",
+      body: `${lead.fullName} has been moved to tour scheduled.`,
+      payload: {
+        leadId: lead.id,
+      },
+    });
+
+    await queueOutboundWorkflowWebhook({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      eventType: "tour.scheduled",
+      signingSecret: lead.workspace.webhookSigningSecret,
+      payload: {
+        leadId: lead.id,
+        workspaceId: params.workspaceId,
+        scheduledAt: now.toISOString(),
+      },
+    });
+  }
+
+  if (params.action === "send_application") {
+    try {
+      await scheduleReminderSend(
+        {
+          leadId: lead.id,
+          templateType: TemplateType.REMINDER,
+        },
+        Number(process.env.APPLICATION_INVITE_REMINDER_SECONDS ?? "172800"),
+      );
+    } catch {
+      // Reminder enqueue is best-effort and should not block the action.
+    }
+
+    await queueOutboundWorkflowWebhook({
+      workspaceId: params.workspaceId,
+      leadId: lead.id,
+      eventType: "application.sent",
+      signingSecret: lead.workspace.webhookSigningSecret,
+      payload: {
+        leadId: lead.id,
+        workspaceId: params.workspaceId,
+        sentAt: now.toISOString(),
+        channel: finalOutboundMessageChannel,
+      },
+    });
+  }
 
   return {
     leadId: lead.id,
@@ -1220,8 +1520,12 @@ export async function performLeadWorkflowAction(params: {
 }
 
 export function buildLeadTimeline(lead: NonNullable<WorkflowLead>) {
-  const items = [
+  const timelineEvents = [
     ...lead.statusHistory.map((entry) => ({
+      id: entry.id,
+      leadId: lead.id,
+      eventType: workflowEventTypes.statusChanged,
+      createdAt: entry.createdAt,
       at: formatRelativeTime(entry.createdAt),
       date: entry.createdAt,
       event: `Status changed to ${formatEnumLabel(entry.toStatus)}${
@@ -1229,18 +1533,33 @@ export function buildLeadTimeline(lead: NonNullable<WorkflowLead>) {
       }`,
     })),
     ...lead.auditEvents.map((event) => ({
+      id: event.id,
+      leadId: lead.id,
+      eventType: event.eventType,
+      createdAt: event.createdAt,
       at: formatRelativeTime(event.createdAt),
       date: event.createdAt,
       event: event.eventType,
     })),
     ...(lead.conversation?.messages.map((message) => ({
+      id: message.id,
+      leadId: lead.id,
+      eventType: "message_event",
+      createdAt: message.sentAt ?? message.receivedAt ?? message.createdAt,
       at: formatRelativeTime(message.sentAt ?? message.receivedAt ?? message.createdAt),
       date: message.sentAt ?? message.receivedAt ?? message.createdAt,
       event: `${formatEnumLabel(message.direction)} ${formatEnumLabel(message.channel)} message`,
     })) ?? []),
   ];
 
-  return items.sort((left, right) => left.date.getTime() - right.date.getTime());
+  const dedupedEvents = dedupeNearSimultaneousTimelineEvents(timelineEvents);
+  const orderedEvents = sortTimelineEventsDeterministically(dedupedEvents);
+
+  return orderedEvents.map(({ at, date, event }) => ({
+    at,
+    date,
+    event,
+  }));
 }
 
 export function getLeadActionAvailability(
@@ -1280,6 +1599,30 @@ export function getLeadActionAvailability(
     lead.status === LeadStatus.DECLINED ||
     lead.status === LeadStatus.ARCHIVED ||
     lead.status === LeadStatus.CLOSED;
+  const currentTime = new Date();
+  const channelPriorityOrder = resolveChannelPriorityOrder(
+    lead.property?.channelPriority ?? lead.workspace.channelPriority,
+  );
+  const defaultOutboundChannel = resolveOutboundMessageChannelForAction({
+    action: "request_info",
+    templateChannel: null,
+    lead,
+    manualOnlyModeEnabled,
+    channelPriorityOrder,
+  });
+  const hasDeliverableDefaultOutboundChannel = isChannelDeliverableForLead({
+    outboundMessageChannel: defaultOutboundChannel,
+    lead,
+  });
+  const dailySendCapReached =
+    lead.automatedSendCountDate &&
+    isSameUtcDay(lead.automatedSendCountDate, currentTime) &&
+    lead.automatedSendCount >= lead.workspace.dailyAutomatedSendCap;
+  const blockedByOptOut = Boolean(lead.optOutAt);
+  const canAutomateOutbound =
+    !blockedByOptOut &&
+    !dailySendCapReached &&
+    hasDeliverableDefaultOutboundChannel;
 
   return {
     evaluateFit: true,
@@ -1287,20 +1630,24 @@ export function getLeadActionAvailability(
       qualificationAutomationGateResult.canRunAutomation &&
       !leadStatusIsInactive &&
       !qualificationCompleted &&
-      !missingInfoPromptIsThrottled,
+      !missingInfoPromptIsThrottled &&
+      canAutomateOutbound,
     scheduleTour:
       qualificationAutomationGateResult.canRunAutomation &&
       !leadStatusIsInactive &&
       Boolean(lead.property?.schedulingUrl) &&
+      Boolean(lead.property?.schedulingEnabled) &&
       evaluation.fitResult !== QualificationFit.MISMATCH &&
       evaluation.recommendedStatus !== LeadStatus.INCOMPLETE &&
       schedulableLeadStatuses.has(lead.status) &&
-      lead.status !== LeadStatus.APPLICATION_SENT,
+      lead.status !== LeadStatus.APPLICATION_SENT &&
+      canAutomateOutbound,
     sendApplication:
       qualificationAutomationGateResult.canRunAutomation &&
       !leadStatusIsInactive &&
       evaluation.fitResult !== QualificationFit.MISMATCH &&
       evaluation.recommendedStatus !== LeadStatus.INCOMPLETE &&
-      lead.status !== LeadStatus.APPLICATION_SENT,
+      lead.status !== LeadStatus.APPLICATION_SENT &&
+      canAutomateOutbound,
   };
 }

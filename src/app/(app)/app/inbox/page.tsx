@@ -7,18 +7,24 @@ import {
 } from "@/lib/lead-workflow-errors";
 import {
   assignLeadPropertyAction,
+  declineLeadAction,
+  evaluateLeadAction,
   requestInfoAction,
+  scheduleTourAction,
+  sendApplicationAction,
 } from "@/lib/lead-actions";
 
 type InboxPageProps = {
   searchParams: Promise<{
     workflowError?: string;
+    queue?: string;
   }>;
 };
 
 export default async function InboxPage({ searchParams }: InboxPageProps) {
-  const threads = await getInboxViewData();
   const resolvedSearchParams = await searchParams;
+  const queueFilter = resolvedSearchParams.queue ?? "all";
+  const threads = await getInboxViewData(queueFilter);
   const workflowErrorCode = parseLeadWorkflowErrorCode(
     resolvedSearchParams.workflowError,
   );
@@ -38,6 +44,28 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
           {workflowErrorMessage}
         </div>
       ) : null}
+      <div className="mb-5 flex flex-wrap gap-2 text-sm">
+        {[
+          { key: "all", label: "All threads" },
+          { key: "review", label: "Review queue" },
+          { key: "duplicate", label: "Duplicate" },
+          { key: "caution", label: "Caution" },
+          { key: "mismatch", label: "Mismatch" },
+          { key: "conflict", label: "Conflict" },
+        ].map((queueOption) => (
+          <Link
+            key={queueOption.key}
+            href={`/app/inbox?queue=${queueOption.key}`}
+            className={`rounded-full border px-3 py-1 ${
+              queueFilter === queueOption.key
+                ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-white"
+                : "border-[var(--color-line)] bg-[var(--color-panel)]"
+            }`}
+          >
+            {queueOption.label}
+          </Link>
+        ))}
+      </div>
 
       <div className="space-y-4">
         {threads.map((thread) => (
@@ -64,6 +92,30 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                 <div className="mt-2 text-sm text-[var(--color-muted)]">
                   {thread.source} | {thread.property} | {thread.lastActivity}
                 </div>
+                {thread.isReviewQueueItem ? (
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
+                    {thread.reviewFlags.duplicate ? (
+                      <span className="rounded-full border border-[var(--color-line)] px-2 py-1">
+                        duplicate
+                      </span>
+                    ) : null}
+                    {thread.reviewFlags.caution ? (
+                      <span className="rounded-full border border-[var(--color-line)] px-2 py-1">
+                        caution
+                      </span>
+                    ) : null}
+                    {thread.reviewFlags.mismatch ? (
+                      <span className="rounded-full border border-[var(--color-line)] px-2 py-1">
+                        mismatch
+                      </span>
+                    ) : null}
+                    {thread.reviewFlags.conflict ? (
+                      <span className="rounded-full border border-[var(--color-line)] px-2 py-1">
+                        conflict
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
                   <div className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
                     {thread.latestMessageDirection}
@@ -73,6 +125,15 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
               </div>
 
               <div className="flex min-w-72 flex-col gap-3">
+                <form action={evaluateLeadAction.bind(null, thread.id)}>
+                  <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
+                  <button
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
+                    type="submit"
+                  >
+                    Re-evaluate fit
+                  </button>
+                </form>
                 <form action={requestInfoAction.bind(null, thread.id)}>
                   <button
                     className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
@@ -80,6 +141,33 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                     type="submit"
                   >
                     Request missing info
+                  </button>
+                </form>
+                <form action={scheduleTourAction.bind(null, thread.id)}>
+                  <button
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
+                    type="submit"
+                  >
+                    Schedule tour
+                  </button>
+                </form>
+                <form action={sendApplicationAction.bind(null, thread.id)}>
+                  <button
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
+                    type="submit"
+                  >
+                    Send application
+                  </button>
+                </form>
+                <form action={declineLeadAction.bind(null, thread.id)}>
+                  <input type="hidden" name="declineReason" value="OPERATOR_DECISION" />
+                  <input type="hidden" name="declineNote" value="Declined from review queue." />
+                  <input type="hidden" name="redirectTo" value="/app/inbox?queue=review" />
+                  <button
+                    className="w-full rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm font-medium"
+                    type="submit"
+                  >
+                    Decline
                   </button>
                 </form>
 

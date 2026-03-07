@@ -13,6 +13,9 @@ import {
   sendApplicationAction,
   assignLeadPropertyAction,
   confirmDuplicateLeadAction,
+  declineLeadAction,
+  overrideLeadRoutingAction,
+  sendManualOutboundMessageAction,
 } from "@/lib/lead-actions";
 
 type LeadDetailPageProps = {
@@ -217,6 +220,197 @@ export default async function LeadDetailPage({
                 </button>
               </form>
             ) : null}
+
+            {lead.actions.overrideFit ? (
+              <form
+                action={overrideLeadRoutingAction.bind(null, lead.id)}
+                className="mt-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+              >
+                <div className="text-sm font-semibold">Manual override</div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                      Status
+                    </span>
+                    <select
+                      className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      name="overrideStatus"
+                      defaultValue={lead.statusValue}
+                      required
+                    >
+                      {[
+                        "NEW",
+                        "AWAITING_RESPONSE",
+                        "INCOMPLETE",
+                        "UNDER_REVIEW",
+                        "CAUTION",
+                        "QUALIFIED",
+                        "TOUR_SCHEDULED",
+                        "APPLICATION_SENT",
+                        "DECLINED",
+                        "ARCHIVED",
+                        "CLOSED",
+                      ].map((statusOption) => (
+                        <option key={statusOption} value={statusOption}>
+                          {statusOption.replaceAll("_", " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-2">
+                    <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                      Fit
+                    </span>
+                    <select
+                      className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      name="overrideFit"
+                      defaultValue={lead.fitValue}
+                      required
+                    >
+                      {["UNKNOWN", "PASS", "CAUTION", "MISMATCH"].map((fitOption) => (
+                        <option key={fitOption} value={fitOption}>
+                          {fitOption}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="mt-3 block space-y-2">
+                  <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                    Reason
+                  </span>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    name="overrideReason"
+                    placeholder="Explain why this override is needed."
+                    required
+                    type="text"
+                  />
+                </label>
+                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <button
+                  className="mt-3 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium"
+                  type="submit"
+                >
+                  Apply override
+                </button>
+              </form>
+            ) : null}
+
+            {lead.actions.declineLead ? (
+              <form
+                action={declineLeadAction.bind(null, lead.id)}
+                className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] p-4"
+              >
+                <div className="text-sm font-semibold">Decline lead</div>
+                <label className="mt-3 block space-y-2">
+                  <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                    Decline reason
+                  </span>
+                  <select
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    name="declineReason"
+                    required
+                    defaultValue=""
+                  >
+                    <option value="" disabled>
+                      Select reason
+                    </option>
+                    {[
+                      "RULE_MISMATCH",
+                      "MISSING_INFO",
+                      "OPERATOR_DECISION",
+                      "NO_AVAILABILITY",
+                      "UNRESPONSIVE",
+                      "DUPLICATE",
+                      "WITHDREW",
+                    ].map((declineReasonOption) => (
+                      <option key={declineReasonOption} value={declineReasonOption}>
+                        {declineReasonOption.replaceAll("_", " ")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="mt-3 block space-y-2">
+                  <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                    Note
+                  </span>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    name="declineNote"
+                    placeholder="Optional context for the timeline."
+                    type="text"
+                  />
+                </label>
+                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <button
+                  className="mt-3 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                  type="submit"
+                >
+                  Decline lead
+                </button>
+              </form>
+            ) : null}
+
+            {lead.actions.manualOutbound ? (
+              <form
+                action={sendManualOutboundMessageAction.bind(null, lead.id)}
+                className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+              >
+                <div className="text-sm font-semibold">Manual outbound</div>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">
+                  Operator-initiated messages stay available even when automation is blocked.
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                      Channel
+                    </span>
+                    <select
+                      className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      name="manualChannel"
+                      required
+                      defaultValue="INTERNAL_NOTE"
+                    >
+                      {["INTERNAL_NOTE", "EMAIL", "SMS"].map((manualChannelOption) => (
+                        <option key={manualChannelOption} value={manualChannelOption}>
+                          {manualChannelOption.replaceAll("_", " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-2">
+                    <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                      Subject
+                    </span>
+                    <input
+                      className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      name="manualSubject"
+                      placeholder="Optional subject"
+                      type="text"
+                    />
+                  </label>
+                </div>
+                <label className="mt-3 block space-y-2">
+                  <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                    Message
+                  </span>
+                  <textarea
+                    className="min-h-28 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    name="manualBody"
+                    placeholder="Write the manual outbound message."
+                    required
+                  />
+                </label>
+                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <button
+                  className="mt-3 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium"
+                  type="submit"
+                >
+                  Send manual message
+                </button>
+              </form>
+            ) : null}
           </div>
 
           {lead.normalizedFieldMetadataRows.length > 0 ? (
@@ -312,9 +506,9 @@ export default async function LeadDetailPage({
           </div>
 
           <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
-            <div className="text-lg font-semibold">Messages</div>
-            <div className="mt-4 space-y-3">
-              {lead.messages.map((message) => (
+              <div className="text-lg font-semibold">Messages</div>
+              <div className="mt-4 space-y-3">
+              {lead.messages.map((message: (typeof lead.messages)[number]) => (
                 <div
                   key={`${message.at}-${message.direction}`}
                   className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3"
