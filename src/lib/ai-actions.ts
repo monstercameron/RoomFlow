@@ -35,6 +35,10 @@ import { buildLeadFieldMetadataRows } from "@/lib/lead-field-metadata-view";
 import { evaluateLeadQualification, getLeadWorkflowContext } from "@/lib/lead-workflow";
 import { onboardingRulePresets } from "@/lib/onboarding";
 import { prisma } from "@/lib/prisma";
+import { applyWorkflow4ArtifactQuestionSet } from "@/lib/workflow4-questions-actions";
+import {
+  resolveActiveQualificationQuestionSet,
+} from "@/lib/workflow4-questions";
 import { workspaceHasCapability } from "@/lib/workspace-plan";
 
 function getRedirectPath(formData: FormData, fallbackPath: string) {
@@ -416,9 +420,9 @@ async function upsertLeadFieldReview(params: {
     data: leadUpdateData as never,
   });
 
-  const matchingQuestion = lead.property?.questionSets
-    .flatMap((questionSet) => questionSet.questions)
-    .find((question) => question.fieldKey === params.fieldKey);
+  const matchingQuestion = resolveActiveQualificationQuestionSet(
+    lead.property?.questionSets ?? [],
+  )?.questions.find((question) => question.fieldKey === params.fieldKey);
 
   if (matchingQuestion) {
     await prisma.qualificationAnswer.upsert({
@@ -625,10 +629,8 @@ export async function generatePropertyListingAnalyzerAction(
         property.leads.length === 0
           ? "No inquiries yet"
           : `${Math.round((property.leads.length / Math.max(property.leads.length, 1)) * 100)}%`,
-      questionCount: property.questionSets.reduce(
-        (totalCount, questionSet) => totalCount + questionSet.questions.length,
-        0,
-      ),
+      questionCount:
+        resolveActiveQualificationQuestionSet(property.questionSets)?.questions.length ?? 0,
       topLeadSourceName: property.listingSourceName ?? "Manual",
       tourConversionRateLabel: property.schedulingUrl ? "Scheduling configured" : "Scheduling missing",
     });
@@ -811,8 +813,8 @@ export async function generatePropertyIntakeFormAction(
       activeRules: property.rules
         .filter((rule) => rule.active)
         .map((rule) => `${rule.label}: ${rule.description ?? ""}`),
-      existingQuestions: property.questionSets.flatMap((set) =>
-        set.questions.map((question) => question.label),
+      existingQuestions: (resolveActiveQualificationQuestionSet(property.questionSets)?.questions ?? []).map(
+        (question) => question.label,
       ),
       locality: property.locality,
       propertyName: property.name,
@@ -868,27 +870,28 @@ export async function applyPropertyIntakeFormAction(
     throw new Error("No generated intake form is available to apply.");
   }
 
-  const questionSet = await prisma.qualificationQuestionSet.create({
-    data: {
-      isDefault: false,
-      name: latestArtifact.data.setName,
-      propertyId,
+  const property = await prisma.property.findFirst({
+    where: {
+      id: propertyId,
+      workspaceId: membership.workspaceId,
+    },
+    select: {
+      id: true,
+      name: true,
     },
   });
 
-  if (latestArtifact.data.questions.length > 0) {
-    await prisma.qualificationQuestion.createMany({
-      data: latestArtifact.data.questions.map((question, index) => ({
-        fieldKey: question.fieldKey,
-        label: question.label,
-        questionSetId: questionSet.id,
-        required: question.required,
-        sortOrder: index,
-        type: question.type as QuestionType,
-      })),
-      skipDuplicates: true,
-    });
+  if (!property) {
+    throw new Error("Property not found.");
   }
+
+  const { questionSetId } = await applyWorkflow4ArtifactQuestionSet({
+    propertyId: property.id,
+    propertyName: property.name,
+    questions: latestArtifact.data.questions,
+    setName: latestArtifact.data.setName,
+    workspaceId: membership.workspaceId,
+  });
 
   await createAiAuditEvent({
     actorUserId: membership.userId,
@@ -897,7 +900,7 @@ export async function applyPropertyIntakeFormAction(
       artifactKind: "intake_form_generator",
       propertyId,
       questionCount: latestArtifact.data.questions.length,
-      questionSetId: questionSet.id,
+      questionSetId,
       status: "applied",
     },
     propertyId,

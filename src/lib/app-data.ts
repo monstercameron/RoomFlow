@@ -69,6 +69,7 @@ import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
 import { formatPropertyListingSyncStatus } from "@/lib/property-listing-sync";
 import { formatPropertyLifecycleStatus } from "@/lib/property-lifecycle";
 import { formatQuietHours, resolveEffectiveQuietHours } from "@/lib/quiet-hours";
+import { resolveActiveQualificationQuestionSet } from "@/lib/workflow4-questions";
 import {
   buildStorageManifestPreview,
   formatIntegrationConnectionSummary,
@@ -2980,6 +2981,7 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
     string,
     Array<{
       id: string;
+      isDefault?: boolean;
       questions: Array<{
         id: string;
         fieldKey: string;
@@ -3001,6 +3003,7 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
       },
       select: {
         id: true,
+        isDefault: true,
         propertyId: true,
         questions: {
           orderBy: {
@@ -3021,9 +3024,16 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
         questionSetsByPropertyId.get(propertyQuestionSet.propertyId) ?? [];
       existingQuestionSets.push({
         id: propertyQuestionSet.id,
+        isDefault: propertyQuestionSet.isDefault,
         questions: propertyQuestionSet.questions,
       });
       questionSetsByPropertyId.set(propertyQuestionSet.propertyId, existingQuestionSets);
+    }
+
+    for (const [propertyId, questionSets] of questionSetsByPropertyId.entries()) {
+      const activeQuestionSet = resolveActiveQualificationQuestionSet(questionSets);
+
+      questionSetsByPropertyId.set(propertyId, activeQuestionSet ? [activeQuestionSet] : []);
     }
   }
 
@@ -3424,6 +3434,18 @@ export const getPropertyQuestionsViewData = cache(async (propertyId: string) => 
       ...buildScopedPropertyAccessFilter(scopedPropertyIds),
     },
     include: {
+      rules: {
+        where: {
+          active: true,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+        select: {
+          description: true,
+          label: true,
+        },
+      },
       questionSets: {
         orderBy: {
           createdAt: "asc",
@@ -3473,18 +3495,53 @@ export const getPropertyQuestionsViewData = cache(async (propertyId: string) => 
     propertyId: property.id,
     propertyName: property.name,
     lifecycleStatus: formatPropertyLifecycleStatus(property.lifecycleStatus),
-    questionSets: property.questionSets.map((set) => ({
-      id: set.id,
-      name: set.name,
-      isDefault: set.isDefault,
-      questions: set.questions.map((question) => ({
-        id: question.id,
-        label: question.label,
-        fieldKey: question.fieldKey,
-        type: formatEnumLabel(question.type),
-        required: question.required,
-      })),
-    })),
+    rentableRoomCount: property.rentableRoomCount,
+    sharedBathroomCount: property.sharedBathroomCount,
+    parkingAvailable: property.parkingAvailable,
+    smokingAllowed: property.smokingAllowed,
+    petsAllowed: property.petsAllowed,
+    rules: property.rules,
+    activeQuestionSet: (() => {
+      const activeQuestionSet = resolveActiveQualificationQuestionSet(property.questionSets);
+
+      return activeQuestionSet
+        ? {
+            id: activeQuestionSet.id,
+            isDefault: activeQuestionSet.isDefault,
+            name: activeQuestionSet.name,
+            questions: activeQuestionSet.questions.map((question) => ({
+              id: question.id,
+              fieldKey: question.fieldKey,
+              label: question.label,
+              options: Array.isArray(question.options)
+                ? question.options.filter((option): option is string => typeof option === "string")
+                : [],
+              required: question.required,
+              sortOrder: question.sortOrder,
+              type: question.type,
+            })),
+          }
+        : null;
+    })(),
+    questionSetHistory: (() => {
+      const activeQuestionSet = resolveActiveQualificationQuestionSet(property.questionSets);
+
+      return property.questionSets
+        .filter((set) => !activeQuestionSet || set.id !== activeQuestionSet.id)
+        .slice()
+        .reverse()
+        .map((set) => ({
+          id: set.id,
+          name: set.name,
+          questions: set.questions.map((question) => ({
+            id: question.id,
+            label: question.label,
+            fieldKey: question.fieldKey,
+            type: formatEnumLabel(question.type),
+            required: question.required,
+          })),
+        }));
+    })(),
   };
 });
 
@@ -3735,13 +3792,11 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
     updatedAtLabel: formatRelativeTime(property.updatedAt),
     activeRuleCount: property.rules.filter((rule) => rule.active).length,
     inactiveRuleCount: property.rules.filter((rule) => !rule.active).length,
-    questionCount: property.questionSets.reduce(
-      (totalCount, questionSet) => totalCount + questionSet.questions.length,
-      0,
-    ),
-    defaultQuestionSetCount: property.questionSets.filter(
-      (questionSet) => questionSet.isDefault,
-    ).length,
+    questionCount:
+      resolveActiveQualificationQuestionSet(property.questionSets)?.questions.length ?? 0,
+    defaultQuestionSetCount: resolveActiveQualificationQuestionSet(property.questionSets)
+      ? 1
+      : 0,
     totalLeadCount: property._count.leads,
     scheduledTourCount,
     totalTourCount: property._count.tours,

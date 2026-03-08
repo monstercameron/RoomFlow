@@ -71,6 +71,7 @@ import {
   sortTimelineEventsDeterministically,
   workflowEventTypes,
 } from "@/lib/workflow-events";
+import { resolveActiveQualificationQuestionSet } from "@/lib/workflow4-questions";
 
 type WorkflowLead = Awaited<ReturnType<typeof getLeadWorkflowContext>>;
 type WorkflowLeadSnapshot = NonNullable<WorkflowLead>;
@@ -556,8 +557,12 @@ function resolveMissingRequiredQuestionsForLead(lead: QualificationLeadContext) 
     return [];
   }
 
+  const activeQuestionSet = resolveActiveQualificationQuestionSet(
+    lead.property.questionSets,
+  );
+
   return resolveMissingRequiredQualificationQuestions({
-    propertyQuestionSets: lead.property.questionSets,
+    propertyQuestionSets: activeQuestionSet ? [activeQuestionSet] : [],
     leadAnswers: lead.answers.map((leadAnswer) => ({
       questionId: leadAnswer.questionId,
       value: leadAnswer.value,
@@ -757,7 +762,7 @@ export function evaluateLeadQualification(lead: QualificationLeadContext): Evalu
 
   const answers = buildAnswerIndex(lead);
   const hasAtLeastOnePropertyQuestion =
-    lead.property.questionSets.flatMap((questionSet) => questionSet.questions).length > 0;
+    (resolveActiveQualificationQuestionSet(lead.property.questionSets)?.questions.length ?? 0) > 0;
 
   if (!hasAtLeastOnePropertyQuestion) {
     return {
@@ -1398,7 +1403,11 @@ export async function performLeadWorkflowAction(params: {
   );
   const qualificationAutomationGateResult = resolveQualificationAutomationGate({
     leadPropertyId: lead.propertyId,
-    propertyQuestionSets: lead.property?.questionSets ?? [],
+    propertyQuestionSets: lead.property
+      ? resolveActiveQualificationQuestionSet(lead.property.questionSets)
+        ? [resolveActiveQualificationQuestionSet(lead.property.questionSets) as NonNullable<typeof lead.property.questionSets[number]>]
+        : []
+      : [],
     leadEmailAddress: lead.email,
     leadPhoneNumber: lead.phone,
     contactEmailAddress: lead.contact?.email ?? null,
@@ -1969,7 +1978,11 @@ export function getLeadActionAvailability(
   );
   const qualificationAutomationGateResult = resolveQualificationAutomationGate({
     leadPropertyId: lead.propertyId,
-    propertyQuestionSets: lead.property?.questionSets ?? [],
+    propertyQuestionSets: lead.property
+      ? resolveActiveQualificationQuestionSet(lead.property.questionSets)
+        ? [resolveActiveQualificationQuestionSet(lead.property.questionSets) as NonNullable<typeof lead.property.questionSets[number]>]
+        : []
+      : [],
     leadEmailAddress: lead.email,
     leadPhoneNumber: lead.phone,
     contactEmailAddress: lead.contact?.email ?? null,
@@ -2087,7 +2100,11 @@ export function getLeadAutomationSuppressionSummaries(
   );
   const qualificationAutomationGateResult = resolveQualificationAutomationGate({
     leadPropertyId: lead.propertyId,
-    propertyQuestionSets: lead.property?.questionSets ?? [],
+    propertyQuestionSets: lead.property
+      ? resolveActiveQualificationQuestionSet(lead.property.questionSets)
+        ? [resolveActiveQualificationQuestionSet(lead.property.questionSets) as NonNullable<typeof lead.property.questionSets[number]>]
+        : []
+      : [],
     leadEmailAddress: lead.email,
     leadPhoneNumber: lead.phone,
     contactEmailAddress: lead.contact?.email ?? null,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getCurrentWorkspaceMembership } from "@/lib/app-data";
 import { onboardingSteps } from "@/lib/navigation";
 import { prisma } from "@/lib/prisma";
+import { resolveActiveQualificationQuestionSet } from "@/lib/workflow4-questions";
 
 export default async function OnboardingHubPage() {
   const membership = await getCurrentWorkspaceMembership();
@@ -10,7 +11,11 @@ export default async function OnboardingHubPage() {
       workspaceId: membership.workspaceId,
     },
     include: {
-      questionSets: true,
+      questionSets: {
+        include: {
+          questions: true,
+        },
+      },
       rules: true,
     },
     orderBy: {
@@ -26,7 +31,9 @@ export default async function OnboardingHubPage() {
   const stepState = {
     "/onboarding/property": Boolean(property),
     "/onboarding/house-rules": Boolean(property && property.rules.length > 0),
-    "/onboarding/questions": Boolean(property && property.questionSets.length > 0),
+    "/onboarding/questions": Boolean(
+      property && resolveActiveQualificationQuestionSet(property.questionSets),
+    ),
     "/onboarding/channels": leadSources.length > 0,
   } as const;
 

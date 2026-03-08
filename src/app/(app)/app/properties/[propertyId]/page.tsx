@@ -896,7 +896,7 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
                 <div>
                   <div className="font-medium">Qualification questions</div>
                   <div className="mt-1 text-sm text-[var(--color-muted)]">
-                    {property.questionCount} questions across {property.defaultQuestionSetCount} default sets
+                    {property.questionCount} active questions in the live intake
                   </div>
                 </div>
                 <div className="text-sm text-[var(--color-muted)]">Open</div>

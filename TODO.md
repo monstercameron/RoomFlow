@@ -948,3 +948,134 @@ These are not part of the original narrow launch slice, but they are now broken 
 
 - [x] Decide whether Workflow 3 should live inside the existing onboarding runtime suite or ship with a dedicated `test:workflow3` command.
 - [ ] Require Workflow 3 completion to include passing unit coverage, passing Playwright coverage, and manual QA signoff before the workflow is marked complete.
+
+## Workflow 4: Define qualification questions
+
+### Product and data model alignment
+
+- [x] Decide and document the single-source-of-truth model for a property's active qualification question set so Workflow 4 does not treat every historical set as simultaneously active.
+- [x] Update question-set persistence so applying or saving a Workflow 4 question set marks the intended set as active/default and deactivates or supersedes older sets for the same property.
+- [x] Update downstream missing-answer and qualification-completeness logic to evaluate the active/default question set instead of aggregating required questions across all saved sets.
+- [x] Add any missing schema fields needed for the approved Workflow 4 v1 model, including per-question active state, category, and helper text if the chosen UX needs them.
+- [x] Preserve `sortOrder`, `required`, and existing answer compatibility while evolving the question model so current lead-answer logic keeps working.
+- [x] Decide whether question-set history should remain visible as audit/history only or editable drafts, and reflect that decision in the data model and UI behavior.
+- [x] Add a Prisma migration for any Workflow 4 schema changes and run `npm run db:generate` so generated Prisma types stay aligned.
+
+### Onboarding flow restructuring
+
+- [x] Replace the current `/onboarding/questions` review-only screen with a true Workflow 4 builder rather than a page that only applies an AI starter set.
+- [x] Keep the onboarding route lightweight and practical so the page feels like pre-screening setup instead of a rental application builder.
+- [x] Ensure Workflow 4 is completable without an AI-generated starter artifact so a user can still create their first question set manually.
+- [x] Replace the current `notFound()` failure state on `/onboarding/questions` with a recoverable empty-builder state that explains what to do next.
+- [ ] Confirm the Back action routes to `/onboarding/house-rules` and preserves in-progress question-builder state when possible.
+- [x] Keep the forward route as `/onboarding/channels` after a successful Workflow 4 save so the onboarding sequence remains coherent.
+- [x] Update onboarding progress framing, titles, supporting copy, and helper language so Workflow 4 matches the approved shared-housing tone.
+
+### Suggested-question builder UX
+
+- [x] Add a suggested-question section that preloads a strong v1 set from property profile plus Workflow 3 rules instead of only showing a generated artifact blob.
+- [x] Display each suggested question as a guided card with label, type, rationale, and an explicit required, optional, or off control.
+- [x] Make required, optional, and off states visually distinct and understandable without relying on developer terms or ambiguous checkboxes.
+- [x] Tie suggestion rationale directly to saved property rules where possible so the user can see why smoking, pets, bathroom sharing, parking, or guest questions were suggested.
+- [x] Add a lightweight warning or helper state when the builder has no active questions selected.
+- [x] Add a preview panel showing the final lead intake order with required and optional badges so the user can sanity-check the flow before saving.
+- [x] Add a gentle safety helper reminding users to keep questions focused on fit, logistics, and shared-living expectations.
+- [x] Add a low-pressure warning when the user marks more than the recommended number of questions as required.
+
+### Custom question authoring
+
+- [x] Add an `Add question` flow for custom Workflow 4 questions instead of limiting the user to AI-generated starter questions.
+- [x] Support the approved v1 question types for custom questions: short text, select, yes or no, number, and date.
+- [x] Allow users to edit custom question wording, choose required or optional, and delete custom questions before save.
+- [x] Support simple select options entry for select-type custom questions with validation that blocks empty option lists.
+- [x] Add optional helper text or guidance text for custom questions if retained in the final schema.
+- [x] Add lightweight guardrails that discourage sensitive or regulated questions without turning the page into a legal wall of text.
+
+### Editing and ordering behavior
+
+- [x] Let users edit the wording of suggested questions rather than forcing the generated default copy.
+- [x] Let users change the question type where practical without breaking the saved field semantics.
+- [x] Add accessible reorder controls so question order can be changed without requiring drag-and-drop.
+- [x] Keep reorder controls usable on mobile with move up and move down actions, even if drag interactions are added later.
+- [x] Ensure the preview panel and persisted `sortOrder` both update consistently after question reordering.
+- [ ] Decide how field keys should be regenerated or preserved when question wording changes so downstream answer mapping remains stable.
+
+### Save behavior and validation
+
+- [x] Extract Workflow 4 onboarding save behavior into a dedicated testable handler instead of leaving the flow centered on the generic AI-apply action.
+- [x] Validate that at least one active question exists before save.
+- [x] Validate that at least one required question exists before save.
+- [x] Validate that custom question labels are non-empty and that question types are always present.
+- [x] Validate that select questions have at least one substantive option before save.
+- [x] Persist the final builder state in a single save action that writes the active/default question set, question order, required state, type, and any options or helper text.
+- [x] Revalidate onboarding and property question-management pages after Workflow 4 changes are saved.
+- [x] Create an explicit audit event for Workflow 4 completion with counts for total active questions and required questions.
+- [x] Ensure successful save routes to `/onboarding/channels` only after persistence succeeds.
+
+### Property-level question management parity
+
+- [x] Upgrade `/app/properties/[propertyId]/questions` from a read-only list plus AI apply actions into a real editor for the active question set.
+- [x] Expose the same required, optional, off, custom-question, and reorder capabilities on the property questions page so onboarding and in-app editing do not diverge.
+- [x] Make it obvious which question set is currently active/default on the property page.
+- [x] Decide whether historical or superseded question sets should be visible, hidden, or restorable on the property page.
+- [x] Keep AI generation as an assistive starting point on the property page rather than the only practical way to create a question set.
+
+### AI integration hardening
+
+- [x] Constrain AI-generated starter sets to the approved lightweight Workflow 4 categories and question volume instead of allowing long or noisy questionnaires.
+- [x] Ensure generated questions map cleanly to supported v1 question types and stable field keys.
+- [x] Ensure AI suggestions respect Workflow 3 rule context strongly enough that no-smoking, no-pets, or bathroom-sharing rules reliably produce aligned intake questions.
+- [x] Add fallback deterministic starter questions so Workflow 4 remains usable when AI generation fails or is unavailable.
+- [ ] Review generated copy for sensitive-question creep and add filtering or repair logic if needed.
+
+### Analytics and instrumentation
+
+- [ ] Add Workflow 4 analytics or audit events for `qualification_questions_started` and `qualification_questions_completed`.
+- [ ] Add per-question events where practical for question added, removed, marked required, marked optional, turned off, and reordered.
+- [ ] Include dimensions for property type, total question count, required question count, and whether the final set began from AI suggestions.
+- [ ] Add an abandonment signal for users who enter `/onboarding/questions` but leave before saving.
+
+### Unit coverage
+
+- [x] Add unit coverage for the extracted Workflow 4 save handler using node:test.
+- [x] Add unit coverage asserting save fails when no active questions are selected.
+- [x] Add unit coverage asserting save fails when no required questions are selected.
+- [x] Add unit coverage asserting a custom select question without options returns a stable validation error and preserves entered form state.
+- [x] Add unit coverage asserting question ordering persists correctly after reordering.
+- [x] Add unit coverage asserting the active/default question-set semantics supersede older sets instead of leaving multiple active required sets in play.
+- [ ] Add unit coverage asserting question wording edits preserve or intentionally remap field keys according to the chosen design.
+- [ ] Add unit coverage asserting Workflow 4 writes the expected completion audit event and analytics payload.
+- [x] Add unit coverage for deterministic fallback starter-question generation when AI artifacts are missing or failed.
+
+### Playwright coverage
+
+- [x] Add dedicated Playwright coverage for Workflow 4 instead of relying on generic smoke tests or downstream qualification tests.
+- [x] Add a Playwright scenario for a fresh post-Workflow-3 user landing on `/onboarding/questions` with the expected step framing and guided builder UI.
+- [x] Add a Playwright test covering the happy path where the user accepts suggested questions, adjusts required and optional states, and continues to `/onboarding/channels`.
+- [x] Add a Playwright test covering the no-starter-artifact path so the user can still build questions manually.
+- [ ] Add a Playwright test covering custom-question creation for each supported v1 type as practical.
+- [ ] Add a Playwright test asserting select-type custom questions require at least one option before save.
+- [ ] Add a Playwright test asserting users can turn a suggested question off without removing the rest of the builder state.
+- [ ] Add a Playwright test asserting users can reorder questions and see the preview update before save.
+- [ ] Add a Playwright test asserting the saved question set appears correctly on `/app/properties/[propertyId]/questions` after onboarding.
+- [x] Add a Playwright mobile-width test for Workflow 4 ensuring question cards, controls, preview, and CTAs remain readable and tappable.
+- [ ] Add a Playwright keyboard-navigation test covering required, optional, and off state controls, custom-question inputs, reorder controls, and submit.
+
+### Manual QA checklist
+
+- [ ] Run a desktop manual QA pass for `/onboarding/questions` and confirm the page feels like practical intake setup rather than a full rental application.
+- [ ] Manually verify suggested questions align with the saved property profile and house rules closely enough to reduce manual cleanup.
+- [ ] Manually verify the required, optional, and off controls are understandable at a glance.
+- [ ] Manually verify custom question creation, editing, deletion, and select-option entry with realistic shared-housing examples.
+- [ ] Manually verify question reorder behavior, preview accuracy, and persisted display order.
+- [ ] Manually verify validation messages are specific, visible, and linked to the right fields.
+- [ ] Manually verify the saved active/default question set is the only set used for lead completeness and missing-info evaluation.
+- [ ] Manually verify `/app/properties/[propertyId]/questions` clearly reflects the saved active question set after onboarding.
+- [ ] Manually verify Workflow 4 on a mobile viewport for stacked layout, readable copy, and comfortable tap targets.
+- [ ] Manually verify keyboard-only navigation, focus visibility, accessible group labeling, and screen-reader-friendly preview content.
+- [x] Add a Workflow 4 QA signoff template capturing property fixture, rule mix, final question mix, expected route transition, persisted question data, and bugs.
+
+### Workflow testing follow-up
+
+- [x] Decide whether Workflow 4 should live inside the existing onboarding runtime suite or ship with a dedicated `test:workflow4` command.
+- [ ] Require Workflow 4 completion to include passing unit coverage, passing Playwright coverage, and manual QA signoff before the workflow is marked complete.
