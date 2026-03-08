@@ -10,6 +10,7 @@ import {
   MessageChannel,
   MessageDirection,
   MessageOrigin,
+  PropertyLifecycleStatus,
   QualificationFit,
 } from "@/generated/prisma/client";
 import { getCurrentWorkspaceState } from "@/lib/app-data";
@@ -35,6 +36,7 @@ import {
   canMembershipRolePerformLeadAction,
   type LeadActionPermissionKey,
 } from "@/lib/membership-role-permissions";
+import { propertyAcceptsNewLeads } from "@/lib/property-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { assertLeadStatusTransitionIsAllowed } from "@/lib/lead-status-machine";
 import { workflowEventTypes } from "@/lib/workflow-events";
@@ -234,10 +236,31 @@ export async function assignLeadPropertyAction(leadId: string, formData: FormDat
       where: {
         id: propertyIdFormValue,
         workspaceId: actionContext.workspaceId,
+        lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
       },
     });
 
     if (!matchingProperty) {
+      const existingProperty = await prisma.property.findFirst({
+        where: {
+          id: propertyIdFormValue,
+          workspaceId: actionContext.workspaceId,
+        },
+        select: {
+          lifecycleStatus: true,
+        },
+      });
+
+      if (
+        existingProperty &&
+        !propertyAcceptsNewLeads(existingProperty.lifecycleStatus)
+      ) {
+        throw new LeadWorkflowError(
+          "PROPERTY_NOT_ACTIVE",
+          `Property ${propertyIdFormValue} is not active for new lead assignment.`,
+        );
+      }
+
       throw new LeadWorkflowError(
         "PROPERTY_NOT_FOUND",
         `Property ${propertyIdFormValue} was not found in workspace ${actionContext.workspaceId}.`,

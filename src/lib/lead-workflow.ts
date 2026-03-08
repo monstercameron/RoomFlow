@@ -7,6 +7,7 @@ import {
   MessageDirection,
   MessageOrigin,
   NotificationType,
+  PropertyLifecycleStatus,
   type Prisma,
   QualificationFit,
   RuleSeverity,
@@ -391,6 +392,7 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
         select: {
           id: true,
           name: true,
+          lifecycleStatus: true,
           smokingAllowed: true,
           petsAllowed: true,
           parkingAvailable: true,
@@ -476,6 +478,23 @@ export function evaluateLeadQualification(lead: NonNullable<WorkflowLead>): Eval
         {
           label: "Property assignment",
           detail: "Assign a property before evaluating fit.",
+          severity: "required",
+          outcome: "unknown",
+        },
+      ],
+    };
+  }
+
+  if (lead.property.lifecycleStatus !== PropertyLifecycleStatus.ACTIVE) {
+    return {
+      fitResult: QualificationFit.UNKNOWN,
+      recommendedStatus: LeadStatus.UNDER_REVIEW,
+      summary:
+        "Lead automation is paused because the assigned property is not currently active.",
+      issues: [
+        {
+          label: "Property lifecycle",
+          detail: "Move the property back to Active before using qualification automation.",
           severity: "required",
           outcome: "unknown",
         },
@@ -1089,6 +1108,16 @@ export async function performLeadWorkflowAction(params: {
   }
 
   if (
+    lead.property &&
+    lead.property.lifecycleStatus !== PropertyLifecycleStatus.ACTIVE
+  ) {
+    throw new LeadWorkflowError(
+      "PROPERTY_NOT_ACTIVE",
+      `Property ${lead.property.id} is not active for ${params.action}.`,
+    );
+  }
+
+  if (
     (params.action === "schedule_tour" || params.action === "send_application") &&
     evaluation.recommendedStatus === LeadStatus.INCOMPLETE
   ) {
@@ -1623,16 +1652,20 @@ export function getLeadActionAvailability(
     !blockedByOptOut &&
     !dailySendCapReached &&
     hasDeliverableDefaultOutboundChannel;
+  const propertyIsActiveForWorkflow =
+    !lead.property || lead.property.lifecycleStatus === PropertyLifecycleStatus.ACTIVE;
 
   return {
     evaluateFit: true,
     requestInfo:
+      propertyIsActiveForWorkflow &&
       qualificationAutomationGateResult.canRunAutomation &&
       !leadStatusIsInactive &&
       !qualificationCompleted &&
       !missingInfoPromptIsThrottled &&
       canAutomateOutbound,
     scheduleTour:
+      propertyIsActiveForWorkflow &&
       qualificationAutomationGateResult.canRunAutomation &&
       !leadStatusIsInactive &&
       Boolean(lead.property?.schedulingUrl) &&
@@ -1643,6 +1676,7 @@ export function getLeadActionAvailability(
       lead.status !== LeadStatus.APPLICATION_SENT &&
       canAutomateOutbound,
     sendApplication:
+      propertyIsActiveForWorkflow &&
       qualificationAutomationGateResult.canRunAutomation &&
       !leadStatusIsInactive &&
       evaluation.fitResult !== QualificationFit.MISMATCH &&

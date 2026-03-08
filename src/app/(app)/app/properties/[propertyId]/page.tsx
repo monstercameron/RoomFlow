@@ -2,7 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { getPropertyDetailViewData } from "@/lib/app-data";
-import { updatePropertySchedulingLinkAction } from "@/lib/property-actions";
+import {
+  updatePropertyLifecycleStatusAction,
+  updatePropertySchedulingLinkAction,
+} from "@/lib/property-actions";
+import {
+  formatPropertyLifecycleStatus,
+  propertyLifecycleStatuses,
+} from "@/lib/property-lifecycle";
 import { getPropertyStatusChips } from "@/lib/property-summary";
 
 type PropertyDetailPageProps = {
@@ -10,7 +17,6 @@ type PropertyDetailPageProps = {
     propertyId: string;
   }>;
 };
-
 function getChipClassName(chipTone: "default" | "success" | "warning") {
   switch (chipTone) {
     case "success":
@@ -28,6 +34,12 @@ function getAmenityLabel(enabled: boolean, enabledLabel: string, disabledLabel: 
 
 function getPropertySetupTasks(property: NonNullable<Awaited<ReturnType<typeof getPropertyDetailViewData>>>) {
   const propertySetupTasks: string[] = [];
+
+  if (property.lifecycleStatusValue !== "ACTIVE") {
+    propertySetupTasks.push(
+      "Return the property to Active before expecting automated lead qualification or new assignments.",
+    );
+  }
 
   if (property.rulesCount === 0) {
     propertySetupTasks.push("Add at least one active property rule so qualification has real guardrails.");
@@ -96,6 +108,9 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
                 .filter(Boolean)
                 .join(" • ") || "Property profile is still missing descriptive details."}
             </div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">
+              Lifecycle: {property.lifecycleStatus}
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {getPropertyStatusChips(property).map((propertyStatusChip) => (
                 <span
@@ -147,6 +162,10 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
                 <div className="mt-1 font-medium">{property.propertyType ?? "Not set"}</div>
               </div>
               <div>
+                <div className="text-sm text-[var(--color-muted)]">Lifecycle</div>
+                <div className="mt-1 font-medium">{property.lifecycleStatus}</div>
+              </div>
+              <div>
                 <div className="text-sm text-[var(--color-muted)]">Locality</div>
                 <div className="mt-1 font-medium">{property.locality ?? "Not set"}</div>
               </div>
@@ -186,6 +205,51 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
                   {getAmenityLabel(property.petsAllowed, "Allowed", "Not allowed")}
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xl font-semibold">Lifecycle controls</div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  Active properties accept new leads and automation. Inactive or archived properties stay visible for reference but are excluded from new assignment flow.
+                </div>
+              </div>
+              <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-3 py-2 text-sm font-medium">
+                {property.lifecycleStatus}
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-3">
+              {propertyLifecycleStatuses.map((propertyLifecycleStatus) => {
+                const isCurrentLifecycleStatus =
+                  propertyLifecycleStatus === property.lifecycleStatusValue;
+
+                return (
+                  <form
+                    action={updatePropertyLifecycleStatusAction.bind(null, property.id)}
+                    key={propertyLifecycleStatus}
+                  >
+                    <input
+                      type="hidden"
+                      name="lifecycleStatus"
+                      value={propertyLifecycleStatus}
+                    />
+                    <input type="hidden" name="redirectTo" value={`/app/properties/${property.id}`} />
+                    <button
+                      className={`rounded-2xl border px-4 py-2 text-sm font-medium ${
+                        isCurrentLifecycleStatus
+                          ? "border-[var(--color-ink)] bg-[var(--color-ink)] text-white"
+                          : "border-[var(--color-line)] bg-[var(--color-panel-strong)]"
+                      }`}
+                      disabled={isCurrentLifecycleStatus}
+                      type="submit"
+                    >
+                      Set {formatPropertyLifecycleStatus(propertyLifecycleStatus)}
+                    </button>
+                  </form>
+                );
+              })}
             </div>
           </section>
 

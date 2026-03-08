@@ -2,9 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { PropertyLifecycleStatus } from "@/generated/prisma/client";
 import { getCurrentWorkspaceState } from "@/lib/app-data";
 import { applyLeadEvaluation } from "@/lib/lead-workflow";
 import { shouldRecomputeFitForTrigger } from "@/lib/lead-rule-engine";
+import {
+  formatPropertyLifecycleStatus,
+  isPropertyLifecycleStatus,
+} from "@/lib/property-lifecycle";
 import { prisma } from "@/lib/prisma";
 
 function parseSchedulingUrl(value: FormDataEntryValue | null) {
@@ -33,6 +38,14 @@ function parseSchedulingUrl(value: FormDataEntryValue | null) {
 
 function parseBooleanFormValue(value: FormDataEntryValue | null) {
   return typeof value === "string" && value.toLowerCase() === "true";
+}
+
+function parsePropertyLifecycleStatus(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !isPropertyLifecycleStatus(value)) {
+    throw new Error("A valid property lifecycle status is required.");
+  }
+
+  return value;
 }
 
 export async function updatePropertySchedulingLinkAction(
@@ -90,6 +103,73 @@ export async function updatePropertySchedulingLinkAction(
       : `/app/properties/${property.id}/rules`;
 
   redirect(redirectTarget);
+}
+
+export async function updatePropertyLifecycleStatusAction(
+  propertyId: string,
+  formData: FormData,
+) {
+  const workspaceState = await getCurrentWorkspaceState();
+  const redirectTargetValue = formData.get("redirectTo");
+  const nextLifecycleStatus = parsePropertyLifecycleStatus(
+    formData.get("lifecycleStatus"),
+  );
+
+  const property = await prisma.property.findFirst({
+    where: {
+      id: propertyId,
+      workspaceId: workspaceState.workspace.id,
+    },
+  });
+
+  if (!property) {
+    throw new Error("Property not found.");
+  }
+
+  if (property.lifecycleStatus !== nextLifecycleStatus) {
+    await prisma.property.update({
+      where: {
+        id: property.id,
+      },
+      data: {
+        lifecycleStatus: nextLifecycleStatus,
+      },
+    });
+
+    await prisma.auditEvent.create({
+      data: {
+        workspaceId: workspaceState.workspace.id,
+        propertyId: property.id,
+        actorUserId: workspaceState.user.id,
+        eventType: "property_lifecycle_status_updated",
+        payload: {
+          fromStatus: property.lifecycleStatus,
+          toStatus: nextLifecycleStatus,
+          propertyName: property.name,
+        },
+      },
+    });
+  }
+
+  revalidatePath("/app");
+  revalidatePath("/app/calendar");
+  revalidatePath("/app/inbox");
+  revalidatePath("/app/leads");
+  revalidatePath("/app/properties");
+  revalidatePath(`/app/properties/${property.id}`);
+  revalidatePath(`/app/properties/${property.id}/questions`);
+  revalidatePath(`/app/properties/${property.id}/rules`);
+
+  const redirectTarget =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : `/app/properties/${property.id}`;
+
+  redirect(
+    `${redirectTarget}?propertyStatus=${encodeURIComponent(
+      formatPropertyLifecycleStatus(nextLifecycleStatus),
+    )}`,
+  );
 }
 
 export async function togglePropertyRuleActiveAction(

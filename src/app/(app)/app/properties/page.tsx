@@ -131,6 +131,9 @@ export default async function PropertiesPage(props: {
                     .filter(Boolean)
                     .join(" • ") || "Property profile still needs more descriptive details."}
                 </div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  Lifecycle: {property.lifecycleStatus}
+                </div>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 {getPropertyStatusChips(property).map((propertyStatusChip) => (

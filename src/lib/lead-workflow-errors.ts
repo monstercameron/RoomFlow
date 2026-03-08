@@ -25,7 +25,8 @@ export type LeadWorkflowErrorCode =
   | "DUPLICATE_CANDIDATE_INVALID"
   | "DUPLICATE_CANDIDATE_NOT_FOUND"
   | "PROPERTY_SELECTION_REQUIRED"
-  | "PROPERTY_NOT_FOUND";
+  | "PROPERTY_NOT_FOUND"
+  | "PROPERTY_NOT_ACTIVE";
 
 const userFacingMessageByWorkflowErrorCode: Record<
   LeadWorkflowErrorCode,
@@ -80,6 +81,8 @@ const userFacingMessageByWorkflowErrorCode: Record<
     "The duplicate candidate could not be found in this workspace.",
   PROPERTY_SELECTION_REQUIRED: "Choose a property before submitting the assignment.",
   PROPERTY_NOT_FOUND: "The selected property was not found in this workspace.",
+  PROPERTY_NOT_ACTIVE:
+    "Only active properties can receive new lead and workflow actions.",
 };
 
 export class LeadWorkflowError extends Error {

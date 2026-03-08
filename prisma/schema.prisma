@@ -133,6 +133,12 @@ enum TourEventStatus {
   RESCHEDULED
 }
 
+enum PropertyLifecycleStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
 enum NotificationType {
   NEW_LEAD
   CAUTION_REVIEW
@@ -269,6 +275,7 @@ model Property {
   id                  String                     @id @default(cuid())
   workspaceId         String
   name                String
+  lifecycleStatus     PropertyLifecycleStatus    @default(ACTIVE)
   propertyType        String?
   addressLine1        String?
   locality            String?

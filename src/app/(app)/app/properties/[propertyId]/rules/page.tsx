@@ -28,7 +28,7 @@ export default async function PropertyRulesPage({
       <PageHeader
         eyebrow="Property rules"
         title={property.propertyName}
-        description="This route is in the first implementation slice because the product does not exist without explicit house-rule logic."
+        description={`This route is in the first implementation slice because the product does not exist without explicit house-rule logic. Current lifecycle: ${property.lifecycleStatus}.`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Link

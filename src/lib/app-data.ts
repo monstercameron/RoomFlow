@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import {
   LeadStatus,
   MessageChannel,
+  PropertyLifecycleStatus,
   QualificationFit,
   RuleSeverity,
   TemplateType,
@@ -33,6 +34,7 @@ import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
 import { getLeadActionPermissionsForMembershipRole } from "@/lib/membership-role-permissions";
 import { prisma } from "@/lib/prisma";
 import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
+import { formatPropertyLifecycleStatus } from "@/lib/property-lifecycle";
 import { getServerSession } from "@/lib/session";
 import { activeWorkspaceCookieName, ensureWorkspaceForUser } from "@/lib/workspaces";
 
@@ -821,6 +823,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     availableProperties: await prisma.property.findMany({
       where: {
         workspaceId: membership.workspaceId,
+        lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
       },
       orderBy: {
         name: "asc",
@@ -1003,6 +1006,7 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
   const properties = await prisma.property.findMany({
     where: {
       workspaceId: membership.workspaceId,
+      lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
     },
     orderBy: {
       name: "asc",
@@ -1164,6 +1168,7 @@ export const getPropertyQuestionsViewData = cache(async (propertyId: string) => 
   return {
     propertyId: property.id,
     propertyName: property.name,
+    lifecycleStatus: formatPropertyLifecycleStatus(property.lifecycleStatus),
     questionSets: property.questionSets.map((set) => ({
       id: set.id,
       name: set.name,
@@ -1268,6 +1273,8 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
   return {
     id: property.id,
     name: property.name,
+    lifecycleStatus: formatPropertyLifecycleStatus(property.lifecycleStatus),
+    lifecycleStatusValue: property.lifecycleStatus,
     propertyType: property.propertyType,
     addressLine1: property.addressLine1,
     locality: property.locality,
@@ -1361,6 +1368,8 @@ export const getPropertiesViewData = cache(async () => {
       addressLine1: property.addressLine1,
       id: property.id,
       locality: property.locality,
+      lifecycleStatus: formatPropertyLifecycleStatus(property.lifecycleStatus),
+      lifecycleStatusValue: property.lifecycleStatus,
       name: property.name,
       activeRooms: property.rentableRoomCount ?? 0,
       activeLeads,
@@ -1399,6 +1408,7 @@ export const getPropertyRulesViewData = cache(async (propertyId: string) => {
   return {
     propertyId: property.id,
     propertyName: property.name,
+    lifecycleStatus: formatPropertyLifecycleStatus(property.lifecycleStatus),
     schedulingUrl: property.schedulingUrl,
     schedulingConfigured: Boolean(property.schedulingUrl),
     rules: property.rules.map((rule) => ({
@@ -1417,6 +1427,7 @@ export const getCalendarViewData = cache(async () => {
   const properties = await prisma.property.findMany({
     where: {
       workspaceId: membership.workspaceId,
+      lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
       schedulingUrl: {
         not: null,
       },
@@ -1457,6 +1468,7 @@ export const getCalendarViewData = cache(async () => {
   const unconfiguredProperties = await prisma.property.findMany({
     where: {
       workspaceId: membership.workspaceId,
+      lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
       schedulingUrl: null,
     },
     orderBy: {

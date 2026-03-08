@@ -3,6 +3,7 @@ import {
   LeadStatus,
   MessageOrigin,
   NotificationType,
+  PropertyLifecycleStatus,
   WebhookDeliveryStatus,
 } from "@/generated/prisma/client";
 import { processNormalizedInboundLead, type NormalizedLeadPayload } from "@/lib/lead-normalization";
@@ -337,6 +338,7 @@ async function processReminderJobs(jobs: JobWithMetadata<ReminderJob>[]) {
           prisma.property.count({
             where: {
               workspaceId: workspace.id,
+              lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
             },
           }),
           prisma.lead.count({

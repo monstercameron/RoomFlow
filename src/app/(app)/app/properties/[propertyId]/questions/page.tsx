@@ -23,7 +23,7 @@ export default async function PropertyQuestionsPage({
       <PageHeader
         eyebrow="Property questions"
         title={property.propertyName}
-        description="Qualification question sets are still a simple property-level configuration, but this now exposes the actual questions tied to each property."
+        description={`Qualification question sets are still a simple property-level configuration, but this now exposes the actual questions tied to each property. Current lifecycle: ${property.lifecycleStatus}.`}
       />
 
       <div className="space-y-4">
