@@ -274,20 +274,20 @@ async function main() {
   });
 
   const [
-    initialReplyTemplate,
+    screeningInviteTemplate,
     missingInfoTemplate,
-    schedulingTemplate,
+    tourInviteTemplate,
     applicationInviteTemplate,
     declineTemplate,
   ] = await Promise.all([
     prisma.messageTemplate.create({
       data: {
         workspaceId: workspace.id,
-        name: "Initial reply",
-        type: TemplateType.INITIAL_REPLY,
+        name: "Screening invite",
+        type: TemplateType.SCREENING_INVITE,
         channel: MessageChannel.EMAIL,
         subject: "Room inquiry follow-up",
-        body: "Thanks for reaching out. I just need a few quick answers about move-in timing, budget, and house rules before I can confirm fit.",
+        body: "Thanks for reaching out about {{property.name}}. I just need a few quick answers about move-in timing, budget, and house rules before I can confirm fit.",
       },
     }),
     prisma.messageTemplate.create({
@@ -302,11 +302,11 @@ async function main() {
     prisma.messageTemplate.create({
       data: {
         workspaceId: workspace.id,
-        name: "Scheduling invite",
-        type: TemplateType.TOUR_CONFIRMATION,
+        name: "Tour invite",
+        type: TemplateType.TOUR_INVITE,
         channel: MessageChannel.EMAIL,
         subject: "Tour scheduling link",
-        body: "You look like a strong fit so far. Use this link to choose a tour time that works for you.",
+        body: "You look like a strong fit so far for {{property.name}}. Use this link to choose a tour time that works for you: {{property.schedulingUrl}}",
       },
     }),
     prisma.messageTemplate.create({
@@ -327,6 +327,36 @@ async function main() {
         channel: MessageChannel.EMAIL,
         subject: "Update on your room inquiry",
         body: "Thanks for the interest. Based on the property rules, I cannot move this inquiry forward for this specific listing.",
+      },
+    }),
+    prisma.messageTemplate.create({
+      data: {
+        workspaceId: workspace.id,
+        name: "House rules acknowledgment",
+        type: TemplateType.HOUSE_RULES_ACKNOWLEDGMENT,
+        channel: MessageChannel.EMAIL,
+        subject: "Shared house expectations for {{property.name}}",
+        body: "Before we lock in next steps, please confirm that the shared-house expectations for {{property.name}} work for you.",
+      },
+    }),
+    prisma.messageTemplate.create({
+      data: {
+        workspaceId: workspace.id,
+        name: "Onboarding welcome",
+        type: TemplateType.ONBOARDING,
+        channel: MessageChannel.EMAIL,
+        subject: "Welcome to {{property.name}}",
+        body: "Welcome aboard. Here is the onboarding checklist and move-in coordination info for {{property.name}}.",
+      },
+    }),
+    prisma.messageTemplate.create({
+      data: {
+        workspaceId: workspace.id,
+        name: "Waitlist notice",
+        type: TemplateType.WAITLIST_NOTICE,
+        channel: MessageChannel.EMAIL,
+        subject: "Waitlist update for {{property.name}}",
+        body: "There is not an immediate opening at {{property.name}}, but I can keep your inquiry active on the waitlist and reach out if availability changes.",
       },
     }),
   ]);
@@ -537,7 +567,7 @@ async function main() {
       },
       {
         conversationId: jordanConversation.id,
-        templateId: schedulingTemplate.id,
+        templateId: tourInviteTemplate.id,
         direction: MessageDirection.OUTBOUND,
         channel: MessageChannel.EMAIL,
         subject: "Tour scheduling link",
@@ -566,7 +596,7 @@ async function main() {
       },
       {
         conversationId: caseyConversation.id,
-        templateId: initialReplyTemplate.id,
+        templateId: screeningInviteTemplate.id,
         direction: MessageDirection.OUTBOUND,
         channel: MessageChannel.EMAIL,
         subject: "Room inquiry follow-up",

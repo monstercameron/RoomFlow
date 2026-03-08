@@ -620,11 +620,18 @@ function getTemplateFallback(
   lead: TemplateRenderLeadContext,
 ) {
   switch (type) {
+    case TemplateType.SCREENING_INVITE:
+    case TemplateType.INITIAL_REPLY:
+      return {
+        subject: "Room inquiry follow-up",
+        body: "Thanks for reaching out about {{property.name}}. I just need a few screening details around move-in timing, budget, and house rules before I can confirm fit.",
+      };
     case TemplateType.MISSING_INFO_FOLLOW_UP:
       return {
         subject: "Quick follow-up on your room inquiry",
         body: "Thanks again. I still need a couple of missing details before I can confirm fit for this property.",
       };
+    case TemplateType.TOUR_INVITE:
     case TemplateType.TOUR_CONFIRMATION:
       return {
         subject: "Tour scheduling link",
@@ -635,10 +642,25 @@ function getTemplateFallback(
         subject: "Application invite",
         body: "Thanks for moving forward. Here is the application step for {{property.name}}.",
       };
+    case TemplateType.HOUSE_RULES_ACKNOWLEDGMENT:
+      return {
+        subject: "Shared house expectations for {{property.name}}",
+        body: "Before we lock in next steps, please confirm that the shared-house expectations for {{property.name}} work for you.",
+      };
+    case TemplateType.ONBOARDING:
+      return {
+        subject: "Welcome to {{property.name}}",
+        body: "Welcome aboard. Here is the onboarding checklist and move-in coordination info for {{property.name}}.",
+      };
     case TemplateType.DECLINE:
       return {
         subject: "Update on your room inquiry",
         body: "Thanks for the interest. Based on the current property rules, I cannot move this inquiry forward for {{property.name}}.",
+      };
+    case TemplateType.WAITLIST_NOTICE:
+      return {
+        subject: "Waitlist update for {{property.name}}",
+        body: "There is not an immediate opening at {{property.name}}, but I can keep your inquiry active on the waitlist and reach out if availability changes.",
       };
     default:
       return {
@@ -863,7 +885,7 @@ function getTemplateTypeForAction(action: WorkflowActionName): TemplateType | nu
     case "request_info":
       return TemplateType.MISSING_INFO_FOLLOW_UP;
     case "schedule_tour":
-      return TemplateType.TOUR_CONFIRMATION;
+      return TemplateType.TOUR_INVITE;
     case "send_application":
       return TemplateType.APPLICATION_INVITE;
     default:

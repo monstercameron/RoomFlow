@@ -32,7 +32,7 @@ test("renderTemplateForLead substitutes known template variables", async () => {
     {
       subject: "Hi {{lead.firstName}}",
       body: "Property: {{property.name}}",
-      type: TemplateType.REMINDER,
+      type: TemplateType.SCREENING_INVITE,
     },
     baseLeadContext,
   );

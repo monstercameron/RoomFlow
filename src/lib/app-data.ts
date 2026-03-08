@@ -223,14 +223,24 @@ function describeTemplateType(type: TemplateType) {
   switch (type) {
     case TemplateType.INITIAL_REPLY:
       return "Starts the qualification conversation.";
+    case TemplateType.SCREENING_INVITE:
+      return "Invites a new lead into the formal screening flow.";
     case TemplateType.MISSING_INFO_FOLLOW_UP:
       return "Collects missing move-in, budget, or rule answers.";
     case TemplateType.TOUR_CONFIRMATION:
       return "Confirms the scheduling handoff for qualified leads.";
+    case TemplateType.TOUR_INVITE:
+      return "Invites a qualified lead to pick a tour time.";
     case TemplateType.APPLICATION_INVITE:
       return "Invites a lead into the application step.";
+    case TemplateType.HOUSE_RULES_ACKNOWLEDGMENT:
+      return "Confirms shared-house expectations before move-in.";
+    case TemplateType.ONBOARDING:
+      return "Welcomes an approved resident into the onboarding flow.";
     case TemplateType.DECLINE:
       return "Closes the loop when a lead misses a required rule.";
+    case TemplateType.WAITLIST_NOTICE:
+      return "Keeps viable leads warm when no room is immediately available.";
     case TemplateType.REMINDER:
       return "Keeps slow-moving leads from stalling.";
     default:
@@ -1738,6 +1748,7 @@ export const getTemplatesViewData = cache(async () => {
       id: template.id,
       name: template.name,
       channel: formatChannelLabel(template.channel),
+      typeLabel: formatEnumLabel(template.type),
       purpose: describeTemplateType(template.type),
       subject: template.subject,
       preview: previewBody,

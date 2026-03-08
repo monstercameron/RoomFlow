@@ -9,7 +9,7 @@ export default async function TemplatesPage() {
       <PageHeader
         eyebrow="Templates"
         title="Reusable messaging"
-        description="The first cut is intentionally narrow: enough structure for initial reply, missing-info follow-up, scheduling invite, and decline copy."
+        description="Message templates now cover screening, tour, application, house-rules, onboarding, decline, waitlist, and follow-up copy."
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -19,7 +19,14 @@ export default async function TemplatesPage() {
             className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]"
           >
             <div className="flex items-center justify-between">
-              <div className="text-xl font-semibold">{template.name}</div>
+              <div>
+                <div className="text-xl font-semibold">{template.name}</div>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
+                  <span className="rounded-full border border-[var(--color-line)] px-3 py-1">
+                    {template.typeLabel}
+                  </span>
+                </div>
+              </div>
               <div className="rounded-full bg-[var(--color-sidebar)] px-3 py-1 text-sm text-white">
                 {template.channel}
               </div>
