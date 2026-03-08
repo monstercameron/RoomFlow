@@ -64,7 +64,13 @@ export default async function PropertiesPage(props: {
         title="Property operations"
         description="Track which properties are ready for qualification flow, which ones still need setup work, and where lead demand is already landing."
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link
+              className="rounded-2xl bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white"
+              href="/app/properties/new"
+            >
+              Add property
+            </Link>
             {propertyIndexFilters.map((propertyIndexFilter) => {
               const isActive = propertyIndexFilter.value === activePropertyIndexFilter;
 
@@ -120,7 +126,7 @@ export default async function PropertiesPage(props: {
             <div className="mt-6">
               <Link
                 className="inline-flex rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-medium text-white"
-                href="/onboarding/property"
+                href="/app/properties/new"
               >
                 Create property
               </Link>

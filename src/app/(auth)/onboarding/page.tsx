@@ -10,6 +10,7 @@ export default async function OnboardingHubPage() {
       workspaceId: membership.workspaceId,
     },
     include: {
+      questionSets: true,
       rules: true,
     },
     orderBy: {
@@ -25,6 +26,7 @@ export default async function OnboardingHubPage() {
   const stepState = {
     "/onboarding/property": Boolean(property),
     "/onboarding/house-rules": Boolean(property && property.rules.length > 0),
+    "/onboarding/questions": Boolean(property && property.questionSets.length > 0),
     "/onboarding/channels": leadSources.length > 0,
   } as const;
 
@@ -35,9 +37,9 @@ export default async function OnboardingHubPage() {
           Onboarding
         </div>
         <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-          Get the first property live in three steps
+          Build the first property intake flow
         </h1>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {onboardingSteps.map((step, index) => (
             <Link
               key={step.href}

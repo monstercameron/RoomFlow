@@ -12,6 +12,7 @@
     "test": "tsx --test",
     "test:workflow1": "tsx scripts/playwright-workflow1.ts",
     "test:workflow2": "tsx scripts/playwright-workflow2.ts",
+    "test:workflow3": "tsx scripts/playwright-workflow3.ts",
     "openai:realtime:smoke": "tsx scripts/openai-realtime-smoke.ts",
     "lint": "eslint .",
     "pretypecheck": "npm run db:generate",

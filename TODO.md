@@ -855,3 +855,96 @@ These are not part of the original narrow launch slice, but they are now broken 
 
 - [x] Decide whether Workflow 2 should be added to the existing dedicated onboarding runtime suite or moved into its own dedicated `test:workflow2` script.
 - [ ] Require Workflow 2 completion to include passing unit coverage, passing Playwright coverage, and manual QA signoff before the workflow is marked complete.
+
+## Workflow 3: Define house rules
+
+### Product and data model alignment
+
+- [x] Confirm the approved Workflow 3 v1 category set and map it to normalized stored values: smoking, pets, guests, bathroom sharing, parking, minimum stay, quiet hours or noise, furnishing, and custom lifestyle expectations.
+- [x] Add any missing `RuleCategory` enum values required by Workflow 3 so the persisted model can represent the approved onboarding categories without collapsing them into generic strings.
+- [x] Add a normalized stored-value field to `PropertyRule` so structured choices like `outside_only`, `limited_overnight`, or `three_months_plus` can be persisted separately from the display label.
+- [ ] Add any creator or metadata fields needed for custom rules if Workflow 3 requires distinguishing generated defaults from user-entered expectations.
+- [x] Create a Prisma migration for the Workflow 3 rule-shape changes.
+- [x] Run `npm run db:generate` after the schema change so generated Prisma types stay aligned before typecheck and tests.
+- [x] Preserve compatibility with existing rule evaluation and property-rules pages while introducing the normalized Workflow 3 rule structure.
+
+### Onboarding flow restructuring
+
+- [x] Expand the onboarding sequence to include Workflow 4 after Workflow 3 instead of ending onboarding at channels.
+- [x] Add `/onboarding/questions` as the next required onboarding route after house-rule setup.
+- [x] Update onboarding navigation and step-completion state so Workflow 3 completion is based on a meaningful saved ruleset, not only the presence of any rule row.
+- [x] Update Workflow 3 save behavior so successful completion routes to `/onboarding/questions` instead of `/onboarding/channels`.
+- [x] Add a Back action from `/onboarding/house-rules` to `/onboarding/property`.
+- [x] Update page framing copy so Workflow 3 uses the approved practical/shared-housing language: title, helper copy, and severity guidance.
+
+### House-rules onboarding UX
+
+- [x] Replace the current checkbox-preset onboarding UI with guided rule cards or an equivalent structured onboarding flow instead of a flat preset list.
+- [x] Add a suggested-rules section that preloads conservative defaults based on property type and shared-living setup from Workflow 2.
+- [x] Ensure suggested rules are editable and removable rather than silently auto-applied.
+- [x] Add structured value controls for each supported category using radio cards, segmented controls, or compact selects as appropriate.
+- [x] Add explicit severity controls for each enabled structured rule with human-readable descriptions for blocking, warning, and informational behavior.
+- [x] Add an additional-expectations or custom-rules section with title, description, and severity fields.
+- [x] Allow disabling or removing individual structured rules without deleting the whole rule set.
+- [x] Add a real-time ruleset summary showing blocking, warning, and informational counts before save.
+- [x] Show a low-pressure nudge when the user has not added any rules yet instead of treating the page like a hard validation wall without explanation.
+- [x] Keep the page mobile-friendly with stacked cards, readable controls, and CTA placement that works on narrow screens.
+
+### Save behavior and downstream setup
+
+- [x] Extract the Workflow 3 save action from `src/app/(auth)/onboarding/house-rules/page.tsx` into a dedicated testable handler with injectable dependencies.
+- [x] Persist structured rules with category, normalized selected value, severity or mode metadata, and active state.
+- [x] Persist custom rules separately using the same rule model without forcing them into misleading preset categories.
+- [ ] Stop deleting and recreating every rule on each save if that would lose metadata or make later edits harder to reason about.
+- [x] Create an explicit audit event for Workflow 3 completion and include summary counts for blocking, warning, and informational rules.
+- [ ] Create per-rule analytics or audit hooks for add, remove, and update actions where practical.
+- [x] Prepare or generate the suggested qualification-question payload needed for the next onboarding step after rules are saved.
+- [x] Revalidate the onboarding hub, property rules view, and questions setup view after Workflow 3 changes are saved.
+
+### Unit coverage
+
+- [x] Add unit coverage for the extracted Workflow 3 save handler using node:test.
+- [x] Add unit coverage for mapping each structured Workflow 3 category option into the normalized stored rule value.
+- [x] Add unit coverage for severity mapping so blocking, warning, and informational selections persist with the correct `mode`, `severity`, `warningOnly`, and `autoDecline` semantics.
+- [x] Add unit coverage asserting suggested defaults vary appropriately by property type where Workflow 2 data supports that behavior.
+- [ ] Add unit coverage asserting users can remove or disable a suggested rule before saving.
+- [x] Add unit coverage asserting at least one meaningful rule or an explicit continue-anyway path is required by the chosen product behavior.
+- [x] Add unit coverage asserting an incomplete custom rule returns a stable validation error and preserves entered form state.
+- [x] Add unit coverage asserting successful Workflow 3 save redirects to `/onboarding/questions` only after persistence succeeds.
+- [x] Add unit coverage asserting Workflow 3 writes the expected audit event and any downstream question-suggestion artifacts.
+- [ ] Add unit coverage asserting existing property rules are updated in a stable way instead of creating unusable duplicates.
+
+### Playwright coverage
+
+- [x] Extend dedicated onboarding Playwright coverage to include Workflow 3 rather than relying on generic smoke coverage.
+- [x] Add a Playwright scenario for a fresh post-Workflow-2 user landing on `/onboarding/house-rules` with the expected step framing and helper copy.
+- [x] Add a Playwright test asserting suggested rules render based on the saved property profile and are clearly editable.
+- [x] Add a Playwright test covering the happy path where the user accepts or edits suggested rules and continues to `/onboarding/questions`.
+- [x] Add a Playwright test covering a custom rule create flow with title, description, and severity.
+- [x] Add a Playwright test asserting a custom rule with a missing title or severity shows visible validation and blocks save.
+- [x] Add a Playwright test asserting changing severity updates the ruleset summary counts before submit.
+- [x] Add a Playwright test asserting a user can remove a suggested rule before save without breaking the rest of the form.
+- [x] Add a Playwright test asserting the page no longer routes directly from Workflow 3 to channels.
+- [x] Add a Playwright assertion that saved rules appear correctly on `/app/properties/[propertyId]/rules` after onboarding.
+- [x] Add a Playwright mobile-width test for Workflow 3 ensuring structured rule cards remain readable and tappable on small screens.
+- [ ] Add a Playwright keyboard-navigation test covering toggles, radio groups, severity controls, custom-rule inputs, and submit.
+
+### Manual QA checklist
+
+- [ ] Run a desktop manual QA pass for `/onboarding/house-rules` and confirm the page feels practical and shared-housing-specific rather than like a generic policy form.
+- [ ] Manually verify suggested rules match the current property profile closely enough to reduce blank-page stress without feeling rigid.
+- [ ] Manually verify each structured category is understandable, editable, and not overloaded with legal or technical language.
+- [ ] Manually verify blocking, warning, and informational language is understandable without reading developer-facing terminology.
+- [ ] Manually verify the summary panel accurately reflects the current rule configuration before save.
+- [ ] Manually verify custom rule creation, editing, and removal with realistic house expectations.
+- [ ] Manually verify the save path lands on `/onboarding/questions` and leaves onboarding state consistent.
+- [ ] Manually inspect persisted rules for normalized selected values, severity metadata, and correct property association.
+- [ ] Manually verify the app-level property rules page still presents saved rules clearly after Workflow 3 changes.
+- [ ] Manually verify Workflow 3 on a mobile viewport for stacked layout, readable copy, and comfortable tap targets.
+- [ ] Manually verify keyboard-only navigation, focus visibility, group labeling, and screen-reader-friendly error messaging.
+- [x] Add a Workflow 3 QA signoff template capturing property fixture, rule mix, severity mix, expected route transition, actual persisted data, and bugs.
+
+### Workflow testing follow-up
+
+- [x] Decide whether Workflow 3 should live inside the existing onboarding runtime suite or ship with a dedicated `test:workflow3` command.
+- [ ] Require Workflow 3 completion to include passing unit coverage, passing Playwright coverage, and manual QA signoff before the workflow is marked complete.

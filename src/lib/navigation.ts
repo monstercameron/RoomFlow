@@ -74,6 +74,11 @@ export const onboardingSteps = [
     description: "Define fit constraints",
   },
   {
+    href: "/onboarding/questions",
+    label: "Questions",
+    description: "Review lead qualification prompts",
+  },
+  {
     href: "/onboarding/channels",
     label: "Channels",
     description: "Choose where leads arrive",

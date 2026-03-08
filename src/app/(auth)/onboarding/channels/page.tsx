@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentWorkspaceMembership } from "@/lib/app-data";
@@ -70,8 +71,16 @@ export default async function ChannelOnboardingPage() {
         action={saveChannels}
         className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-8 shadow-[var(--shadow-panel)]"
       >
-        <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-muted)]">
-          Step 3
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-muted)]">
+            Step 4 of 5
+          </div>
+          <Link
+            className="text-sm font-medium text-[var(--color-accent-strong)]"
+            href="/onboarding/questions"
+          >
+            Back
+          </Link>
         </div>
         <h1 className="mt-3 text-4xl font-semibold">Choose intake channels</h1>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-muted)]">

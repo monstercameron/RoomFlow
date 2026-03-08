@@ -129,6 +129,14 @@ export function buildPropertyOnboardingRetryPath(
   formData: FormData,
   errorMessage: string,
 ) {
+  return buildPropertySetupRetryPath("/onboarding/property", formData, errorMessage);
+}
+
+export function buildPropertySetupRetryPath(
+  basePath: string,
+  formData: FormData,
+  errorMessage: string,
+) {
   const queryParameters = new URLSearchParams();
 
   queryParameters.set("error", errorMessage);
@@ -141,7 +149,7 @@ export function buildPropertyOnboardingRetryPath(
     queryParameters.set(key, formData.get(key) === "on" ? "1" : "0");
   }
 
-  return `/onboarding/property?${queryParameters.toString()}`;
+  return `${basePath}?${queryParameters.toString()}`;
 }
 
 export async function handleSavePropertyOnboardingAction(
@@ -225,6 +233,80 @@ export async function handleSavePropertyOnboardingAction(
   dependencies.revalidatePath("/app");
   dependencies.revalidatePath("/app/properties");
   dependencies.redirect("/onboarding/house-rules");
+}
+
+export async function handleCreatePropertyAction(
+  formData: FormData,
+  dependencies: Workflow2PropertyActionDependencies = defaultDependencies,
+) {
+  const workspaceMembership = await dependencies.getCurrentWorkspaceMembership();
+
+  if (!canMembershipRoleManagePropertyScopes(workspaceMembership.role)) {
+    throw new PropertyOnboardingActionError(
+      "Only workspace owners or admins can add properties.",
+    );
+  }
+
+  const propertyData = parseWorkflow2PropertyData(formData);
+  const property = await dependencies.createProperty({
+    workspaceId: workspaceMembership.workspaceId,
+    data: propertyData,
+  });
+
+  await dependencies.createAuditEvent({
+    workspaceId: workspaceMembership.workspaceId,
+    propertyId: property.id,
+    actorUserId: workspaceMembership.userId,
+    actorType: AuditActorType.USER,
+    eventType: "property_created",
+    payload: {
+      createdBy: workspaceMembership.userId,
+      initialType: propertyData.propertyType,
+      onboardingSource: "app_properties",
+      propertyId: property.id,
+    },
+  });
+
+  await dependencies.upsertPropertySettings({
+    propertyId: property.id,
+    qualificationEnabled: true,
+    defaultChannelPreference: MessageChannel.EMAIL,
+    defaultFollowUpPolicy: "conservative",
+  });
+
+  const suggestedRules = buildWorkflow2SuggestedRules(propertyData);
+  const suggestedIntakeForm = buildWorkflow2SuggestedIntakeForm(
+    propertyData,
+    suggestedRules,
+  );
+
+  await dependencies.createAuditEvent({
+    workspaceId: workspaceMembership.workspaceId,
+    propertyId: property.id,
+    actorUserId: workspaceMembership.userId,
+    actorType: AuditActorType.USER,
+    eventType: "ai_artifact_generated",
+    payload: buildAiArtifactPayload(
+      "house_rules_generator",
+      suggestedRules,
+    ) as Prisma.InputJsonObject,
+  });
+
+  await dependencies.createAuditEvent({
+    workspaceId: workspaceMembership.workspaceId,
+    propertyId: property.id,
+    actorUserId: workspaceMembership.userId,
+    actorType: AuditActorType.USER,
+    eventType: "ai_artifact_generated",
+    payload: buildAiArtifactPayload(
+      "intake_form_generator",
+      suggestedIntakeForm,
+    ) as Prisma.InputJsonObject,
+  });
+
+  dependencies.revalidatePath("/app");
+  dependencies.revalidatePath("/app/properties");
+  dependencies.redirect(`/app/properties/${property.id}`);
 }
 
 function getRawStringValue(formData: FormData, key: string) {

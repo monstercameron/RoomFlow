@@ -80,6 +80,10 @@ async function getAiActionContext() {
   return membership;
 }
 
+async function getWorkspaceActionContext() {
+  return getCurrentWorkspaceMembership();
+}
+
 type AiActionContext = {
   userId: string;
   workspaceId: string;
@@ -705,7 +709,7 @@ export async function applyPropertyHouseRulesAction(
   propertyId: string,
   formData: FormData,
 ) {
-  const membership = await getAiActionContext();
+  const membership = await getWorkspaceActionContext();
   const redirectPath = getRedirectPath(formData, `/app/properties/${propertyId}`);
   const auditEvents = await prisma.auditEvent.findMany({
     where: {
@@ -837,7 +841,7 @@ export async function applyPropertyIntakeFormAction(
   propertyId: string,
   formData: FormData,
 ) {
-  const membership = await getAiActionContext();
+  const membership = await getWorkspaceActionContext();
   const redirectPath = getRedirectPath(formData, `/app/properties/${propertyId}/questions`);
   const auditEvents = await prisma.auditEvent.findMany({
     where: {

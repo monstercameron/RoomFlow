@@ -117,6 +117,9 @@ enum RuleCategory {
   BATHROOM_SHARING
   PARKING
   MINIMUM_STAY
+  QUIET_HOURS
+  FURNISHING
+  CUSTOM
   WORK_SCHEDULE
   ACKNOWLEDGMENT
   GENERAL
@@ -749,6 +752,7 @@ model PropertyRule {
   category    String?
   ruleCategory RuleCategory @default(GENERAL)
   mode         RuleMode     @default(BLOCKING)
+  selectedValue String?
   active       Boolean      @default(true)
   severity    RuleSeverity @default(REQUIRED)
   autoDecline Boolean      @default(false)

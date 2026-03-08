@@ -77,6 +77,27 @@ test("buildPropertyOnboardingRetryPath preserves form values and stable error st
   assert.equal(searchParams.get("smokingAllowed"), "0");
 });
 
+test("buildPropertySetupRetryPath can target the app property create route", () => {
+  const { buildPropertySetupRetryPath } = getWorkflow2PropertyModule();
+  const formData = createValidFormData();
+  formData.set("petsAllowed", "on");
+
+  const retryPath = buildPropertySetupRetryPath(
+    "/app/properties/new",
+    formData,
+    "Please choose a property type.",
+  );
+
+  assert.match(retryPath, /^\/app\/properties\/new\?/);
+
+  const queryString = retryPath.split("?")[1];
+  const searchParams = new URLSearchParams(queryString);
+
+  assert.equal(searchParams.get("error"), "Please choose a property type.");
+  assert.equal(searchParams.get("petsAllowed"), "1");
+  assert.equal(searchParams.get("parkingAvailable"), "0");
+});
+
 test("handleSavePropertyOnboardingAction validates required fields and numeric constraints", async () => {
   const { handleSavePropertyOnboardingAction } = getWorkflow2PropertyModule();
 
@@ -378,4 +399,77 @@ test("handleSavePropertyOnboardingAction blocks manager access and allows admin 
   );
 
   assert.equal(createCalls, 1);
+});
+
+test("handleCreatePropertyAction creates a new property from the app properties route and redirects to detail", async () => {
+  const { handleCreatePropertyAction } = getWorkflow2PropertyModule();
+  const createdProperties: Array<{ data: unknown; workspaceId: string }> = [];
+  const upsertedSettings: Array<unknown> = [];
+  const auditEvents: Array<unknown> = [];
+  const revalidatedPaths: string[] = [];
+  let redirectPath: string | null = null;
+
+  await handleCreatePropertyAction(
+    createValidFormData(),
+    createDependencies({
+      createAuditEvent: async (input) => {
+        auditEvents.push(input);
+      },
+      createProperty: async (input) => {
+        createdProperties.push(input);
+        return { id: "property-2", name: "Maple House" };
+      },
+      redirect: (path) => {
+        redirectPath = path;
+        return undefined as never;
+      },
+      revalidatePath: (path) => {
+        revalidatedPaths.push(path);
+      },
+      upsertPropertySettings: async (input) => {
+        upsertedSettings.push(input);
+      },
+    }),
+  );
+
+  assert.equal(createdProperties.length, 1);
+  assert.deepEqual(upsertedSettings, [
+    {
+      defaultChannelPreference: MessageChannel.EMAIL,
+      defaultFollowUpPolicy: "conservative",
+      propertyId: "property-2",
+      qualificationEnabled: true,
+    },
+  ]);
+  assert.equal(auditEvents.length, 3);
+  assert.deepEqual(revalidatedPaths, ["/app", "/app/properties"]);
+  assert.equal(redirectPath, "/app/properties/property-2");
+  assert.deepEqual(auditEvents[0], {
+    actorType: AuditActorType.USER,
+    actorUserId: "user-1",
+    eventType: "property_created",
+    payload: {
+      createdBy: "user-1",
+      initialType: "Owner-occupied shared home",
+      onboardingSource: "app_properties",
+      propertyId: "property-2",
+    },
+    propertyId: "property-2",
+    workspaceId: "workspace-1",
+  });
+});
+
+test("handleCreatePropertyAction blocks manager access", async () => {
+  const { handleCreatePropertyAction } = getWorkflow2PropertyModule();
+
+  await assert.rejects(
+    handleCreatePropertyAction(
+      createValidFormData(),
+      createDependencies({
+        getCurrentWorkspaceMembership: async () =>
+          createMembership(MembershipRole.MANAGER),
+      }),
+    ),
+    /Only workspace owners or admins can add properties/,
+  );
 });

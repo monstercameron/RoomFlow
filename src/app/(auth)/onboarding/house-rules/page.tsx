@@ -1,15 +1,30 @@
-import { revalidatePath } from "next/cache";
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  applyPropertyHouseRulesAction,
-  generatePropertyHouseRulesAction,
-} from "@/lib/ai-actions";
+import { HouseRulesBuilder } from "@/components/onboarding/house-rules-builder";
 import { getCurrentWorkspaceMembership } from "@/lib/app-data";
-import { onboardingRulePresets } from "@/lib/onboarding";
 import { prisma } from "@/lib/prisma";
+import {
+  buildHouseRulesOnboardingRetryPath,
+  handleSaveHouseRulesOnboardingAction,
+  HouseRulesOnboardingActionError,
+} from "@/lib/workflow3-house-rules";
+import {
+  createEmptyWorkflow3CustomRuleDraft,
+  getWorkflow3SuggestedRuleDrafts,
+  hydrateWorkflow3CustomRulesFromQuery,
+  hydrateWorkflow3DraftsFromExistingRules,
+  hydrateWorkflow3RuleDraftsFromQuery,
+} from "@/lib/workflow3-house-rules-config";
 
-export default async function HouseRulesOnboardingPage() {
+type HouseRulesOnboardingPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function HouseRulesOnboardingPage({
+  searchParams,
+}: HouseRulesOnboardingPageProps) {
   const membership = await getCurrentWorkspaceMembership();
+  const resolvedSearchParams = await searchParams;
   const property = await prisma.property.findFirst({
     where: {
       workspaceId: membership.workspaceId,
@@ -26,128 +41,92 @@ export default async function HouseRulesOnboardingPage() {
     redirect("/onboarding/property");
   }
 
-  const activeRuleLabels = new Set(property.rules.map((rule) => rule.label));
-
   async function saveHouseRules(formData: FormData) {
     "use server";
 
     const workspaceMembership = await getCurrentWorkspaceMembership();
-    const currentProperty = await prisma.property.findFirst({
-      where: {
-        workspaceId: workspaceMembership.workspaceId,
-      },
-      orderBy: {
-        createdAt: "asc",
-      },
-    });
 
-    if (!currentProperty) {
-      redirect("/onboarding/property");
+    if (workspaceMembership.workspaceId !== membership.workspaceId) {
+      redirect("/onboarding/house-rules");
     }
 
-    const selectedRules = onboardingRulePresets.filter(
-      (rule) => formData.get(rule.key) === "on",
-    );
+    try {
+      await handleSaveHouseRulesOnboardingAction(formData);
+    } catch (error) {
+      if (error instanceof HouseRulesOnboardingActionError) {
+        redirect(buildHouseRulesOnboardingRetryPath(formData, error.message));
+      }
 
-    await prisma.propertyRule.deleteMany({
-      where: {
-        propertyId: currentProperty.id,
-      },
-    });
-
-    if (selectedRules.length > 0) {
-      await prisma.propertyRule.createMany({
-        data: selectedRules.map((rule) => ({
-          propertyId: currentProperty.id,
-          label: rule.label,
-          category: rule.category,
-          description: rule.description,
-          severity: rule.severity,
-          autoDecline: rule.autoDecline,
-          warningOnly: rule.severity === "WARNING",
-        })),
-      });
+      throw error;
     }
-
-    revalidatePath("/onboarding");
-    revalidatePath("/app");
-    revalidatePath(`/app/properties/${currentProperty.id}/rules`);
-    redirect("/onboarding/channels");
   }
 
+  const existingDrafts = hydrateWorkflow3DraftsFromExistingRules({
+    rules: property.rules,
+  });
+  const suggestedDrafts = getWorkflow3SuggestedRuleDrafts({
+    parkingAvailable: property.parkingAvailable,
+    petsAllowed: property.petsAllowed,
+    propertyType: property.propertyType,
+    sharedBathroomCount: property.sharedBathroomCount,
+    smokingAllowed: property.smokingAllowed,
+  });
+  const baseRuleDrafts =
+    property.rules.length > 0 ? existingDrafts.ruleDrafts : suggestedDrafts;
+  const baseCustomRules =
+    property.rules.length > 0
+      ? existingDrafts.customRules
+      : [createEmptyWorkflow3CustomRuleDraft()];
+  const draftRuleState = hydrateWorkflow3RuleDraftsFromQuery(
+    resolvedSearchParams,
+    baseRuleDrafts,
+  );
+  const draftCustomRules = hydrateWorkflow3CustomRulesFromQuery(
+    resolvedSearchParams,
+    baseCustomRules,
+  );
+
   return (
-    <main className="mx-auto min-h-screen max-w-4xl px-5 py-10 md:px-8">
+    <main className="mx-auto min-h-screen max-w-7xl px-5 py-10 md:px-8">
       <form
         action={saveHouseRules}
-        className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-8 shadow-[var(--shadow-panel)]"
+        className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-8 shadow-[var(--shadow-panel)] md:p-10"
+        noValidate
       >
-        <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-muted)]">
-          Step 2
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-xs uppercase tracking-[0.24em] text-[var(--color-muted)]">
+            Step 2 of 5
+          </div>
+          <Link
+            className="text-sm font-medium text-[var(--color-accent-strong)]"
+            href="/onboarding/property"
+          >
+            Back
+          </Link>
         </div>
-        <h1 className="mt-3 text-4xl font-semibold">Define the rule set</h1>
+        <h1 className="mt-3 text-4xl font-semibold">Define the house rules</h1>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-muted)]">
           These rules become the first fit screen for inbound leads at{" "}
           <span className="font-medium">{property.name}</span>.
         </p>
-
-        <div className="mt-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold">AI rule-set generator</div>
-              <div className="mt-1 text-xs text-[var(--color-muted)]">
-                Generate a starter house-rule set from the property profile, then apply it before continuing onboarding.
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <form action={generatePropertyHouseRulesAction.bind(null, property.id)}>
-                <input type="hidden" name="redirectTo" value="/onboarding/house-rules" />
-                <button
-                  className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-2 text-sm font-medium"
-                  type="submit"
-                >
-                  Generate AI rules
-                </button>
-              </form>
-              <form action={applyPropertyHouseRulesAction.bind(null, property.id)}>
-                <input type="hidden" name="redirectTo" value="/onboarding/house-rules" />
-                <button
-                  className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-2 text-sm font-medium"
-                  type="submit"
-                >
-                  Apply latest AI rules
-                </button>
-              </form>
-            </div>
+        {resolvedSearchParams.error ? (
+          <div className="mt-6 rounded-2xl border border-[rgba(184,88,51,0.25)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm text-[var(--color-accent-strong)]" role="alert">
+            {resolvedSearchParams.error}
           </div>
-        </div>
+        ) : null}
 
-        <div className="mt-8 grid gap-3">
-          {onboardingRulePresets.map((rule) => (
-            <label
-              key={rule.key}
-              className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium">{rule.label}</span>
-                <input
-                  defaultChecked={activeRuleLabels.has(rule.label)}
-                  name={rule.key}
-                  type="checkbox"
-                />
-              </div>
-              <div className="mt-2 text-sm text-[var(--color-muted)]">
-                {rule.description}
-              </div>
-            </label>
-          ))}
-        </div>
+        <HouseRulesBuilder
+          customRules={draftCustomRules}
+          propertyName={property.name}
+          ruleDrafts={draftRuleState}
+        />
 
         <div className="mt-8 flex justify-end">
           <button
             className="rounded-2xl bg-[var(--color-accent)] px-5 py-3 font-medium text-white"
             type="submit"
           >
-            Save and continue
+            Save rules and continue
           </button>
         </div>
       </form>
