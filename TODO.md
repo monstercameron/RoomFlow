@@ -468,7 +468,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [x] Add listing source metadata fields per property.
 - [x] Add listing sync status model and UI states: healthy, pending, failed, out of date.
 - [x] Add property-level calendar target selection.
-- [ ] Add listing performance summary cards per property.
+- [x] Add listing performance summary cards per property.
 - [ ] Add operator workflow for editing parking, bathroom-sharing, and room-count details.
 
 ## Phase 15: communications hub depth

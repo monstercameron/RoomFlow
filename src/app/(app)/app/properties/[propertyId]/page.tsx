@@ -159,6 +159,42 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
         </div>
       </section>
 
+      <section className="mt-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-xl font-semibold">Listing performance</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">
+              Property-level inquiry and conversion signals derived from the leads already assigned to this listing.
+            </div>
+          </div>
+          <div className="text-sm text-[var(--color-muted)]">
+            {property.distinctLeadSourceCount} distinct inquiry sources tracked
+          </div>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-4">
+          <div className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+            <div className="text-sm text-[var(--color-muted)]">30-day inquiries</div>
+            <div className="mt-2 text-3xl font-semibold">{property.recentInquiryCount}</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">Recent inbound volume for this property</div>
+          </div>
+          <div className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+            <div className="text-sm text-[var(--color-muted)]">Top lead source</div>
+            <div className="mt-2 text-lg font-semibold">{property.topLeadSourceName}</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">{property.topLeadSourceCount} inquiries from the strongest source</div>
+          </div>
+          <div className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+            <div className="text-sm text-[var(--color-muted)]">Qualification rate</div>
+            <div className="mt-2 text-3xl font-semibold">{property.qualificationRateLabel}</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">Qualified leads divided by total inquiries</div>
+          </div>
+          <div className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+            <div className="text-sm text-[var(--color-muted)]">Tour conversion</div>
+            <div className="mt-2 text-3xl font-semibold">{property.tourConversionRateLabel}</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">Scheduled tours divided by total inquiries</div>
+          </div>
+        </div>
+      </section>
+
       <div className="mt-6 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-4">
           <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">

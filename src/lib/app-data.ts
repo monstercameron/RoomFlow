@@ -1187,6 +1187,7 @@ export const getPropertyQuestionsViewData = cache(async (propertyId: string) => 
 
 export const getPropertyDetailViewData = cache(async (propertyId: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const recentInquiryWindowStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const qualifiedLeadStatuses = new Set<LeadStatus>([
     LeadStatus.QUALIFIED,
     LeadStatus.TOUR_SCHEDULED,
@@ -1267,9 +1268,47 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
     },
   });
 
+  const propertyLeads = await prisma.lead.findMany({
+    where: {
+      workspaceId: membership.workspaceId,
+      propertyId: property.id,
+    },
+    select: {
+      createdAt: true,
+      leadSource: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
   const resolvedChannelPriorityOrder = resolveChannelPriorityOrder(
     property.channelPriority ?? property.workspace.channelPriority,
   );
+  const leadsBySourceName = new Map<string, number>();
+
+  for (const propertyLead of propertyLeads) {
+    const sourceName = propertyLead.leadSource?.name ?? "Manual";
+    const currentCount = leadsBySourceName.get(sourceName) ?? 0;
+
+    leadsBySourceName.set(sourceName, currentCount + 1);
+  }
+
+  const topLeadSourceEntry = [...leadsBySourceName.entries()].sort(
+    (leftEntry, rightEntry) => rightEntry[1] - leftEntry[1],
+  )[0] ?? null;
+  const recentInquiryCount = propertyLeads.filter(
+    (propertyLead) => propertyLead.createdAt >= recentInquiryWindowStart,
+  ).length;
+  const qualificationRateLabel =
+    property._count.leads > 0
+      ? `${Math.round((qualifiedLeadCount / property._count.leads) * 100)}%`
+      : "No inquiries yet";
+  const tourConversionRateLabel =
+    property._count.leads > 0
+      ? `${Math.round((scheduledTourCount / property._count.leads) * 100)}%`
+      : "No inquiries yet";
 
   return {
     id: property.id,
@@ -1317,6 +1356,12 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
     totalLeadCount: property._count.leads,
     scheduledTourCount,
     totalTourCount: property._count.tours,
+    recentInquiryCount,
+    topLeadSourceCount: topLeadSourceEntry?.[1] ?? 0,
+    topLeadSourceName: topLeadSourceEntry?.[0] ?? "No lead sources yet",
+    qualificationRateLabel,
+    tourConversionRateLabel,
+    distinctLeadSourceCount: leadsBySourceName.size,
     channelPrioritySource: property.channelPriority
       ? "Property override"
       : "Workspace default",
