@@ -38,6 +38,7 @@ import { prisma } from "@/lib/prisma";
 import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
 import { formatPropertyListingSyncStatus } from "@/lib/property-listing-sync";
 import { formatPropertyLifecycleStatus } from "@/lib/property-lifecycle";
+import { formatQuietHours, resolveEffectiveQuietHours } from "@/lib/quiet-hours";
 import { getServerSession } from "@/lib/session";
 import { activeWorkspaceCookieName, ensureWorkspaceForUser } from "@/lib/workspaces";
 
@@ -1346,6 +1347,9 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
       workspace: {
         select: {
           channelPriority: true,
+          quietHoursStartLocal: true,
+          quietHoursEndLocal: true,
+          quietHoursTimeZone: true,
         },
       },
       _count: {
@@ -1430,6 +1434,14 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
   const resolvedChannelPriorityOrder = resolveChannelPriorityOrder(
     property.channelPriority ?? property.workspace.channelPriority,
   );
+  const effectiveQuietHours = resolveEffectiveQuietHours({
+    workspaceQuietHoursStartLocal: property.workspace.quietHoursStartLocal,
+    workspaceQuietHoursEndLocal: property.workspace.quietHoursEndLocal,
+    workspaceQuietHoursTimeZone: property.workspace.quietHoursTimeZone,
+    propertyQuietHoursStartLocal: property.quietHoursStartLocal,
+    propertyQuietHoursEndLocal: property.quietHoursEndLocal,
+    propertyQuietHoursTimeZone: property.quietHoursTimeZone,
+  });
   const leadsBySourceName = new Map<string, number>();
 
   for (const propertyLead of propertyLeads) {
@@ -1472,6 +1484,27 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
     calendarTargetExternalId: property.calendarTargetExternalId,
     calendarTargetName: property.calendarTargetName,
     calendarTargetProvider: property.calendarTargetProvider,
+    quietHoursSummary: formatQuietHours(effectiveQuietHours?.config ?? null),
+    quietHoursSource:
+      effectiveQuietHours?.source === "property"
+        ? "Property override"
+        : effectiveQuietHours?.source === "workspace"
+          ? "Workspace default"
+          : "Disabled",
+    quietHoursStartLocal: property.quietHoursStartLocal,
+    quietHoursEndLocal: property.quietHoursEndLocal,
+    quietHoursTimeZone: property.quietHoursTimeZone,
+    workspaceQuietHoursSummary: formatQuietHours(
+      property.workspace.quietHoursStartLocal &&
+        property.workspace.quietHoursEndLocal &&
+        property.workspace.quietHoursTimeZone
+        ? {
+            startLocal: property.workspace.quietHoursStartLocal,
+            endLocal: property.workspace.quietHoursEndLocal,
+            timeZone: property.workspace.quietHoursTimeZone,
+          }
+        : null,
+    ),
     propertyType: property.propertyType,
     addressLine1: property.addressLine1,
     locality: property.locality,
@@ -1806,4 +1839,55 @@ export const getTemplatesViewData = cache(async () => {
       preview: previewBody,
     };
   });
+});
+
+export const getMessagingSettingsViewData = cache(async () => {
+  const membership = await getCurrentWorkspaceMembership();
+  const properties = await prisma.property.findMany({
+    where: {
+      workspaceId: membership.workspaceId,
+    },
+    orderBy: {
+      name: "asc",
+    },
+    select: {
+      id: true,
+      name: true,
+      quietHoursStartLocal: true,
+      quietHoursEndLocal: true,
+      quietHoursTimeZone: true,
+    },
+  });
+
+  return {
+    workspaceQuietHoursStartLocal: membership.workspace.quietHoursStartLocal,
+    workspaceQuietHoursEndLocal: membership.workspace.quietHoursEndLocal,
+    workspaceQuietHoursTimeZone: membership.workspace.quietHoursTimeZone,
+    workspaceQuietHoursSummary: formatQuietHours(
+      membership.workspace.quietHoursStartLocal &&
+        membership.workspace.quietHoursEndLocal &&
+        membership.workspace.quietHoursTimeZone
+        ? {
+            startLocal: membership.workspace.quietHoursStartLocal,
+            endLocal: membership.workspace.quietHoursEndLocal,
+            timeZone: membership.workspace.quietHoursTimeZone,
+          }
+        : null,
+    ),
+    properties: properties.map((property) => ({
+      id: property.id,
+      name: property.name,
+      quietHoursSummary: formatQuietHours(
+        property.quietHoursStartLocal &&
+          property.quietHoursEndLocal &&
+          property.quietHoursTimeZone
+          ? {
+              startLocal: property.quietHoursStartLocal,
+              endLocal: property.quietHoursEndLocal,
+              timeZone: property.quietHoursTimeZone,
+            }
+          : null,
+      ),
+    })),
+  };
 });

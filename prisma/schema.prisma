@@ -229,6 +229,9 @@ model Workspace {
   onboardingCompletedAt DateTime?
   channelPriority       Json?
   dailyAutomatedSendCap Int               @default(3)
+  quietHoursStartLocal  String?
+  quietHoursEndLocal    String?
+  quietHoursTimeZone    String?
   webhookSigningSecret  String?
   billingOwner          User?             @relation("WorkspaceBillingOwner", fields: [billingOwnerUserId], references: [id], onDelete: SetNull)
   memberships           Membership[]
@@ -308,6 +311,9 @@ model Property {
   petsAllowed         Boolean                    @default(false)
   schedulingUrl       String?
   channelPriority     Json?
+  quietHoursStartLocal String?
+  quietHoursEndLocal   String?
+  quietHoursTimeZone   String?
   schedulingEnabled   Boolean                    @default(false)
   workspace           Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   rules               PropertyRule[]

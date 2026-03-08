@@ -1,0 +1,9 @@
+ALTER TABLE "Workspace"
+ADD COLUMN IF NOT EXISTS "quietHoursStartLocal" TEXT,
+ADD COLUMN IF NOT EXISTS "quietHoursEndLocal" TEXT,
+ADD COLUMN IF NOT EXISTS "quietHoursTimeZone" TEXT;
+
+ALTER TABLE "Property"
+ADD COLUMN IF NOT EXISTS "quietHoursStartLocal" TEXT,
+ADD COLUMN IF NOT EXISTS "quietHoursEndLocal" TEXT,
+ADD COLUMN IF NOT EXISTS "quietHoursTimeZone" TEXT;

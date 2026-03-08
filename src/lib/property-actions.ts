@@ -14,6 +14,7 @@ import {
   isPropertyLifecycleStatus,
 } from "@/lib/property-lifecycle";
 import { prisma } from "@/lib/prisma";
+import { validateQuietHoursConfig } from "@/lib/quiet-hours";
 
 function parseSchedulingUrl(value: FormDataEntryValue | null) {
   if (typeof value !== "string") {
@@ -97,6 +98,16 @@ function parseOptionalInteger(value: FormDataEntryValue | null, fieldLabel: stri
   }
 
   return parsedValue;
+}
+
+function parseOptionalQuietHoursText(value: FormDataEntryValue | null) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+
+  return normalizedValue.length > 0 ? normalizedValue : null;
 }
 
 function parseBooleanFormValue(value: FormDataEntryValue | null) {
@@ -506,6 +517,88 @@ export async function updatePropertyLifecycleStatusAction(
       formatPropertyLifecycleStatus(nextLifecycleStatus),
     )}`,
   );
+}
+
+export async function updatePropertyQuietHoursAction(
+  propertyId: string,
+  formData: FormData,
+) {
+  const workspaceState = await getCurrentWorkspaceState();
+  const redirectTargetValue = formData.get("redirectTo");
+  const quietHoursOverrideEnabled =
+    formData.get("quietHoursOverrideEnabled") === "on";
+  const quietHoursStartLocal = parseOptionalQuietHoursText(
+    formData.get("quietHoursStartLocal"),
+  );
+  const quietHoursEndLocal = parseOptionalQuietHoursText(
+    formData.get("quietHoursEndLocal"),
+  );
+  const quietHoursTimeZone = parseOptionalQuietHoursText(
+    formData.get("quietHoursTimeZone"),
+  );
+
+  if (quietHoursOverrideEnabled) {
+    if (!quietHoursStartLocal || !quietHoursEndLocal || !quietHoursTimeZone) {
+      throw new Error("Property quiet hours start, end, and time zone are required when override is enabled.");
+    }
+
+    validateQuietHoursConfig({
+      startLocal: quietHoursStartLocal,
+      endLocal: quietHoursEndLocal,
+      timeZone: quietHoursTimeZone,
+    });
+  }
+
+  const property = await prisma.property.findFirst({
+    where: {
+      id: propertyId,
+      workspaceId: workspaceState.workspace.id,
+    },
+  });
+
+  if (!property) {
+    throw new Error("Property not found.");
+  }
+
+  await prisma.property.update({
+    where: {
+      id: property.id,
+    },
+    data: {
+      quietHoursStartLocal: quietHoursOverrideEnabled ? quietHoursStartLocal : null,
+      quietHoursEndLocal: quietHoursOverrideEnabled ? quietHoursEndLocal : null,
+      quietHoursTimeZone: quietHoursOverrideEnabled ? quietHoursTimeZone : null,
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: workspaceState.workspace.id,
+      propertyId: property.id,
+      actorUserId: workspaceState.user.id,
+      eventType: "property_quiet_hours_updated",
+      payload: {
+        propertyName: property.name,
+        quietHoursOverrideEnabled,
+        quietHoursStartLocal: quietHoursOverrideEnabled ? quietHoursStartLocal : null,
+        quietHoursEndLocal: quietHoursOverrideEnabled ? quietHoursEndLocal : null,
+        quietHoursTimeZone: quietHoursOverrideEnabled ? quietHoursTimeZone : null,
+      },
+    },
+  });
+
+  revalidatePath("/app/settings/integrations");
+  revalidatePath("/app/properties");
+  revalidatePath(`/app/properties/${property.id}`);
+  revalidatePath("/app/inbox");
+  revalidatePath("/app/leads");
+
+  const redirectTarget =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : `/app/properties/${property.id}`;
+
+  redirect(redirectTarget);
 }
 
 export async function togglePropertyRuleActiveAction(

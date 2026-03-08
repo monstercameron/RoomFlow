@@ -34,6 +34,10 @@ import {
   type QualificationAutomationBlockingReason,
 } from "@/lib/lead-qualification-guard";
 import {
+  isWithinQuietHours,
+  resolveEffectiveQuietHours,
+} from "@/lib/quiet-hours";
+import {
   evaluateLeadRules,
   type LeadRuleEvaluationResult,
   resolveRuleCategoryFromLabel,
@@ -386,6 +390,9 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
           name: true,
           channelPriority: true,
           dailyAutomatedSendCap: true,
+          quietHoursStartLocal: true,
+          quietHoursEndLocal: true,
+          quietHoursTimeZone: true,
           webhookSigningSecret: true,
         },
       },
@@ -399,6 +406,9 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
           parkingAvailable: true,
           schedulingUrl: true,
           channelPriority: true,
+          quietHoursStartLocal: true,
+          quietHoursEndLocal: true,
+          quietHoursTimeZone: true,
           schedulingEnabled: true,
           rules: {
             orderBy: {
@@ -1203,6 +1213,28 @@ export async function performLeadWorkflowAction(params: {
     );
   }
 
+  const effectiveQuietHours = resolveEffectiveQuietHours({
+    workspaceQuietHoursStartLocal: lead.workspace.quietHoursStartLocal,
+    workspaceQuietHoursEndLocal: lead.workspace.quietHoursEndLocal,
+    workspaceQuietHoursTimeZone: lead.workspace.quietHoursTimeZone,
+    propertyQuietHoursStartLocal: lead.property?.quietHoursStartLocal,
+    propertyQuietHoursEndLocal: lead.property?.quietHoursEndLocal,
+    propertyQuietHoursTimeZone: lead.property?.quietHoursTimeZone,
+  });
+
+  if (
+    effectiveQuietHours &&
+    isWithinQuietHours({
+      quietHours: effectiveQuietHours.config,
+      referenceTime: now,
+    })
+  ) {
+    throw new LeadWorkflowError(
+      "ACTION_BLOCKED_QUIET_HOURS",
+      "Automated messaging is paused during the active quiet-hours window.",
+    );
+  }
+
   if (
     !isChannelDeliverableForLead({
       outboundMessageChannel,
@@ -1690,8 +1722,23 @@ export function getLeadActionAvailability(
     isSameUtcDay(lead.automatedSendCountDate, currentTime) &&
     lead.automatedSendCount >= lead.workspace.dailyAutomatedSendCap;
   const blockedByOptOut = Boolean(lead.optOutAt);
+  const effectiveQuietHours = resolveEffectiveQuietHours({
+    workspaceQuietHoursStartLocal: lead.workspace.quietHoursStartLocal,
+    workspaceQuietHoursEndLocal: lead.workspace.quietHoursEndLocal,
+    workspaceQuietHoursTimeZone: lead.workspace.quietHoursTimeZone,
+    propertyQuietHoursStartLocal: lead.property?.quietHoursStartLocal,
+    propertyQuietHoursEndLocal: lead.property?.quietHoursEndLocal,
+    propertyQuietHoursTimeZone: lead.property?.quietHoursTimeZone,
+  });
+  const blockedByQuietHours = effectiveQuietHours
+    ? isWithinQuietHours({
+        quietHours: effectiveQuietHours.config,
+        referenceTime: currentTime,
+      })
+    : false;
   const canAutomateOutbound =
     !blockedByOptOut &&
+    !blockedByQuietHours &&
     !dailySendCapReached &&
     hasDeliverableDefaultOutboundChannel;
   const propertyIsActiveForWorkflow =

@@ -8,6 +8,7 @@ import {
   updatePropertyListingSourceMetadataAction,
   updatePropertyListingSyncStatusAction,
   updatePropertyOperationalDetailsAction,
+  updatePropertyQuietHoursAction,
   updatePropertySchedulingLinkAction,
 } from "@/lib/property-actions";
 import {
@@ -580,6 +581,66 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
                 </div>
               ))}
             </div>
+            <div className="mt-6 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+              <div className="text-sm text-[var(--color-muted)]">Quiet hours source</div>
+              <div className="mt-1 font-medium">{property.quietHoursSource}</div>
+              <div className="mt-2 text-sm text-[var(--color-muted)]">
+                Active setting: {property.quietHoursSummary}
+              </div>
+              <div className="mt-2 text-xs text-[var(--color-muted)]">
+                Workspace default: {property.workspaceQuietHoursSummary}
+              </div>
+            </div>
+            <form
+              action={updatePropertyQuietHoursAction.bind(null, property.id)}
+              className="mt-4 grid gap-3 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4 md:grid-cols-3"
+            >
+              <label className="flex items-center gap-2 md:col-span-3">
+                <input
+                  defaultChecked={Boolean(property.quietHoursStartLocal)}
+                  name="quietHoursOverrideEnabled"
+                  type="checkbox"
+                />
+                <span className="text-sm font-medium">Enable property quiet-hours override</span>
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Start</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.quietHoursStartLocal ?? "21:00"}
+                  name="quietHoursStartLocal"
+                  type="time"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium">End</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.quietHoursEndLocal ?? "08:00"}
+                  name="quietHoursEndLocal"
+                  type="time"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Time zone</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.quietHoursTimeZone ?? "America/New_York"}
+                  name="quietHoursTimeZone"
+                  placeholder="America/New_York"
+                  type="text"
+                />
+              </label>
+              <input type="hidden" name="redirectTo" value={`/app/properties/${property.id}`} />
+              <div className="flex justify-end md:col-span-3">
+                <button
+                  className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                  type="submit"
+                >
+                  Save quiet hours override
+                </button>
+              </div>
+            </form>
           </section>
 
           <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">

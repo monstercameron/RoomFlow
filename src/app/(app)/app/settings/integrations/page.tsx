@@ -1,10 +1,13 @@
 import { PageHeader } from "@/components/page-header";
+import { updateWorkspaceQuietHoursAction } from "@/app/(app)/app/settings/integrations/actions";
+import { getMessagingSettingsViewData } from "@/lib/app-data";
 import { validateInboundIntegrationConfiguration } from "@/lib/integration-config-validation";
 import { onboardingChannelOptions } from "@/lib/onboarding";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3001";
 
-export default function IntegrationsSettingsPage() {
+export default async function IntegrationsSettingsPage() {
+  const messagingSettings = await getMessagingSettingsViewData();
   const directChannels = onboardingChannelOptions.filter(
     (channel) => channel.mode === "direct" && channel.type !== "MANUAL",
   );
@@ -49,6 +52,76 @@ export default function IntegrationsSettingsPage() {
                 </div>
               ))
             )}
+          </div>
+        </div>
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
+          <div className="text-xl font-semibold">Workspace quiet hours</div>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
+            Automated outbound messaging pauses during this window. Individual properties can inherit this default or override it.
+          </p>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm">
+            Current setting: {messagingSettings.workspaceQuietHoursSummary}
+          </div>
+          <form
+            action={updateWorkspaceQuietHoursAction}
+            className="mt-5 grid gap-3 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4 md:grid-cols-3"
+          >
+            <label className="flex items-center gap-2 md:col-span-3">
+              <input
+                defaultChecked={Boolean(messagingSettings.workspaceQuietHoursStartLocal)}
+                name="quietHoursEnabled"
+                type="checkbox"
+              />
+              <span className="text-sm font-medium">Enable workspace quiet hours</span>
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Start</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.workspaceQuietHoursStartLocal ?? "21:00"}
+                name="quietHoursStartLocal"
+                type="time"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">End</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.workspaceQuietHoursEndLocal ?? "08:00"}
+                name="quietHoursEndLocal"
+                type="time"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Time zone</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.workspaceQuietHoursTimeZone ?? "America/New_York"}
+                name="quietHoursTimeZone"
+                placeholder="America/New_York"
+                type="text"
+              />
+            </label>
+            <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+            <div className="flex justify-end md:col-span-3">
+              <button
+                className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                type="submit"
+              >
+                Save quiet hours
+              </button>
+            </div>
+          </form>
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {messagingSettings.properties.map((property) => (
+              <div
+                key={property.id}
+                className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4 text-sm"
+              >
+                <div className="font-medium">{property.name}</div>
+                <div className="mt-2 text-[var(--color-muted)]">{property.quietHoursSummary}</div>
+              </div>
+            ))}
           </div>
         </div>
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">

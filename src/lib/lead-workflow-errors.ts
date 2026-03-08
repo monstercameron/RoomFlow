@@ -10,6 +10,7 @@ export type LeadWorkflowErrorCode =
   | "MISSING_INFO_PROMPT_THROTTLED"
   | "ACTION_BLOCKED_INACTIVE_LEAD"
   | "ACTION_BLOCKED_OPT_OUT"
+  | "ACTION_BLOCKED_QUIET_HOURS"
   | "ACTION_BLOCKED_CHANNEL_INVALID"
   | "ACTION_BLOCKED_DAILY_SEND_CAP"
   | "ACTION_BLOCKED_DUPLICATE_TEMPLATE"
@@ -53,6 +54,8 @@ const userFacingMessageByWorkflowErrorCode: Record<
     "This lead is not active for automated actions.",
   ACTION_BLOCKED_OPT_OUT:
     "This lead opted out of automated messaging.",
+  ACTION_BLOCKED_QUIET_HOURS:
+    "Automated messaging is paused during the active quiet-hours window.",
   ACTION_BLOCKED_CHANNEL_INVALID:
     "No valid outbound channel is available for this action.",
   ACTION_BLOCKED_DAILY_SEND_CAP:
