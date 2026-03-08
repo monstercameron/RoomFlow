@@ -1170,6 +1170,7 @@ export const getPropertiesViewData = cache(async () => {
     include: {
       _count: {
         select: {
+          questionSets: true,
           rules: true,
         },
       },
@@ -1210,13 +1211,20 @@ export const getPropertiesViewData = cache(async () => {
       .reduce((total, entry) => total + entry._count._all, 0);
 
     return {
+      addressLine1: property.addressLine1,
       id: property.id,
+      locality: property.locality,
       name: property.name,
       activeRooms: property.rentableRoomCount ?? 0,
       activeLeads,
+      parkingAvailable: property.parkingAvailable,
+      propertyType: property.propertyType,
       qualifiedLeads,
+      questionSetCount: property._count.questionSets,
       rulesCount: property._count.rules,
+      schedulingEnabled: property.schedulingEnabled,
       schedulingUrl: property.schedulingUrl,
+      sharedBathroomCount: property.sharedBathroomCount ?? 0,
     };
   });
 });
