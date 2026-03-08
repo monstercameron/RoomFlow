@@ -28,7 +28,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     providerId: resolvedSearchParams.provider ?? null,
   });
   const availableEntryProviderIds = getConfiguredSocialAuthProviderIds().filter(
-    (providerId) => providerId === "google" || providerId === "facebook",
+    (providerId) =>
+      providerId === "google" || providerId === "facebook" || providerId === "microsoft",
   );
 
   if (session) {

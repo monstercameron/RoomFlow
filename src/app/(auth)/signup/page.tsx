@@ -28,7 +28,8 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
     providerId: resolvedSearchParams.provider ?? null,
   });
   const availableEntryProviderIds = getConfiguredSocialAuthProviderIds().filter(
-    (providerId) => providerId === "google" || providerId === "facebook",
+    (providerId) =>
+      providerId === "google" || providerId === "facebook" || providerId === "microsoft",
   );
 
   if (session) {
