@@ -288,7 +288,11 @@ export const getCurrentWorkspaceMembership = cache(async () => {
       userId: user.id,
     },
     include: {
-      workspace: true,
+      workspace: {
+        include: {
+          billingOwner: true,
+        },
+      },
     },
     orderBy: {
       createdAt: "asc",

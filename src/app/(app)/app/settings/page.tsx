@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { getCurrentWorkspaceState } from "@/lib/app-data";
+import {
+  formatWorkspaceCapabilityLabel,
+  formatWorkspacePlanLabel,
+  formatWorkspacePlanStatusLabel,
+} from "@/lib/workspace-plan";
 
 export default async function SettingsPage() {
   const workspaceState = await getCurrentWorkspaceState();
@@ -47,6 +52,43 @@ export default async function SettingsPage() {
               <dt className="text-[var(--color-muted)]">Onboarding</dt>
               <dd className="mt-1 font-medium">
                 {workspaceState.onboardingComplete ? "Complete" : "In progress"}
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-xl font-semibold">Plan</div>
+          <dl className="mt-4 space-y-3 text-sm">
+            <div>
+              <dt className="text-[var(--color-muted)]">Package</dt>
+              <dd className="mt-1 font-medium">
+                {formatWorkspacePlanLabel(workspaceState.workspace.planType)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[var(--color-muted)]">Status</dt>
+              <dd className="mt-1 font-medium">
+                {formatWorkspacePlanStatusLabel(workspaceState.workspace.planStatus)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[var(--color-muted)]">Billing owner</dt>
+              <dd className="mt-1 font-medium">
+                {workspaceState.workspace.billingOwner?.email ?? "Unassigned"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[var(--color-muted)]">Enabled capabilities</dt>
+              <dd className="mt-2 flex flex-wrap gap-2">
+                {workspaceState.workspace.enabledCapabilities.map((workspaceCapability) => (
+                  <span
+                    className="rounded-full border border-[var(--color-line)] px-3 py-1 text-xs font-medium text-[var(--color-muted)]"
+                    key={workspaceCapability}
+                  >
+                    {formatWorkspaceCapabilityLabel(workspaceCapability)}
+                  </span>
+                ))}
               </dd>
             </div>
           </dl>

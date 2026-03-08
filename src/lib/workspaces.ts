@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { MembershipRole } from "@/generated/prisma/client";
+import { getDefaultCapabilitiesForWorkspacePlan } from "@/lib/workspace-plan";
+import { WorkspacePlanStatus, WorkspacePlanType } from "@/generated/prisma/client";
 
 export const activeWorkspaceCookieName = "roomflow_active_workspace_id";
 
@@ -60,7 +62,11 @@ export async function ensureWorkspaceForUser(user: WorkspaceUser) {
         name: workspaceName,
       },
       create: {
+        billingOwnerUserId: user.id,
+        enabledCapabilities: getDefaultCapabilitiesForWorkspacePlan(WorkspacePlanType.PERSONAL),
         name: workspaceName,
+        planStatus: WorkspacePlanStatus.TRIAL,
+        planType: WorkspacePlanType.PERSONAL,
         slug: workspaceSlug,
       },
     });

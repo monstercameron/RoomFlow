@@ -20,6 +20,31 @@ enum MembershipRole {
   VIEWER
 }
 
+enum WorkspacePlanType {
+  PERSONAL
+  ORG
+}
+
+enum WorkspacePlanStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum WorkspaceCapability {
+  CORE_CRM
+  PROPERTY_PIPELINE
+  MESSAGING
+  INTEGRATIONS
+  ORG_MEMBERS
+  ADVANCED_AUTOMATIONS
+  ADVANCED_ANALYTICS
+  AI_ASSIST
+  SCREENING
+  CALENDAR_SYNC
+}
+
 enum LeadStatus {
   NEW
   AWAITING_RESPONSE
@@ -167,6 +192,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   memberships   Membership[]
+  billingOwnedWorkspaces Workspace[] @relation("WorkspaceBillingOwner")
   auditEvents   AuditEvent[] @relation("AuditActor")
   sentWorkspaceInvites     WorkspaceInvite[] @relation("WorkspaceInviteCreatedBy")
   acceptedWorkspaceInvites WorkspaceInvite[] @relation("WorkspaceInviteAcceptedBy")
@@ -178,10 +204,15 @@ model Workspace {
   id                    String            @id @default(cuid())
   name                  String
   slug                  String            @unique
+  planType              WorkspacePlanType   @default(PERSONAL)
+  planStatus            WorkspacePlanStatus @default(TRIAL)
+  billingOwnerUserId    String?
+  enabledCapabilities   WorkspaceCapability[] @default([CORE_CRM, PROPERTY_PIPELINE, MESSAGING, INTEGRATIONS])
   onboardingCompletedAt DateTime?
   channelPriority       Json?
   dailyAutomatedSendCap Int               @default(3)
   webhookSigningSecret  String?
+  billingOwner          User?             @relation("WorkspaceBillingOwner", fields: [billingOwnerUserId], references: [id], onDelete: SetNull)
   memberships           Membership[]
   workspaceInvites      WorkspaceInvite[]
   properties            Property[]
@@ -195,6 +226,8 @@ model Workspace {
   tours                 TourEvent[]
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
+
+  @@index([billingOwnerUserId])
 }
 
 model Membership {
