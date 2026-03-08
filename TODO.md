@@ -446,7 +446,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [ ] Add Microsoft login for Org workspaces.
 - [ ] Add Apple login with private-relay email handling.
 - [ ] Add optional passkey registration and sign-in.
-- [ ] Add account-linking UI and server actions for multiple auth methods on one identity.
+- [x] Add account-linking UI and server actions for multiple auth methods on one identity.
 - [x] Add session and device management UI for revoking active sessions.
 - [x] Add workspace invite acceptance flow for existing and new users.
 - [x] Add workspace switching UI for users with access to multiple workspaces.

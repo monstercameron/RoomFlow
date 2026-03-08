@@ -7,18 +7,35 @@ import {
   sendMagicLinkEmail,
   sendPasswordResetEmail,
 } from "@/lib/auth-email";
+import {
+  getConfiguredSocialAuthProviderIds,
+  getConfiguredSocialAuthProviders,
+} from "@/lib/auth-providers";
 import { prisma } from "@/lib/prisma";
 import { ensureWorkspaceForUser } from "@/lib/workspaces";
 
 const oneHourInSeconds = 60 * 60;
+const configuredSocialAuthProviders = getConfiguredSocialAuthProviders();
+const trustedSocialAuthProviderIds = getConfiguredSocialAuthProviderIds();
 
 export const auth = betterAuth({
+  account: {
+    accountLinking: {
+      allowDifferentEmails: false,
+      allowUnlinkingAll: false,
+      disableImplicitLinking: true,
+      enabled: true,
+      trustedProviders: trustedSocialAuthProviderIds,
+      updateUserInfoOnLink: true,
+    },
+  },
   appName: "Roomflow",
   baseURL: process.env.BETTER_AUTH_URL,
   secret: process.env.BETTER_AUTH_SECRET,
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+  socialProviders: configuredSocialAuthProviders,
   plugins: [
     nextCookies(),
     magicLink({

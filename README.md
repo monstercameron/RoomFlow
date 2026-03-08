@@ -36,6 +36,18 @@ If `.local_pg` is stale or corrupted, stop the local Node processes, delete `.lo
 
 The Better Auth session is configured to last 1 hour in local development.
 
+### Optional social auth providers
+
+If you want to test account linking from the security settings page, add OAuth credentials for any
+provider you want to enable:
+
+* `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
+* `FACEBOOK_CLIENT_ID` / `FACEBOOK_CLIENT_SECRET`
+* `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET`
+* `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET`
+
+Providers without both values stay hidden from Better Auth and show as not configured in the app.
+
 The first implementation slice is intentionally narrow and follows the build order in [TODO.md](./TODO.md).
 
 ---
