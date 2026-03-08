@@ -53,6 +53,26 @@ const workspacePlanStatusLabels: Record<WorkspacePlanStatus, string> = {
   [WorkspacePlanStatus.TRIAL]: "Trial",
 };
 
+const workspacePlanUsageLimits: Record<
+  WorkspacePlanType,
+  {
+    memberships: number | null;
+    messageTemplates: number | null;
+    properties: number | null;
+  }
+> = {
+  [WorkspacePlanType.ORG]: {
+    memberships: null,
+    messageTemplates: null,
+    properties: null,
+  },
+  [WorkspacePlanType.PERSONAL]: {
+    memberships: 1,
+    messageTemplates: 10,
+    properties: 1,
+  },
+};
+
 const allWorkspaceCapabilities = Object.values(WorkspaceCapability);
 
 export function formatWorkspaceCapabilityLabel(workspaceCapability: WorkspaceCapability) {
@@ -130,4 +150,8 @@ export function resolveDisabledCapabilitiesForWorkspacePlanChange(params: {
   return params.currentEnabledCapabilities.filter(
     (workspaceCapability) => !nextEnabledCapabilities.has(workspaceCapability),
   );
+}
+
+export function getWorkspacePlanUsageLimits(workspacePlanType: WorkspacePlanType) {
+  return workspacePlanUsageLimits[workspacePlanType];
 }

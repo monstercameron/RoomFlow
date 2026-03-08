@@ -599,6 +599,34 @@ export const getDashboardViewData = cache(async () => {
   };
 });
 
+export const getWorkspacePlanUsageData = cache(async () => {
+  const membership = await getCurrentWorkspaceMembership();
+
+  const [membershipCount, messageTemplateCount, propertyCount] = await Promise.all([
+    prisma.membership.count({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+    }),
+    prisma.messageTemplate.count({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+    }),
+    prisma.property.count({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+    }),
+  ]);
+
+  return {
+    memberships: membershipCount,
+    messageTemplates: messageTemplateCount,
+    properties: propertyCount,
+  };
+});
+
 export const getLeadListViewData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
   const leads = await prisma.lead.findMany({

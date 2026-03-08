@@ -2,11 +2,12 @@ import Link from "next/link";
 import { WorkspacePlanType } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { updateWorkspacePlanAction } from "@/app/(app)/app/settings/plan-actions";
-import { getCurrentWorkspaceState } from "@/lib/app-data";
+import { getCurrentWorkspaceState, getWorkspacePlanUsageData } from "@/lib/app-data";
 import {
   formatWorkspaceCapabilityLabel,
   getLockedCapabilitiesForWorkspacePlan,
   getMinimumWorkspacePlanForCapability,
+  getWorkspacePlanUsageLimits,
   formatWorkspacePlanLabel,
   formatWorkspacePlanStatusLabel,
 } from "@/lib/workspace-plan";
@@ -39,6 +40,10 @@ function getPlanChangeMessage(planChange?: string) {
   return null;
 }
 
+function formatUsageLimit(limitValue: number | null) {
+  return limitValue === null ? "No cap" : String(limitValue);
+}
+
 export default async function SettingsPage(props: {
   searchParams: Promise<{
     planChange?: string;
@@ -50,6 +55,8 @@ export default async function SettingsPage(props: {
   const lockedCapabilities = getLockedCapabilitiesForWorkspacePlan(workspaceState.workspace.planType);
   const upgradePromptCopy = getUpgradePromptCopy(searchParameters.upgrade);
   const planChangeMessage = getPlanChangeMessage(searchParameters.planChange);
+  const workspacePlanUsageData = await getWorkspacePlanUsageData();
+  const workspacePlanUsageLimits = getWorkspacePlanUsageLimits(workspaceState.workspace.planType);
 
   return (
     <main>
@@ -198,6 +205,29 @@ export default async function SettingsPage(props: {
                 </dd>
               </div>
             ) : null}
+            <div className="pt-2">
+              <dt className="text-[var(--color-muted)]">Usage counters</dt>
+              <dd className="mt-3 space-y-2 text-sm text-[var(--color-muted)]">
+                <div className="flex items-center justify-between gap-3">
+                  <span>Properties</span>
+                  <span className="font-medium text-[var(--color-ink)]">
+                    {workspacePlanUsageData.properties} / {formatUsageLimit(workspacePlanUsageLimits.properties)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>Members</span>
+                  <span className="font-medium text-[var(--color-ink)]">
+                    {workspacePlanUsageData.memberships} / {formatUsageLimit(workspacePlanUsageLimits.memberships)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>Templates</span>
+                  <span className="font-medium text-[var(--color-ink)]">
+                    {workspacePlanUsageData.messageTemplates} / {formatUsageLimit(workspacePlanUsageLimits.messageTemplates)}
+                  </span>
+                </div>
+              </dd>
+            </div>
           </dl>
         </div>
 

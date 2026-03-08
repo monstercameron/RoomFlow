@@ -9,6 +9,7 @@ import {
   formatWorkspaceCapabilityLabel,
   getMinimumWorkspacePlanForCapability,
   getLockedCapabilitiesForWorkspacePlan,
+  getWorkspacePlanUsageLimits,
   formatWorkspacePlanLabel,
   formatWorkspacePlanStatusLabel,
   getDefaultCapabilitiesForWorkspacePlan,
@@ -111,4 +112,17 @@ test("resolveDisabledCapabilitiesForWorkspacePlanChange reports what a downgrade
       WorkspaceCapability.CALENDAR_SYNC,
     ],
   );
+});
+
+test("getWorkspacePlanUsageLimits returns the personal caps and org unlimited values", () => {
+  assert.deepEqual(getWorkspacePlanUsageLimits(WorkspacePlanType.PERSONAL), {
+    memberships: 1,
+    messageTemplates: 10,
+    properties: 1,
+  });
+  assert.deepEqual(getWorkspacePlanUsageLimits(WorkspacePlanType.ORG), {
+    memberships: null,
+    messageTemplates: null,
+    properties: null,
+  });
 });
