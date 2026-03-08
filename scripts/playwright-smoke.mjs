@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { chromium } from "playwright";
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
@@ -76,7 +77,7 @@ async function run() {
     await visitPath("/app/leads", "Qualification queue");
     await visitPath("/app/inbox?queue=review", "Conversation triage");
     await visitPath("/app/properties", "Property operations");
-    await visitPath("/app/calendar", "Scheduling handoff queue");
+    await visitPath("/app/calendar", "Tour scheduling");
     await visitPath("/app/templates", "Reusable messaging");
     await visitPath("/app/workflows", "Automation builder");
     await visitPath("/app/settings", "Operator and workspace settings");
@@ -96,14 +97,15 @@ async function run() {
     });
 
     await visitPath("/app/leads", "Qualification queue");
-    const firstLeadLink = page.locator('a[href^="/app/leads/"]').first();
-    const firstLeadHref = await firstLeadLink.getAttribute("href");
-
-    if (!firstLeadHref) {
-      throw new Error("Could not find a lead detail link on /app/leads.");
-    }
-
-    await visitPath(firstLeadHref, "Summary");
+    await Promise.all([
+      page.waitForURL(/\/app\/leads\/.+/, {
+        timeout: 120_000,
+      }),
+      page.getByRole("link", { name: "Avery Mason" }).click(),
+    ]);
+    await page.getByText("Manual tour scheduling", { exact: false }).waitFor({
+      timeout: 60_000,
+    });
     await page.getByRole("textbox", { name: "Message" }).fill(
       "Playwright smoke test manual outbound note.",
     );
@@ -115,6 +117,25 @@ async function run() {
     if (page.url().includes("workflowError=")) {
       throw new Error(`Workflow error present after manual outbound action: ${page.url()}`);
     }
+
+    await page.getByLabel("Tour date and time").fill("2030-01-15T10:30");
+    await Promise.all([
+      page.waitForLoadState("domcontentloaded"),
+      page.getByRole("button", { name: "Schedule manually" }).click(),
+    ]);
+
+    if (page.url().includes("workflowError=")) {
+      throw new Error(`Workflow error present after manual scheduling action: ${page.url()}`);
+    }
+
+    await page.getByText("Upcoming tour", { exact: false }).waitFor({
+      timeout: 60_000,
+    });
+
+    await visitPath("/app/calendar", "Tour scheduling");
+    await page.getByText("Avery Mason", { exact: false }).first().waitFor({
+      timeout: 60_000,
+    });
 
     await visitPath("/app/properties", "Property operations");
     const firstPropertyLink = page.locator('a[href^="/app/properties/"]').first();
@@ -132,7 +153,7 @@ async function run() {
   }
 
   if (failures.length > 0) {
-    require('node:fs').writeFileSync('smoke-fails.json', JSON.stringify(failures, null, 2));
+    writeFileSync("smoke-fails.json", JSON.stringify(failures, null, 2));
     throw new Error(
       `Smoke checks hit ${failures.length} runtime issue(s):\n${JSON.stringify(
         failures,

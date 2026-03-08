@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
+  isAvailabilityDay,
+  serializeAvailabilityWindowConfig,
+  validateAvailabilityWindowConfig,
+} from "@/lib/availability-windows";
+import {
   getCurrentWorkspaceMembership,
   getCurrentWorkspaceState,
 } from "@/lib/app-data";
@@ -17,6 +22,13 @@ function parseOptionalQuietHoursText(value: FormDataEntryValue | null) {
   const normalizedValue = value.trim();
 
   return normalizedValue.length > 0 ? normalizedValue : null;
+}
+
+function parseAvailabilityDayValues(values: FormDataEntryValue[]) {
+  return values.filter(
+    (value): value is import("@/lib/availability-windows").AvailabilityDay =>
+      typeof value === "string" && isAvailabilityDay(value),
+  );
 }
 
 function parsePositiveInteger(value: FormDataEntryValue | null, fieldLabel: string) {
@@ -139,6 +151,68 @@ export async function updateWorkspaceMessagingThrottleSettingsAction(
   revalidatePath("/app/settings/integrations");
   revalidatePath("/app/inbox");
   revalidatePath("/app/leads");
+
+  const redirectTarget =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : "/app/settings/integrations";
+
+  redirect(redirectTarget);
+}
+
+export async function updateOperatorSchedulingAvailabilityAction(
+  formData: FormData,
+) {
+  const workspaceMembership = await getCurrentWorkspaceMembership();
+  const workspaceState = await getCurrentWorkspaceState();
+  const redirectTargetValue = formData.get("redirectTo");
+  const availabilityEnabled = formData.get("availabilityEnabled") === "on";
+  const startLocal = parseOptionalQuietHoursText(formData.get("availabilityStartLocal"));
+  const endLocal = parseOptionalQuietHoursText(formData.get("availabilityEndLocal"));
+  const timeZone = parseOptionalQuietHoursText(formData.get("availabilityTimeZone"));
+  const days = parseAvailabilityDayValues(formData.getAll("availabilityDays"));
+
+  if (availabilityEnabled && (!startLocal || !endLocal || !timeZone)) {
+    throw new Error("Operator availability start, end, and time zone are required when availability is enabled.");
+  }
+
+  const validatedSchedulingAvailability = availabilityEnabled
+    ? validateAvailabilityWindowConfig({
+        days,
+        endLocal: endLocal ?? "",
+        startLocal: startLocal ?? "",
+        timeZone: timeZone ?? "",
+      })
+    : null;
+  const schedulingAvailability = serializeAvailabilityWindowConfig(validatedSchedulingAvailability);
+
+  await prisma.membership.update({
+    where: {
+      id: workspaceMembership.id,
+    },
+    data: {
+      schedulingAvailability,
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: workspaceMembership.workspaceId,
+      actorUserId: workspaceState.user.id,
+      eventType: "operator_scheduling_availability_updated",
+      payload: {
+        availabilityEnabled,
+        membershipId: workspaceMembership.id,
+        schedulingAvailability: validatedSchedulingAvailability,
+        userName: workspaceState.user.name,
+      },
+    },
+  });
+
+  revalidatePath("/app/calendar");
+  revalidatePath("/app/leads");
+  revalidatePath("/app/settings/integrations");
+  revalidatePath("/app/settings/members");
 
   const redirectTarget =
     typeof redirectTargetValue === "string" && redirectTargetValue.length > 0

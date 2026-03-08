@@ -1,6 +1,9 @@
 export type LeadWorkflowErrorCode =
   | "LEAD_NOT_FOUND"
   | "INVALID_STATUS_TRANSITION"
+  | "SCHEDULED_AT_REQUIRED"
+  | "SCHEDULED_AT_INVALID"
+  | "SCHEDULED_AT_OUTSIDE_AVAILABILITY"
   | "ACTION_NOT_ALLOWED_FOR_MISMATCH"
   | "ACTION_BLOCKED_MISSING_INFO"
   | "ACTION_REQUIRES_PROPERTY"
@@ -27,7 +30,8 @@ export type LeadWorkflowErrorCode =
   | "DUPLICATE_CANDIDATE_NOT_FOUND"
   | "PROPERTY_SELECTION_REQUIRED"
   | "PROPERTY_NOT_FOUND"
-  | "PROPERTY_NOT_ACTIVE";
+  | "PROPERTY_NOT_ACTIVE"
+  | "ACTIVE_TOUR_ALREADY_EXISTS";
 
 const userFacingMessageByWorkflowErrorCode: Record<
   LeadWorkflowErrorCode,
@@ -36,6 +40,12 @@ const userFacingMessageByWorkflowErrorCode: Record<
   LEAD_NOT_FOUND: "That lead could not be found in your workspace.",
   INVALID_STATUS_TRANSITION:
     "This action is blocked because the lead status cannot transition that way.",
+  SCHEDULED_AT_REQUIRED:
+    "Choose a date and time before scheduling or rescheduling a tour.",
+  SCHEDULED_AT_INVALID:
+    "The selected tour date and time is invalid.",
+  SCHEDULED_AT_OUTSIDE_AVAILABILITY:
+    "The selected tour time falls outside the configured scheduling availability.",
   ACTION_NOT_ALLOWED_FOR_MISMATCH:
     "This lead currently has a mismatch and cannot be advanced.",
   ACTION_BLOCKED_MISSING_INFO:
@@ -65,7 +75,7 @@ const userFacingMessageByWorkflowErrorCode: Record<
   TEMPLATE_UNRESOLVED_TOKENS:
     "Template rendering failed because some variables are unresolved.",
   ACTION_REQUIRES_QUALIFIED_LEAD:
-    "Only qualified leads can receive this scheduling handoff.",
+    "Only qualified leads can be scheduled for a tour.",
   OVERRIDE_REASON_REQUIRED:
     "A reason is required before applying a manual override.",
   OVERRIDE_STATUS_REQUIRED:
@@ -86,6 +96,8 @@ const userFacingMessageByWorkflowErrorCode: Record<
   PROPERTY_NOT_FOUND: "The selected property was not found in this workspace.",
   PROPERTY_NOT_ACTIVE:
     "Only active properties can receive new lead and workflow actions.",
+  ACTIVE_TOUR_ALREADY_EXISTS:
+    "This lead already has an active scheduled tour. Reschedule or cancel it first.",
 };
 
 export class LeadWorkflowError extends Error {

@@ -8,7 +8,11 @@ import {
   generatePropertyListingAnalyzerAction,
 } from "@/lib/ai-actions";
 import {
+  availabilityDayOptions,
+} from "@/lib/availability-windows";
+import {
   updatePropertyCalendarTargetAction,
+  updatePropertyAvailabilityAction,
   updatePropertyLifecycleStatusAction,
   updatePropertyListingSourceMetadataAction,
   updatePropertyListingSyncStatusAction,
@@ -681,6 +685,88 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
                   type="submit"
                 >
                   Save calendar target
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className="text-xl font-semibold">Tour availability window</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">
+              Limit operator-booked tours for this property to a recurring local window. Manual tour creation and rescheduling will enforce this when configured.
+            </div>
+            <div className="mt-4 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+              <div className="text-sm text-[var(--color-muted)]">Current property availability</div>
+              <div className="mt-1 font-medium">{property.schedulingAvailabilitySummary}</div>
+            </div>
+            <form
+              action={updatePropertyAvailabilityAction.bind(null, property.id)}
+              className="mt-4 grid gap-3 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4 md:grid-cols-3"
+            >
+              <label className="flex items-center gap-2 md:col-span-3">
+                <input
+                  defaultChecked={Boolean(property.schedulingAvailabilityStartLocal)}
+                  name="availabilityEnabled"
+                  type="checkbox"
+                />
+                <span className="text-sm font-medium">Enable property tour availability</span>
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Start</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.schedulingAvailabilityStartLocal ?? "09:00"}
+                  name="availabilityStartLocal"
+                  type="time"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium">End</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.schedulingAvailabilityEndLocal ?? "17:00"}
+                  name="availabilityEndLocal"
+                  type="time"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Time zone</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.schedulingAvailabilityTimeZone ?? "America/New_York"}
+                  name="availabilityTimeZone"
+                  placeholder="America/New_York"
+                  type="text"
+                />
+              </label>
+              <div className="md:col-span-3">
+                <div className="text-sm font-medium">Days</div>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {availabilityDayOptions.map((dayOption) => (
+                    <label
+                      key={`${property.id}-${dayOption.value}`}
+                      className="flex items-center gap-2 rounded-full border border-[var(--color-line)] bg-white px-3 py-2 text-sm"
+                    >
+                      <input
+                        defaultChecked={property.schedulingAvailabilityDays.includes(
+                          dayOption.value,
+                        )}
+                        name="availabilityDays"
+                        type="checkbox"
+                        value={dayOption.value}
+                      />
+                      <span>{dayOption.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <input type="hidden" name="redirectTo" value={`/app/properties/${property.id}`} />
+              <div className="flex justify-end md:col-span-3">
+                <button
+                  className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                  type="submit"
+                >
+                  Save availability window
                 </button>
               </div>
             </form>

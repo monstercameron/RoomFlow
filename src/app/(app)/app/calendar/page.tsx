@@ -9,9 +9,74 @@ export default async function CalendarPage() {
     <main>
       <PageHeader
         eyebrow="Calendar"
-        title="Scheduling handoff queue"
-        description="This v1 calendar view tracks which qualified leads are ready for a scheduling link and which leads have already received the handoff."
+        title="Tour scheduling"
+        description="Track scheduled tours alongside the existing scheduling handoff queue so operator-booked tours and self-serve handoffs live in one surface."
       />
+
+      <section className="mb-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold">Scheduled tours</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">
+              Manual operator bookings and future calendar-sync events will appear here.
+            </div>
+          </div>
+          <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-3 py-2 text-sm font-medium">
+            {calendar.scheduledTours.length} scheduled
+          </div>
+        </div>
+
+        {calendar.scheduledTours.length === 0 ? (
+          <div className="mt-5 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5 text-sm text-[var(--color-muted)]">
+            No scheduled tours yet. Create a manual tour from a qualified lead or send a scheduling handoff from the lead detail view.
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            {calendar.scheduledTours.map((tour) => (
+              <Link
+                key={tour.id}
+                href={`/app/leads/${tour.leadId}`}
+                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-semibold">{tour.leadName}</div>
+                    <div className="mt-1 text-sm text-[var(--color-muted)]">
+                      {tour.propertyName} | {tour.leadStatus}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                    {tour.calendarTarget}
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <div className="text-sm text-[var(--color-muted)]">Tour time</div>
+                    <div className="mt-1 font-medium">{tour.scheduledAt}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-[var(--color-muted)]">Move-in date</div>
+                    <div className="mt-1 font-medium">{tour.moveInDate}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-[var(--color-muted)]">Budget</div>
+                    <div className="mt-1 font-medium">{tour.budget}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-[var(--color-muted)]">Last activity</div>
+                    <div className="mt-1 font-medium">{tour.lastActivity}</div>
+                  </div>
+                </div>
+                {tour.externalCalendarId ? (
+                  <div className="mt-4 text-sm text-[var(--color-muted)]">
+                    External calendar id: {tour.externalCalendarId}
+                  </div>
+                ) : null}
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
 
       {calendar.unconfiguredProperties.length > 0 ? (
         <section className="mb-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
@@ -31,85 +96,94 @@ export default async function CalendarPage() {
         </section>
       ) : null}
 
-      {calendar.properties.length === 0 ? (
-        <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
-          <div className="text-lg font-semibold">No scheduling handoffs yet</div>
-          <div className="mt-3 text-sm text-[var(--color-muted)]">
-            Configure a property scheduling link and move a lead to
-            <span className="font-medium"> Qualified </span>
-            before sending the handoff from the lead detail view.
+      <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+        <div>
+          <div className="text-lg font-semibold">Scheduling handoff queue</div>
+          <div className="mt-2 text-sm text-[var(--color-muted)]">
+            Qualified leads who still need a self-serve scheduling link are listed here by property.
           </div>
-        </section>
-      ) : null}
+        </div>
 
-      <div className="space-y-6">
-        {calendar.properties.map((property) => (
-          <section
-            key={property.id}
-            className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-xl font-semibold">{property.name}</div>
-                <div className="mt-1 text-sm text-[var(--color-muted)]">
-                  Calendar target: {property.calendarTargetName ?? property.calendarTargetProvider ?? "Not set"}
-                </div>
-                <a
-                  className="mt-2 block text-sm text-[var(--color-accent-strong)] underline-offset-4 hover:underline"
-                  href={property.schedulingUrl ?? "#"}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  {property.schedulingUrl}
-                </a>
-              </div>
-              <div className="flex flex-wrap gap-3 text-sm">
-                <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-3 py-2">
-                  {property.readyCount} ready to send
-                </div>
-                <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-3 py-2">
-                  {property.handoffCount} handoff sent
-                </div>
-              </div>
+        {calendar.properties.length === 0 ? (
+          <div className="mt-5 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5">
+            <div className="text-lg font-semibold">No scheduling handoffs yet</div>
+            <div className="mt-3 text-sm text-[var(--color-muted)]">
+              Configure a property scheduling link and move a lead to
+              <span className="font-medium"> Qualified </span>
+              before sending the handoff from the lead detail view.
             </div>
+          </div>
+        ) : (
+          <div className="mt-6 space-y-6">
+            {calendar.properties.map((property) => (
+              <section
+                key={property.id}
+                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-6"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xl font-semibold">{property.name}</div>
+                    <div className="mt-1 text-sm text-[var(--color-muted)]">
+                      Calendar target: {property.calendarTargetName ?? property.calendarTargetProvider ?? "Not set"}
+                    </div>
+                    <a
+                      className="mt-2 block text-sm text-[var(--color-accent-strong)] underline-offset-4 hover:underline"
+                      href={property.schedulingUrl ?? "#"}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {property.schedulingUrl}
+                    </a>
+                  </div>
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-3 py-2">
+                      {property.readyCount} ready to send
+                    </div>
+                    <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-3 py-2">
+                      {property.handoffCount} handoff sent
+                    </div>
+                  </div>
+                </div>
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
-              {property.leads.map((lead) => (
-                <Link
-                  key={lead.id}
-                  href={`/app/leads/${lead.id}`}
-                  className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-lg font-semibold">{lead.name}</div>
-                      <div className="mt-1 text-sm text-[var(--color-muted)]">
-                        {lead.status}
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  {property.leads.map((lead) => (
+                    <Link
+                      key={lead.id}
+                      href={`/app/leads/${lead.id}`}
+                      className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-5"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-lg font-semibold">{lead.name}</div>
+                          <div className="mt-1 text-sm text-[var(--color-muted)]">
+                            {lead.status}
+                          </div>
+                        </div>
+                        <div className="text-right text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                          {lead.lastSchedulingEvent}
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-right text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
-                      {lead.lastSchedulingEvent}
-                    </div>
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <div className="text-sm text-[var(--color-muted)]">Move-in date</div>
-                      <div className="mt-1 font-medium">{lead.moveInDate}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-[var(--color-muted)]">Budget</div>
-                      <div className="mt-1 font-medium">{lead.budget}</div>
-                    </div>
-                  </div>
-                  <div className="mt-4 text-sm text-[var(--color-muted)]">
-                    Last activity: {lead.lastActivity}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <div className="text-sm text-[var(--color-muted)]">Move-in date</div>
+                          <div className="mt-1 font-medium">{lead.moveInDate}</div>
+                        </div>
+                        <div>
+                          <div className="text-sm text-[var(--color-muted)]">Budget</div>
+                          <div className="mt-1 font-medium">{lead.budget}</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 text-sm text-[var(--color-muted)]">
+                        Last activity: {lead.lastActivity}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </section>
     </main>
   );
 }

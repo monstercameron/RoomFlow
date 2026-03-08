@@ -518,8 +518,8 @@ These are not part of the original narrow launch slice, but they are now broken 
 
 ## Phase 18: scheduling and calendar depth
 
-- [ ] Add manual tour creation UI separate from automated scheduling handoff.
-- [ ] Add availability-window configuration by user and property.
+- [x] Add manual tour creation UI separate from automated scheduling handoff.
+- [x] Add availability-window configuration by user and property.
 - [ ] Add Google Calendar integration for event sync.
 - [ ] Add Outlook calendar integration for event sync.
 - [ ] Add reschedule and cancel flows with operator-facing reasons and prospect notifications.

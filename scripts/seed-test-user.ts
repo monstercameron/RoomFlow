@@ -98,6 +98,20 @@ async function main() {
 
   await prisma.membership.create({
     data: {
+      schedulingAvailability: {
+        days: [
+          "MONDAY",
+          "TUESDAY",
+          "WEDNESDAY",
+          "THURSDAY",
+          "FRIDAY",
+          "SATURDAY",
+          "SUNDAY",
+        ],
+        endLocal: "23:59",
+        startLocal: "00:00",
+        timeZone: "America/New_York",
+      },
       userId: user.id,
       workspaceId: workspace.id,
       role: MembershipRole.OWNER,
@@ -148,6 +162,20 @@ async function main() {
       parkingAvailable: true,
       smokingAllowed: false,
       petsAllowed: false,
+      schedulingAvailability: {
+        days: [
+          "MONDAY",
+          "TUESDAY",
+          "WEDNESDAY",
+          "THURSDAY",
+          "FRIDAY",
+          "SATURDAY",
+          "SUNDAY",
+        ],
+        endLocal: "23:59",
+        startLocal: "00:00",
+        timeZone: "America/New_York",
+      },
       schedulingUrl: "https://calendar.example.com/maple-house-tour",
     },
   });
@@ -164,6 +192,18 @@ async function main() {
       parkingAvailable: false,
       smokingAllowed: false,
       petsAllowed: false,
+      schedulingAvailability: {
+        days: [
+          "MONDAY",
+          "TUESDAY",
+          "WEDNESDAY",
+          "THURSDAY",
+          "FRIDAY",
+        ],
+        endLocal: "18:00",
+        startLocal: "09:00",
+        timeZone: "America/New_York",
+      },
       schedulingUrl: "https://calendar.example.com/harbor-flat-tour",
     },
   });
@@ -396,9 +436,9 @@ async function main() {
       monthlyBudget: 950,
       stayLengthMonths: 6,
       workStatus: "Hybrid support specialist",
-      notes: "Asked about parking and quiet hours.",
-      status: LeadStatus.AWAITING_RESPONSE,
-      fitResult: QualificationFit.UNKNOWN,
+      notes: "Qualified fit after confirming parking and bathroom expectations.",
+      status: LeadStatus.QUALIFIED,
+      fitResult: QualificationFit.PASS,
       lastActivityAt: hoursAgo(2),
       createdAt: hoursAgo(6),
       updatedAt: hoursAgo(2),
@@ -740,6 +780,13 @@ async function main() {
         toStatus: LeadStatus.AWAITING_RESPONSE,
         reason: "Initial questions sent",
         createdAt: hoursAgo(5),
+      },
+      {
+        leadId: avery.id,
+        fromStatus: LeadStatus.AWAITING_RESPONSE,
+        toStatus: LeadStatus.QUALIFIED,
+        reason: "Qualification answers completed cleanly",
+        createdAt: hoursAgo(2),
       },
       {
         leadId: jordan.id,

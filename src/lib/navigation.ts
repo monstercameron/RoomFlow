@@ -28,7 +28,7 @@ export const appNav: NavItem[] = [
   {
     href: "/app/calendar",
     label: "Calendar",
-    description: "Scheduling handoff queue",
+    description: "Tours and handoff queue",
   },
   {
     href: "/app/templates",

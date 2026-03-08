@@ -323,6 +323,7 @@ model Membership {
   userId      String
   workspaceId String
   role        MembershipRole @default(OWNER)
+  schedulingAvailability Json?
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdAt   DateTime       @default(now())
@@ -377,6 +378,7 @@ model Property {
   smokingAllowed      Boolean                    @default(false)
   petsAllowed         Boolean                    @default(false)
   schedulingUrl       String?
+  schedulingAvailability Json?
   channelPriority     Json?
   quietHoursStartLocal String?
   quietHoursEndLocal   String?

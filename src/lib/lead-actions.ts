@@ -10,10 +10,19 @@ import {
   MessageChannel,
   MessageDirection,
   MessageOrigin,
+  NotificationType,
   PropertyLifecycleStatus,
   QualificationFit,
+  TourEventStatus,
 } from "@/generated/prisma/client";
-import { getCurrentWorkspaceState } from "@/lib/app-data";
+import {
+  getCurrentWorkspaceMembership,
+  getCurrentWorkspaceState,
+} from "@/lib/app-data";
+import {
+  isDateTimeWithinAvailabilityWindow,
+  parseAvailabilityWindowConfig,
+} from "@/lib/availability-windows";
 import { serializeDeliveryStatus } from "@/lib/delivery-status";
 import {
   buildLeadChannelOptOutUpdate,
@@ -32,9 +41,11 @@ import {
 } from "@/lib/lead-workflow-errors";
 import {
   applyLeadEvaluation,
+  appendNotificationEvent,
   evaluateLeadQualification,
   getLeadWorkflowContext,
   performLeadWorkflowAction,
+  queueOutboundWorkflowWebhook,
 } from "@/lib/lead-workflow";
 import { shouldRecomputeFitForTrigger } from "@/lib/lead-rule-engine";
 import {
@@ -192,6 +203,184 @@ export async function scheduleTourAction(leadId: string) {
       });
     },
   });
+}
+
+export async function createManualTourAction(leadId: string, formData: FormData) {
+  const actionContext = await getActionContext(leadId);
+  const redirectTargetValue = formData.get("redirectTo");
+  const fallbackRedirectPath = getLeadDetailPath(leadId);
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : fallbackRedirectPath;
+
+  try {
+    await assertLeadActionPermission({
+      ...actionContext,
+      leadActionPermissionKey: "scheduleTour",
+    });
+
+    const scheduledAt = parseScheduledAtFromFormValue(formData.get("scheduledAt"));
+    const workspaceMembership = await getCurrentWorkspaceMembership();
+    const lead = await getLeadWorkflowContext(actionContext.workspaceId, leadId);
+
+    if (!lead) {
+      throw new LeadWorkflowError(
+        "LEAD_NOT_FOUND",
+        `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
+      );
+    }
+
+    if (!lead.propertyId || !lead.property) {
+      throw new LeadWorkflowError(
+        "ACTION_REQUIRES_PROPERTY",
+        "A lead must be assigned to an active property before manual tour scheduling.",
+      );
+    }
+
+    if (!propertyAcceptsNewLeads(lead.property.lifecycleStatus)) {
+      throw new LeadWorkflowError(
+        "PROPERTY_NOT_ACTIVE",
+        `Property ${lead.property.id} is not active for manual scheduling.`,
+      );
+    }
+
+    const evaluation = evaluateLeadQualification(lead);
+
+    if (evaluation.fitResult === QualificationFit.MISMATCH) {
+      throw new LeadWorkflowError(
+        "ACTION_NOT_ALLOWED_FOR_MISMATCH",
+        "Mismatched leads cannot be manually scheduled for tours.",
+      );
+    }
+
+    if (evaluation.recommendedStatus === LeadStatus.INCOMPLETE) {
+      throw new LeadWorkflowError(
+        "ACTION_BLOCKED_MISSING_INFO",
+        "This lead is still missing required qualification data.",
+      );
+    }
+
+    if (lead.status !== LeadStatus.QUALIFIED) {
+      throw new LeadWorkflowError(
+        "ACTION_REQUIRES_QUALIFIED_LEAD",
+        `Lead ${lead.id} must be qualified before a manual tour can be created.`,
+      );
+    }
+
+    assertScheduledAtWithinAvailabilityWindow({
+      availabilityWindow: parseAvailabilityWindowConfig(
+        workspaceMembership.schedulingAvailability,
+      ),
+      label: "Operator",
+      scheduledAt,
+    });
+    assertScheduledAtWithinAvailabilityWindow({
+      availabilityWindow: parseAvailabilityWindowConfig(
+        lead.property.schedulingAvailability,
+      ),
+      label: "Property",
+      scheduledAt,
+    });
+
+    const existingScheduledTour = lead.tours.find(
+      (tour) => tour.status === TourEventStatus.SCHEDULED,
+    );
+
+    if (existingScheduledTour) {
+      throw new LeadWorkflowError(
+        "ACTIVE_TOUR_ALREADY_EXISTS",
+        `Lead ${lead.id} already has an active scheduled tour.`,
+      );
+    }
+
+    assertLeadStatusTransitionIsAllowed(lead.status, LeadStatus.TOUR_SCHEDULED);
+
+    const now = new Date();
+    const nextTour = await prisma.$transaction(async (transactionClient) => {
+      const createdTour = await transactionClient.tourEvent.create({
+        data: {
+          workspaceId: actionContext.workspaceId,
+          leadId: lead.id,
+          propertyId: lead.propertyId,
+          status: TourEventStatus.SCHEDULED,
+          scheduledAt,
+        },
+      });
+
+      await transactionClient.lead.update({
+        where: {
+          id: lead.id,
+        },
+        data: {
+          status: LeadStatus.TOUR_SCHEDULED,
+          lastActivityAt: now,
+        },
+      });
+
+      await transactionClient.leadStatusHistory.create({
+        data: {
+          leadId: lead.id,
+          fromStatus: lead.status,
+          toStatus: LeadStatus.TOUR_SCHEDULED,
+          reason: "Manual tour scheduled by operator.",
+        },
+      });
+
+      await transactionClient.auditEvent.create({
+        data: {
+          workspaceId: actionContext.workspaceId,
+          leadId: lead.id,
+          propertyId: lead.propertyId,
+          actorUserId: actionContext.actorUserId,
+          actorType: AuditActorType.USER,
+          eventType: workflowEventTypes.tourScheduled,
+          payload: {
+            scheduledAt: scheduledAt.toISOString(),
+            schedulingMethod: "manual",
+            source: "operator",
+          },
+        },
+      });
+
+      return createdTour;
+    });
+
+    await appendNotificationEvent({
+      workspaceId: actionContext.workspaceId,
+      leadId: lead.id,
+      type: NotificationType.TOUR_SCHEDULED,
+      title: "Manual tour scheduled",
+      body: `${lead.fullName} is scheduled for ${lead.property.name} on ${scheduledAt.toLocaleString()}.`,
+      payload: {
+        leadId: lead.id,
+        tourEventId: nextTour.id,
+        scheduledAt: scheduledAt.toISOString(),
+      },
+    });
+
+    await queueOutboundWorkflowWebhook({
+      workspaceId: actionContext.workspaceId,
+      leadId: lead.id,
+      eventType: "tour.scheduled",
+      signingSecret: lead.workspace.webhookSigningSecret,
+      payload: {
+        leadId: lead.id,
+        workspaceId: actionContext.workspaceId,
+        scheduledAt: scheduledAt.toISOString(),
+        schedulingMethod: "manual",
+      },
+    });
+  } catch (error) {
+    if (isLeadWorkflowError(error)) {
+      redirectToWorkflowErrorPath(redirectPath, error.code);
+    }
+
+    throw error;
+  }
+
+  refreshLeadWorkflow(leadId);
+  redirect(redirectPath);
 }
 
 export async function sendApplicationAction(leadId: string) {
@@ -455,6 +644,48 @@ function parseLeadStatusFromFormValue(value: FormDataEntryValue | null) {
   return Object.values(LeadStatus).includes(value as LeadStatus)
     ? (value as LeadStatus)
     : null;
+}
+
+function parseScheduledAtFromFormValue(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new LeadWorkflowError(
+      "SCHEDULED_AT_REQUIRED",
+      "A scheduled date and time is required.",
+    );
+  }
+
+  const scheduledAt = new Date(value);
+
+  if (Number.isNaN(scheduledAt.getTime())) {
+    throw new LeadWorkflowError(
+      "SCHEDULED_AT_INVALID",
+      `Scheduled date ${value} is invalid.`,
+    );
+  }
+
+  return scheduledAt;
+}
+
+function assertScheduledAtWithinAvailabilityWindow(params: {
+  availabilityWindow: ReturnType<typeof parseAvailabilityWindowConfig>;
+  label: string;
+  scheduledAt: Date;
+}) {
+  if (!params.availabilityWindow) {
+    return;
+  }
+
+  if (
+    !isDateTimeWithinAvailabilityWindow({
+      availabilityWindow: params.availabilityWindow,
+      referenceTime: params.scheduledAt,
+    })
+  ) {
+    throw new LeadWorkflowError(
+      "SCHEDULED_AT_OUTSIDE_AVAILABILITY",
+      `${params.label} availability does not include ${params.scheduledAt.toISOString()}.`,
+    );
+  }
 }
 
 function parseQualificationFitFromFormValue(value: FormDataEntryValue | null) {
@@ -1250,7 +1481,6 @@ export async function cancelTourAction(leadId: string, formData: FormData) {
 
 export async function rescheduleTourAction(leadId: string, formData: FormData) {
   const actionContext = await getActionContext(leadId);
-  const scheduledAtValue = formData.get("scheduledAt");
   const redirectTargetValue = formData.get("redirectTo");
   const fallbackRedirectPath = getLeadDetailPath(leadId);
   const redirectPath =
@@ -1264,6 +1494,9 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
       leadActionPermissionKey: "scheduleTour",
     });
 
+    const scheduledAtDate = parseScheduledAtFromFormValue(formData.get("scheduledAt"));
+    const workspaceMembership = await getCurrentWorkspaceMembership();
+
     const lead = await prisma.lead.findFirst({
       where: {
         id: leadId,
@@ -1271,6 +1504,9 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
       },
       include: {
         tours: {
+          where: {
+            status: TourEventStatus.SCHEDULED,
+          },
           orderBy: {
             createdAt: "desc",
           },
@@ -1287,10 +1523,41 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
     }
 
     const previousTourEvent = lead.tours[0] ?? null;
-    const scheduledAtDate =
-      typeof scheduledAtValue === "string" && scheduledAtValue.length > 0
-        ? new Date(scheduledAtValue)
-        : new Date();
+
+    if (!previousTourEvent) {
+      throw new LeadWorkflowError(
+        "ACTION_REQUIRES_QUALIFIED_LEAD",
+        "No active scheduled tour exists for this lead.",
+      );
+    }
+
+    assertScheduledAtWithinAvailabilityWindow({
+      availabilityWindow: parseAvailabilityWindowConfig(
+        workspaceMembership.schedulingAvailability,
+      ),
+      label: "Operator",
+      scheduledAt: scheduledAtDate,
+    });
+
+    const propertyAvailability = lead.propertyId
+      ? await prisma.property.findFirst({
+          where: {
+            id: lead.propertyId,
+            workspaceId: actionContext.workspaceId,
+          },
+          select: {
+            schedulingAvailability: true,
+          },
+        })
+      : null;
+
+    assertScheduledAtWithinAvailabilityWindow({
+      availabilityWindow: parseAvailabilityWindowConfig(
+        propertyAvailability?.schedulingAvailability,
+      ),
+      label: "Property",
+      scheduledAt: scheduledAtDate,
+    });
 
     await prisma.$transaction(async (transactionClient) => {
       if (previousTourEvent) {

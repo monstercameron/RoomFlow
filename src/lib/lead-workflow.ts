@@ -469,6 +469,7 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
           quietHoursStartLocal: true,
           quietHoursEndLocal: true,
           quietHoursTimeZone: true,
+          schedulingAvailability: true,
           schedulingEnabled: true,
           rules: {
             orderBy: {
@@ -532,6 +533,16 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
             },
           },
         },
+      },
+      tours: {
+        orderBy: [
+          {
+            scheduledAt: "desc",
+          },
+          {
+            createdAt: "desc",
+          },
+        ],
       },
     },
   });
@@ -849,7 +860,7 @@ async function appendAuditEvent(params: {
   });
 }
 
-async function appendNotificationEvent(params: {
+export async function appendNotificationEvent(params: {
   workspaceId: string;
   leadId: string | null;
   type: NotificationType;
@@ -879,7 +890,7 @@ async function appendNotificationEvent(params: {
   }
 }
 
-async function queueOutboundWorkflowWebhook(params: {
+export async function queueOutboundWorkflowWebhook(params: {
   workspaceId: string;
   leadId: string;
   eventType: string;
@@ -1837,6 +1848,12 @@ export function getLeadActionAvailability(
       schedulableLeadStatuses.has(lead.status) &&
       lead.status !== LeadStatus.APPLICATION_SENT &&
       canAutomateOutbound,
+    manualScheduleTour:
+      propertyIsActiveForWorkflow &&
+      !leadStatusIsInactive &&
+      evaluation.fitResult !== QualificationFit.MISMATCH &&
+      evaluation.recommendedStatus !== LeadStatus.INCOMPLETE &&
+      lead.status === LeadStatus.QUALIFIED,
     sendApplication:
       propertyIsActiveForWorkflow &&
       qualificationAutomationGateResult.canRunAutomation &&

@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentWorkspaceState } from "@/lib/app-data";
+import {
+  isAvailabilityDay,
+  serializeAvailabilityWindowConfig,
+  validateAvailabilityWindowConfig,
+} from "@/lib/availability-windows";
 import { applyLeadEvaluation } from "@/lib/lead-workflow";
 import { shouldRecomputeFitForTrigger } from "@/lib/lead-rule-engine";
 import {
@@ -108,6 +113,13 @@ function parseOptionalQuietHoursText(value: FormDataEntryValue | null) {
   const normalizedValue = value.trim();
 
   return normalizedValue.length > 0 ? normalizedValue : null;
+}
+
+function parseAvailabilityDayValues(values: FormDataEntryValue[]) {
+  return values.filter(
+    (value): value is import("@/lib/availability-windows").AvailabilityDay =>
+      typeof value === "string" && isAvailabilityDay(value),
+  );
 }
 
 function parseBooleanFormValue(value: FormDataEntryValue | null) {
@@ -592,6 +604,79 @@ export async function updatePropertyQuietHoursAction(
   revalidatePath(`/app/properties/${property.id}`);
   revalidatePath("/app/inbox");
   revalidatePath("/app/leads");
+
+  const redirectTarget =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : `/app/properties/${property.id}`;
+
+  redirect(redirectTarget);
+}
+
+export async function updatePropertyAvailabilityAction(
+  propertyId: string,
+  formData: FormData,
+) {
+  const workspaceState = await getCurrentWorkspaceState();
+  const redirectTargetValue = formData.get("redirectTo");
+  const availabilityEnabled = formData.get("availabilityEnabled") === "on";
+  const startLocal = parseOptionalQuietHoursText(formData.get("availabilityStartLocal"));
+  const endLocal = parseOptionalQuietHoursText(formData.get("availabilityEndLocal"));
+  const timeZone = parseOptionalQuietHoursText(formData.get("availabilityTimeZone"));
+  const days = parseAvailabilityDayValues(formData.getAll("availabilityDays"));
+
+  if (availabilityEnabled && (!startLocal || !endLocal || !timeZone)) {
+    throw new Error("Property availability start, end, and time zone are required when availability is enabled.");
+  }
+
+  const property = await prisma.property.findFirst({
+    where: {
+      id: propertyId,
+      workspaceId: workspaceState.workspace.id,
+    },
+  });
+
+  if (!property) {
+    throw new Error("Property not found.");
+  }
+
+  const validatedSchedulingAvailability = availabilityEnabled
+    ? validateAvailabilityWindowConfig({
+        days,
+        endLocal: endLocal ?? "",
+        startLocal: startLocal ?? "",
+        timeZone: timeZone ?? "",
+      })
+    : null;
+  const schedulingAvailability = serializeAvailabilityWindowConfig(validatedSchedulingAvailability);
+
+  await prisma.property.update({
+    where: {
+      id: property.id,
+    },
+    data: {
+      schedulingAvailability,
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: workspaceState.workspace.id,
+      propertyId: property.id,
+      actorUserId: workspaceState.user.id,
+      eventType: "property_scheduling_availability_updated",
+      payload: {
+        availabilityEnabled,
+        propertyName: property.name,
+        schedulingAvailability: validatedSchedulingAvailability,
+      },
+    },
+  });
+
+  revalidatePath("/app/calendar");
+  revalidatePath("/app/leads");
+  revalidatePath("/app/properties");
+  revalidatePath(`/app/properties/${property.id}`);
 
   const redirectTarget =
     typeof redirectTargetValue === "string" && redirectTargetValue.length > 0

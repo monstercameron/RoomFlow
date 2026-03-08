@@ -3,7 +3,6 @@ import { cookies } from "next/headers";
 import {
   LeadStatus,
   MessageChannel,
-  MessageDirection,
   PropertyLifecycleStatus,
   QualificationFit,
   RuleSeverity,
@@ -34,6 +33,7 @@ import {
   shouldShowDuplicateReviewPrompt,
 } from "@/lib/lead-duplicate-review";
 import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
+import { formatAvailabilityWindow, parseAvailabilityWindowConfig } from "@/lib/availability-windows";
 import { getLeadActionPermissionsForMembershipRole } from "@/lib/membership-role-permissions";
 import { parseDeliveryStatus } from "@/lib/delivery-status";
 import { resolveInternalNoteMentions } from "@/lib/internal-note-mentions";
@@ -74,6 +74,14 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
+const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
 function formatCurrency(value: number | null) {
   if (value === null) {
     return "-";
@@ -88,6 +96,24 @@ function formatDate(value: Date | null) {
   }
 
   return dateFormatter.format(value);
+}
+
+function formatDateTime(value: Date | null) {
+  if (!value) {
+    return "Not set";
+  }
+
+  return dateTimeFormatter.format(value);
+}
+
+function formatDateTimeInputValue(value: Date | null) {
+  if (!value) {
+    return "";
+  }
+
+  const localValue = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
+
+  return localValue.toISOString().slice(0, 16);
 }
 
 function formatRelativeTime(value: Date | null) {
@@ -1208,6 +1234,33 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
         }),
       )
     : null;
+  const orderedTours = [...lead.tours].sort((leftTour, rightTour) => {
+    const leftTimestamp = (leftTour.scheduledAt ?? leftTour.createdAt).getTime();
+    const rightTimestamp = (rightTour.scheduledAt ?? rightTour.createdAt).getTime();
+
+    return rightTimestamp - leftTimestamp;
+  });
+  const activeScheduledTour = orderedTours.find(
+    (tour) => tour.status === TourEventStatus.SCHEDULED,
+  );
+  const operatorSchedulingAvailability = parseAvailabilityWindowConfig(
+    membership.schedulingAvailability,
+  );
+  const propertySchedulingAvailability = parseAvailabilityWindowConfig(
+    lead.property?.schedulingAvailability,
+  );
+  const tourHistory = orderedTours
+    .filter((tour) => tour.id !== activeScheduledTour?.id)
+    .map((tour) => ({
+      id: tour.id,
+      scheduledAt: formatDateTime(tour.scheduledAt ?? tour.createdAt),
+      status: formatEnumLabel(tour.status),
+      statusValue: tour.status,
+      canceledAt: formatDateTime(tour.canceledAt),
+      cancelReason: tour.cancelReason ?? null,
+      externalCalendarId: tour.externalCalendarId ?? null,
+      createdAt: formatRelativeTime(tour.createdAt),
+    }));
 
   return {
     hasAiAssist,
@@ -1230,6 +1283,26 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     }),
     status: formatStatusLabel(lead.status),
     statusValue: lead.status,
+    upcomingTour: activeScheduledTour
+      ? {
+          id: activeScheduledTour.id,
+          scheduledAt: formatDateTime(
+            activeScheduledTour.scheduledAt ?? activeScheduledTour.createdAt,
+          ),
+          scheduledAtInputValue: formatDateTimeInputValue(
+            activeScheduledTour.scheduledAt,
+          ),
+          status: formatEnumLabel(activeScheduledTour.status),
+          externalCalendarId: activeScheduledTour.externalCalendarId ?? null,
+        }
+      : null,
+    tourHistory,
+    operatorSchedulingAvailabilitySummary: formatAvailabilityWindow(
+      operatorSchedulingAvailability,
+    ),
+    propertySchedulingAvailabilitySummary: formatAvailabilityWindow(
+      propertySchedulingAvailability,
+    ),
     contactMethod: preferredContact
       ? formatEnumLabel(preferredContact)
       : "Not set",
@@ -1284,6 +1357,11 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       scheduleTour:
         workflowActionAvailability.scheduleTour &&
         roleActionPermissions.scheduleTour,
+      manualScheduleTour:
+        workflowActionAvailability.manualScheduleTour &&
+        roleActionPermissions.scheduleTour,
+      manageScheduledTour:
+        Boolean(activeScheduledTour) && roleActionPermissions.scheduleTour,
       sendApplication:
         workflowActionAvailability.sendApplication &&
         roleActionPermissions.sendApplication,
@@ -1882,6 +1960,9 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
     propertyQuietHoursEndLocal: property.quietHoursEndLocal,
     propertyQuietHoursTimeZone: property.quietHoursTimeZone,
   });
+  const propertySchedulingAvailability = parseAvailabilityWindowConfig(
+    property.schedulingAvailability,
+  );
   const leadsBySourceName = new Map<string, number>();
 
   for (const propertyLead of propertyLeads) {
@@ -1956,6 +2037,16 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
     calendarTargetExternalId: property.calendarTargetExternalId,
     calendarTargetName: property.calendarTargetName,
     calendarTargetProvider: property.calendarTargetProvider,
+    schedulingAvailabilitySummary: formatAvailabilityWindow(
+      propertySchedulingAvailability,
+    ),
+    schedulingAvailabilityStartLocal:
+      propertySchedulingAvailability?.startLocal ?? null,
+    schedulingAvailabilityEndLocal:
+      propertySchedulingAvailability?.endLocal ?? null,
+    schedulingAvailabilityTimeZone:
+      propertySchedulingAvailability?.timeZone ?? null,
+    schedulingAvailabilityDays: propertySchedulingAvailability?.days ?? [],
     quietHoursSummary: formatQuietHours(effectiveQuietHours?.config ?? null),
     quietHoursSource:
       effectiveQuietHours?.source === "property"
@@ -2139,6 +2230,41 @@ export const getPropertyRulesViewData = cache(async (propertyId: string) => {
 
 export const getCalendarViewData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
+  const scheduledTours = await prisma.tourEvent.findMany({
+    where: {
+      workspaceId: membership.workspaceId,
+      status: TourEventStatus.SCHEDULED,
+    },
+    orderBy: [
+      {
+        scheduledAt: "asc",
+      },
+      {
+        createdAt: "asc",
+      },
+    ],
+    include: {
+      lead: {
+        select: {
+          id: true,
+          fullName: true,
+          monthlyBudget: true,
+          moveInDate: true,
+          status: true,
+          lastActivityAt: true,
+          updatedAt: true,
+        },
+      },
+      property: {
+        select: {
+          id: true,
+          name: true,
+          calendarTargetName: true,
+          calendarTargetProvider: true,
+        },
+      },
+    },
+  });
   const properties = await prisma.property.findMany({
     where: {
       workspaceId: membership.workspaceId,
@@ -2196,6 +2322,25 @@ export const getCalendarViewData = cache(async () => {
   });
 
   return {
+    scheduledTours: scheduledTours.map((tour) => ({
+      id: tour.id,
+      leadId: tour.lead.id,
+      leadName: tour.lead.fullName,
+      leadStatus: formatStatusLabel(tour.lead.status),
+      propertyId: tour.property?.id ?? null,
+      propertyName: tour.property?.name ?? "Unassigned",
+      scheduledAt: formatDateTime(tour.scheduledAt ?? tour.createdAt),
+      moveInDate: formatDate(tour.lead.moveInDate),
+      budget: formatCurrency(tour.lead.monthlyBudget),
+      calendarTarget:
+        tour.property?.calendarTargetName ??
+        tour.property?.calendarTargetProvider ??
+        "Manual scheduling",
+      externalCalendarId: tour.externalCalendarId ?? null,
+      lastActivity: formatRelativeTime(
+        tour.lead.lastActivityAt ?? tour.lead.updatedAt,
+      ),
+    })),
     properties: properties.map((property) => ({
       calendarTargetName: property.calendarTargetName,
       calendarTargetProvider: property.calendarTargetProvider,
@@ -2355,11 +2500,16 @@ export const getMessagingSettingsViewData = cache(async () => {
     select: {
       id: true,
       name: true,
+      schedulingAvailability: true,
       quietHoursStartLocal: true,
       quietHoursEndLocal: true,
       quietHoursTimeZone: true,
     },
   });
+
+  const operatorSchedulingAvailability = parseAvailabilityWindowConfig(
+    membership.schedulingAvailability,
+  );
 
   return {
     dailyAutomatedSendCap: membership.workspace.dailyAutomatedSendCap,
@@ -2373,6 +2523,17 @@ export const getMessagingSettingsViewData = cache(async () => {
     ),
     missingInfoPromptThrottleMinutes:
       membership.workspace.missingInfoPromptThrottleMinutes,
+    operatorSchedulingAvailabilitySummary: formatAvailabilityWindow(
+      operatorSchedulingAvailability,
+    ),
+    operatorSchedulingAvailabilityStartLocal:
+      operatorSchedulingAvailability?.startLocal ?? null,
+    operatorSchedulingAvailabilityEndLocal:
+      operatorSchedulingAvailability?.endLocal ?? null,
+    operatorSchedulingAvailabilityTimeZone:
+      operatorSchedulingAvailability?.timeZone ?? null,
+    operatorSchedulingAvailabilityDays:
+      operatorSchedulingAvailability?.days ?? [],
     workspaceQuietHoursStartLocal: membership.workspace.quietHoursStartLocal,
     workspaceQuietHoursEndLocal: membership.workspace.quietHoursEndLocal,
     workspaceQuietHoursTimeZone: membership.workspace.quietHoursTimeZone,
@@ -2390,6 +2551,9 @@ export const getMessagingSettingsViewData = cache(async () => {
     properties: properties.map((property) => ({
       id: property.id,
       name: property.name,
+      schedulingAvailabilitySummary: formatAvailabilityWindow(
+        parseAvailabilityWindowConfig(property.schedulingAvailability),
+      ),
       quietHoursSummary: formatQuietHours(
         property.quietHoursStartLocal &&
           property.quietHoursEndLocal &&

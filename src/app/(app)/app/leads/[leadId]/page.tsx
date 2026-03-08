@@ -12,8 +12,11 @@ import {
   parseLeadWorkflowErrorCode,
 } from "@/lib/lead-workflow-errors";
 import {
+  cancelTourAction,
+  createManualTourAction,
   evaluateLeadAction,
   requestInfoAction,
+  rescheduleTourAction,
   scheduleTourAction,
   sendApplicationAction,
   assignLeadPropertyAction,
@@ -83,7 +86,7 @@ export default async function LeadDetailPage({
                 disabled={!lead.actions.scheduleTour}
                 type="submit"
               >
-                Schedule tour
+                Send scheduling handoff
               </button>
             </form>
             <form action={sendApplicationAction.bind(null, lead.id)}>
@@ -126,6 +129,177 @@ export default async function LeadDetailPage({
           </div>
         </div>
       ) : null}
+
+      <section className="mb-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-lg font-semibold">Manual tour scheduling</div>
+            <p className="mt-2 max-w-2xl text-sm text-[var(--color-muted)]">
+              Schedule an operator-managed tour here, or keep using the separate handoff button when the prospect should pick their own time from the property link.
+            </p>
+            <div className="mt-3 grid gap-2 text-sm text-[var(--color-muted)] md:grid-cols-2">
+              <div>Operator availability: {lead.operatorSchedulingAvailabilitySummary}</div>
+              <div>Property availability: {lead.propertySchedulingAvailabilitySummary}</div>
+            </div>
+          </div>
+          {lead.upcomingTour ? (
+            <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-2 text-sm font-medium">
+              Upcoming tour on {lead.upcomingTour.scheduledAt}
+            </div>
+          ) : null}
+        </div>
+
+        {lead.upcomingTour ? (
+          <div className="mt-5 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+            <div className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5">
+              <div className="text-sm font-medium text-[var(--color-muted)]">Upcoming tour</div>
+              <div className="mt-2 text-xl font-semibold">{lead.upcomingTour.scheduledAt}</div>
+              <div className="mt-2 text-sm text-[var(--color-muted)]">
+                Status: {lead.upcomingTour.status}
+              </div>
+              <div className="mt-2 text-sm text-[var(--color-muted)]">
+                Property: {lead.property}
+              </div>
+              {lead.upcomingTour.externalCalendarId ? (
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  External calendar id: {lead.upcomingTour.externalCalendarId}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <form
+                action={rescheduleTourAction.bind(null, lead.id)}
+                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+              >
+                <div className="text-sm font-medium">Reschedule tour</div>
+                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                  New tour date and time
+                  <input
+                    className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={lead.upcomingTour.scheduledAtInputValue}
+                    name="scheduledAt"
+                    required
+                    type="datetime-local"
+                  />
+                </label>
+                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <button
+                  className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!lead.actions.manageScheduledTour}
+                  type="submit"
+                >
+                  Reschedule tour
+                </button>
+              </form>
+
+              <form
+                action={cancelTourAction.bind(null, lead.id)}
+                className="rounded-[1.5rem] border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] p-5"
+              >
+                <div className="text-sm font-medium">Cancel tour</div>
+                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                  Cancellation reason
+                  <input
+                    className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue="Canceled by operator"
+                    name="cancelReason"
+                    placeholder="Canceled by operator"
+                    required
+                  />
+                </label>
+                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                  Route lead back to
+                  <select
+                    className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue="QUALIFIED"
+                    name="routeToStatus"
+                  >
+                    <option value="QUALIFIED">Qualified</option>
+                    <option value="UNDER_REVIEW">Under review</option>
+                  </select>
+                </label>
+                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <button
+                  className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.14)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!lead.actions.manageScheduledTour}
+                  type="submit"
+                >
+                  Cancel scheduled tour
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+            <div className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5">
+              <div className="text-sm font-medium">No upcoming tour</div>
+              <p className="mt-3 text-sm text-[var(--color-muted)]">
+                Manual scheduling becomes available once the lead is qualified and assigned to an active property.
+              </p>
+            </div>
+            <form
+              action={createManualTourAction.bind(null, lead.id)}
+              className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+            >
+              <div className="text-sm font-medium">Create manual tour</div>
+              <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                Tour date and time
+                <input
+                  className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  name="scheduledAt"
+                  required
+                  type="datetime-local"
+                />
+              </label>
+              <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+              <button
+                className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!lead.actions.manualScheduleTour}
+                type="submit"
+              >
+                Schedule manually
+              </button>
+            </form>
+          </div>
+        )}
+
+        {lead.tourHistory.length > 0 ? (
+          <div className="mt-5 border-t border-[var(--color-line)] pt-5">
+            <div className="text-sm font-medium">Tour history</div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {lead.tourHistory.map((tour) => (
+                <div
+                  key={tour.id}
+                  className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{tour.status}</div>
+                      <div className="mt-1 text-sm text-[var(--color-muted)]">
+                        {tour.scheduledAt}
+                      </div>
+                    </div>
+                    <div className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                      {tour.createdAt}
+                    </div>
+                  </div>
+                  {tour.cancelReason ? (
+                    <div className="mt-3 text-sm text-[var(--color-muted)]">
+                      Reason: {tour.cancelReason}
+                    </div>
+                  ) : null}
+                  {tour.externalCalendarId ? (
+                    <div className="mt-2 text-sm text-[var(--color-muted)]">
+                      External calendar id: {tour.externalCalendarId}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <section className="space-y-6">
@@ -673,7 +847,7 @@ export default async function LeadDetailPage({
                     <div className="mt-2 text-sm">{fieldRow.value}</div>
                     {fieldRow.evidenceSnippet ? (
                       <div className="mt-2 rounded-xl border border-[var(--color-line)] bg-white px-3 py-2 text-sm text-[var(--color-muted)]">
-                        "{fieldRow.evidenceSnippet}"
+                        &quot;{fieldRow.evidenceSnippet}&quot;
                       </div>
                     ) : null}
                     <div className="mt-2 text-xs text-[var(--color-muted)]">

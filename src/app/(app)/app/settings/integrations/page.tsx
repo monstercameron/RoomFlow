@@ -1,7 +1,9 @@
 import { PageHeader } from "@/components/page-header";
 import { updateWorkspaceQuietHoursAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateWorkspaceMessagingThrottleSettingsAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateOperatorSchedulingAvailabilityAction } from "@/app/(app)/app/settings/integrations/actions";
 import { getMessagingSettingsViewData } from "@/lib/app-data";
+import { availabilityDayOptions } from "@/lib/availability-windows";
 import { validateInboundIntegrationConfiguration } from "@/lib/integration-config-validation";
 import { onboardingChannelOptions } from "@/lib/onboarding";
 
@@ -55,6 +57,100 @@ export default async function IntegrationsSettingsPage() {
             )}
           </div>
         </div>
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
+          <div className="text-xl font-semibold">Operator tour availability</div>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
+            Manual tour scheduling uses this recurring window for the current operator. Leave it disabled if tours can be booked at any time.
+          </p>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm">
+            Current setting: {messagingSettings.operatorSchedulingAvailabilitySummary}
+          </div>
+          <form
+            action={updateOperatorSchedulingAvailabilityAction}
+            className="mt-5 grid gap-3 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4 md:grid-cols-3"
+          >
+            <label className="flex items-center gap-2 md:col-span-3">
+              <input
+                defaultChecked={Boolean(messagingSettings.operatorSchedulingAvailabilityStartLocal)}
+                name="availabilityEnabled"
+                type="checkbox"
+              />
+              <span className="text-sm font-medium">Enable operator availability</span>
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Start</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.operatorSchedulingAvailabilityStartLocal ?? "09:00"}
+                name="availabilityStartLocal"
+                type="time"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">End</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.operatorSchedulingAvailabilityEndLocal ?? "17:00"}
+                name="availabilityEndLocal"
+                type="time"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Time zone</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.operatorSchedulingAvailabilityTimeZone ?? "America/New_York"}
+                name="availabilityTimeZone"
+                placeholder="America/New_York"
+                type="text"
+              />
+            </label>
+            <div className="md:col-span-3">
+              <div className="text-sm font-medium">Days</div>
+              <div className="mt-3 flex flex-wrap gap-3">
+                {availabilityDayOptions.map((dayOption) => (
+                  <label
+                    key={dayOption.value}
+                    className="flex items-center gap-2 rounded-full border border-[var(--color-line)] bg-white px-3 py-2 text-sm"
+                  >
+                    <input
+                      defaultChecked={messagingSettings.operatorSchedulingAvailabilityDays.includes(
+                        dayOption.value,
+                      )}
+                      name="availabilityDays"
+                      type="checkbox"
+                      value={dayOption.value}
+                    />
+                    <span>{dayOption.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+            <div className="flex justify-end md:col-span-3">
+              <button
+                className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                type="submit"
+              >
+                Save operator availability
+              </button>
+            </div>
+          </form>
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {messagingSettings.properties.map((property) => (
+              <div
+                key={`${property.id}-availability`}
+                className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4 text-sm"
+              >
+                <div className="font-medium">{property.name}</div>
+                <div className="mt-2 text-[var(--color-muted)]">
+                  {property.schedulingAvailabilitySummary}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
           <div className="text-xl font-semibold">Workspace quiet hours</div>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
