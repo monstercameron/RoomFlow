@@ -12,6 +12,8 @@ import {
   formatWorkspacePlanLabel,
   formatWorkspacePlanStatusLabel,
   getDefaultCapabilitiesForWorkspacePlan,
+  resolveDisabledCapabilitiesForWorkspacePlanChange,
+  resolveEnabledCapabilitiesForWorkspacePlanChange,
   workspaceHasCapability,
 } from "@/lib/workspace-plan";
 
@@ -81,5 +83,32 @@ test("getMinimumWorkspacePlanForCapability marks org-only features correctly", (
   assert.equal(
     getMinimumWorkspacePlanForCapability(WorkspaceCapability.MESSAGING),
     WorkspacePlanType.PERSONAL,
+  );
+});
+
+test("resolveEnabledCapabilitiesForWorkspacePlanChange drops unsupported capabilities on downgrade", () => {
+  assert.deepEqual(
+    resolveEnabledCapabilitiesForWorkspacePlanChange({
+      currentEnabledCapabilities: getDefaultCapabilitiesForWorkspacePlan(WorkspacePlanType.ORG),
+      targetWorkspacePlanType: WorkspacePlanType.PERSONAL,
+    }),
+    getDefaultCapabilitiesForWorkspacePlan(WorkspacePlanType.PERSONAL),
+  );
+});
+
+test("resolveDisabledCapabilitiesForWorkspacePlanChange reports what a downgrade turns off", () => {
+  assert.deepEqual(
+    resolveDisabledCapabilitiesForWorkspacePlanChange({
+      currentEnabledCapabilities: getDefaultCapabilitiesForWorkspacePlan(WorkspacePlanType.ORG),
+      targetWorkspacePlanType: WorkspacePlanType.PERSONAL,
+    }),
+    [
+      WorkspaceCapability.ORG_MEMBERS,
+      WorkspaceCapability.ADVANCED_AUTOMATIONS,
+      WorkspaceCapability.ADVANCED_ANALYTICS,
+      WorkspaceCapability.AI_ASSIST,
+      WorkspaceCapability.SCREENING,
+      WorkspaceCapability.CALENDAR_SYNC,
+    ],
   );
 });

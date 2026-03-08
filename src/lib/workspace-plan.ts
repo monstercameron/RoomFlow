@@ -103,3 +103,31 @@ export function getMinimumWorkspacePlanForCapability(
       return WorkspacePlanType.PERSONAL;
   }
 }
+
+export function resolveEnabledCapabilitiesForWorkspacePlanChange(params: {
+  currentEnabledCapabilities: WorkspaceCapability[];
+  targetWorkspacePlanType: WorkspacePlanType;
+}) {
+  const targetPlanCapabilities = getDefaultCapabilitiesForWorkspacePlan(params.targetWorkspacePlanType);
+
+  if (params.targetWorkspacePlanType === WorkspacePlanType.ORG) {
+    return targetPlanCapabilities;
+  }
+
+  return params.currentEnabledCapabilities.filter((workspaceCapability) =>
+    targetPlanCapabilities.includes(workspaceCapability),
+  );
+}
+
+export function resolveDisabledCapabilitiesForWorkspacePlanChange(params: {
+  currentEnabledCapabilities: WorkspaceCapability[];
+  targetWorkspacePlanType: WorkspacePlanType;
+}) {
+  const nextEnabledCapabilities = new Set(
+    resolveEnabledCapabilitiesForWorkspacePlanChange(params),
+  );
+
+  return params.currentEnabledCapabilities.filter(
+    (workspaceCapability) => !nextEnabledCapabilities.has(workspaceCapability),
+  );
+}

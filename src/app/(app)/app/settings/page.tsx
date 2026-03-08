@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { WorkspacePlanType } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
+import { updateWorkspacePlanAction } from "@/app/(app)/app/settings/plan-actions";
 import { getCurrentWorkspaceState } from "@/lib/app-data";
 import {
   formatWorkspaceCapabilityLabel,
@@ -22,8 +23,25 @@ function getUpgradePromptCopy(upgradeCapability?: string) {
   return null;
 }
 
+function getPlanChangeMessage(planChange?: string) {
+  if (planChange === "downgraded") {
+    return "Workspace downgraded safely. Unsupported features were disabled, but existing data was left intact.";
+  }
+
+  if (planChange === "upgraded") {
+    return "Workspace upgraded. Org capabilities are now enabled for this workspace.";
+  }
+
+  if (planChange === "updated") {
+    return "Workspace plan updated.";
+  }
+
+  return null;
+}
+
 export default async function SettingsPage(props: {
   searchParams: Promise<{
+    planChange?: string;
     upgrade?: string;
   }>;
 }) {
@@ -31,6 +49,7 @@ export default async function SettingsPage(props: {
   const searchParameters = await props.searchParams;
   const lockedCapabilities = getLockedCapabilitiesForWorkspacePlan(workspaceState.workspace.planType);
   const upgradePromptCopy = getUpgradePromptCopy(searchParameters.upgrade);
+  const planChangeMessage = getPlanChangeMessage(searchParameters.planChange);
 
   return (
     <main>
@@ -48,6 +67,11 @@ export default async function SettingsPage(props: {
           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
             {upgradePromptCopy.description}
           </p>
+        </div>
+      ) : null}
+      {planChangeMessage ? (
+        <div className="mb-4 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-sm font-medium text-[var(--color-ink)]">{planChangeMessage}</div>
         </div>
       ) : null}
 
@@ -141,6 +165,36 @@ export default async function SettingsPage(props: {
                   These features require the {formatWorkspacePlanLabel(
                     getMinimumWorkspacePlanForCapability(lockedCapabilities[0]),
                   )} package.
+                </dd>
+              </div>
+            ) : null}
+            {workspaceState.membership.role === "OWNER" ? (
+              <div className="pt-2">
+                <dt className="text-[var(--color-muted)]">Plan controls</dt>
+                <dd className="mt-3 flex flex-wrap gap-3">
+                  <form action={updateWorkspacePlanAction}>
+                    <input name="targetWorkspacePlanType" type="hidden" value={WorkspacePlanType.PERSONAL} />
+                    <button
+                      className="rounded-2xl border border-[var(--color-line)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={workspaceState.workspace.planType === WorkspacePlanType.PERSONAL}
+                      type="submit"
+                    >
+                      Switch to Personal
+                    </button>
+                  </form>
+                  <form action={updateWorkspacePlanAction}>
+                    <input name="targetWorkspacePlanType" type="hidden" value={WorkspacePlanType.ORG} />
+                    <button
+                      className="rounded-2xl border border-[var(--color-line)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={workspaceState.workspace.planType === WorkspacePlanType.ORG}
+                      type="submit"
+                    >
+                      Switch to Org
+                    </button>
+                  </form>
+                </dd>
+                <dd className="mt-3 text-xs text-[var(--color-muted)]">
+                  These temporary controls change capability access only. Existing data stays in place.
                 </dd>
               </div>
             ) : null}

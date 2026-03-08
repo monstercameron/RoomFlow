@@ -456,7 +456,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [x] Add workspace subscription model fields for plan type, status, billing owner, and enabled capabilities.
 - [x] Distinguish Personal vs Org capabilities in settings and route guards.
 - [x] Add soft upgrade prompts when users hit Org-only features.
-- [ ] Implement safe downgrade behavior that disables unsupported features without deleting data.
+- [x] Implement safe downgrade behavior that disables unsupported features without deleting data.
 - [ ] Add usage-counter display for plan-limited capabilities in settings.
 - [ ] Add billing-owner transfer flow for multi-admin workspaces.
 
