@@ -276,6 +276,10 @@ model Property {
   workspaceId         String
   name                String
   lifecycleStatus     PropertyLifecycleStatus    @default(ACTIVE)
+  listingSourceName   String?
+  listingSourceType   String?
+  listingSourceExternalId String?
+  listingSourceUrl    String?
   propertyType        String?
   addressLine1        String?
   locality            String?

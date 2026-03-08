@@ -36,6 +36,46 @@ function parseSchedulingUrl(value: FormDataEntryValue | null) {
   }
 }
 
+function parseOptionalHttpUrl(
+  value: FormDataEntryValue | null,
+  fieldLabel: string,
+) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(normalizedValue);
+
+    if (![
+      "http:",
+      "https:",
+    ].includes(parsed.protocol)) {
+      throw new Error(`${fieldLabel} must use http or https.`);
+    }
+
+    return parsed.toString();
+  } catch {
+    throw new Error(`A valid ${fieldLabel.toLowerCase()} is required.`);
+  }
+}
+
+function parseOptionalText(value: FormDataEntryValue | null) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+
+  return normalizedValue.length > 0 ? normalizedValue : null;
+}
+
 function parseBooleanFormValue(value: FormDataEntryValue | null) {
   return typeof value === "string" && value.toLowerCase() === "true";
 }
@@ -101,6 +141,72 @@ export async function updatePropertySchedulingLinkAction(
     typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
       ? redirectTargetValue
       : `/app/properties/${property.id}/rules`;
+
+  redirect(redirectTarget);
+}
+
+export async function updatePropertyListingSourceMetadataAction(
+  propertyId: string,
+  formData: FormData,
+) {
+  const workspaceState = await getCurrentWorkspaceState();
+  const redirectTargetValue = formData.get("redirectTo");
+  const listingSourceName = parseOptionalText(formData.get("listingSourceName"));
+  const listingSourceType = parseOptionalText(formData.get("listingSourceType"));
+  const listingSourceExternalId = parseOptionalText(
+    formData.get("listingSourceExternalId"),
+  );
+  const listingSourceUrl = parseOptionalHttpUrl(
+    formData.get("listingSourceUrl"),
+    "Listing source URL",
+  );
+
+  const property = await prisma.property.findFirst({
+    where: {
+      id: propertyId,
+      workspaceId: workspaceState.workspace.id,
+    },
+  });
+
+  if (!property) {
+    throw new Error("Property not found.");
+  }
+
+  await prisma.property.update({
+    where: {
+      id: property.id,
+    },
+    data: {
+      listingSourceExternalId,
+      listingSourceName,
+      listingSourceType,
+      listingSourceUrl,
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: workspaceState.workspace.id,
+      propertyId: property.id,
+      actorUserId: workspaceState.user.id,
+      eventType: "property_listing_source_metadata_updated",
+      payload: {
+        listingSourceExternalId,
+        listingSourceName,
+        listingSourceType,
+        listingSourceUrl,
+        propertyName: property.name,
+      },
+    },
+  });
+
+  revalidatePath("/app/properties");
+  revalidatePath(`/app/properties/${property.id}`);
+
+  const redirectTarget =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : `/app/properties/${property.id}`;
 
   redirect(redirectTarget);
 }

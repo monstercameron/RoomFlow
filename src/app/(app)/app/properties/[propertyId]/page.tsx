@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { getPropertyDetailViewData } from "@/lib/app-data";
 import {
   updatePropertyLifecycleStatusAction,
+  updatePropertyListingSourceMetadataAction,
   updatePropertySchedulingLinkAction,
 } from "@/lib/property-actions";
 import {
@@ -298,6 +299,69 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
         </div>
 
         <div className="space-y-4">
+          <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className="text-xl font-semibold">Listing source metadata</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">
+              Store the source label and external reference now so the next listing-sync slice has stable property metadata to build on.
+            </div>
+            <form
+              action={updatePropertyListingSourceMetadataAction.bind(null, property.id)}
+              className="mt-5 grid gap-4"
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-2">
+                  <span className="text-sm font-medium">Source name</span>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={property.listingSourceName ?? ""}
+                    name="listingSourceName"
+                    placeholder="SpareRoom"
+                    type="text"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-sm font-medium">Source type</span>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={property.listingSourceType ?? ""}
+                    name="listingSourceType"
+                    placeholder="Marketplace"
+                    type="text"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-sm font-medium">External listing ID</span>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={property.listingSourceExternalId ?? ""}
+                    name="listingSourceExternalId"
+                    placeholder="listing_4821"
+                    type="text"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-sm font-medium">Listing URL</span>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={property.listingSourceUrl ?? ""}
+                    name="listingSourceUrl"
+                    placeholder="https://example.com/listings/maple-house"
+                    type="url"
+                  />
+                </label>
+              </div>
+              <input type="hidden" name="redirectTo" value={`/app/properties/${property.id}`} />
+              <div className="flex justify-end">
+                <button
+                  className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                  type="submit"
+                >
+                  Save listing metadata
+                </button>
+              </div>
+            </form>
+          </section>
+
           <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
             <div className="text-xl font-semibold">Channel settings</div>
             <div className="mt-2 text-sm text-[var(--color-muted)]">
