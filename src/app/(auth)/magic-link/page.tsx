@@ -1,24 +1,40 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { MagicLinkForm } from "@/components/auth/magic-link-form";
-import { buildMagicLinkPagePath, normalizeApplicationPath } from "@/lib/auth-urls";
+import { buildAuthEntryPagePath, buildMagicLinkPagePath, normalizeApplicationPath } from "@/lib/auth-urls";
 import { getAuthenticatedRedirectPath } from "@/lib/app-data";
 import { getServerSession } from "@/lib/session";
+import { buildWorkflow1InvitePath, getWorkflow1Intent } from "@/lib/workflow1";
 
 type MagicLinkPageProps = {
   searchParams: Promise<{
     email?: string;
     error?: string;
+    invite?: string;
     next?: string;
+    plan?: string;
+    source?: string;
     status?: string;
     token?: string;
+    utm_campaign?: string;
   }>;
 };
 
 export default async function MagicLinkPage({ searchParams }: MagicLinkPageProps) {
   const session = await getServerSession();
   const resolvedSearchParams = await searchParams;
-  const nextPath = normalizeApplicationPath(resolvedSearchParams.next ?? "/app");
+  const workflow1Intent = getWorkflow1Intent({
+    inviteToken: resolvedSearchParams.invite,
+    plan: resolvedSearchParams.plan,
+    source: resolvedSearchParams.source,
+    utmCampaign: resolvedSearchParams.utm_campaign,
+  });
+  const nextPath = normalizeApplicationPath(
+    resolvedSearchParams.next ??
+      (workflow1Intent.inviteToken
+        ? buildWorkflow1InvitePath(workflow1Intent.inviteToken)
+        : "/app"),
+  );
 
   if (session) {
     redirect(await getAuthenticatedRedirectPath());
@@ -33,11 +49,25 @@ export default async function MagicLinkPage({ searchParams }: MagicLinkPageProps
       )}&errorCallbackURL=${encodeURIComponent(
         buildMagicLinkPagePath({
           emailAddress: resolvedSearchParams.email,
+          inviteToken: workflow1Intent.inviteToken,
           nextPath,
+          plan: workflow1Intent.plan,
+          source: workflow1Intent.source,
+          utmCampaign: workflow1Intent.utmCampaign,
         }),
       )}`,
     );
   }
+
+  const signupPath = buildAuthEntryPagePath({
+    callbackPath: nextPath,
+    emailAddress: resolvedSearchParams.email,
+    entryPath: "/signup",
+    inviteToken: workflow1Intent.inviteToken,
+    plan: workflow1Intent.plan,
+    source: workflow1Intent.source,
+    utmCampaign: workflow1Intent.utmCampaign,
+  });
 
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-10">
@@ -56,10 +86,11 @@ export default async function MagicLinkPage({ searchParams }: MagicLinkPageProps
           nextPath={nextPath}
           errorCode={resolvedSearchParams.error}
           status={resolvedSearchParams.status === "sent" ? "sent" : null}
+          workflow1Intent={workflow1Intent}
         />
         <div className="mt-4 text-sm text-[var(--color-muted)]">
           Need to create an account first?{" "}
-          <Link className="font-medium text-[var(--color-accent-strong)]" href="/signup">
+          <Link className="font-medium text-[var(--color-accent-strong)]" href={signupPath}>
             Start here
           </Link>
         </div>

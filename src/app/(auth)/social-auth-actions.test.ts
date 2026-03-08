@@ -16,7 +16,7 @@ function createDependencies(
 ): StartSocialSignInActionDependencies {
   return {
     buildAbsoluteApplicationUrl: (path) => `https://roomflow.test${path}`,
-    buildAuthEntryPagePath: ({ callbackPath, emailAddress, entryPath, errorCode, providerId }) => {
+    buildAuthEntryPagePath: ({ callbackPath, emailAddress, entryPath, errorCode, inviteToken, plan, providerId, source, utmCampaign }) => {
       const url = new URL(entryPath, "https://roomflow.test");
 
       if (callbackPath && callbackPath !== "/onboarding") {
@@ -33,6 +33,22 @@ function createDependencies(
 
       if (providerId) {
         url.searchParams.set("provider", providerId);
+      }
+
+      if (plan) {
+        url.searchParams.set("plan", plan);
+      }
+
+      if (inviteToken) {
+        url.searchParams.set("invite", inviteToken);
+      }
+
+      if (source) {
+        url.searchParams.set("source", source);
+      }
+
+      if (utmCampaign) {
+        url.searchParams.set("utm_campaign", utmCampaign);
       }
 
       return `${url.pathname}${url.search}`;
@@ -137,6 +153,10 @@ test("handleStartSocialSignInAction builds the provider callback URL and redirec
   formData.set("providerId", "google");
   formData.set("callbackPath", "/app/settings/security");
   formData.set("emailAddress", "cam@example.com");
+  formData.set("inviteToken", "invite-token-123");
+  formData.set("plan", "org");
+  formData.set("source", "ai-tool");
+  formData.set("utmCampaign", "launch-week");
 
   await assert.rejects(
     handleStartSocialSignInAction(
@@ -159,7 +179,7 @@ test("handleStartSocialSignInAction builds the provider callback URL and redirec
   assert.equal(signInCalls[0]?.headers.get("cookie"), "session=1");
   assert.deepEqual(signInCalls[0]?.body, {
     callbackURL:
-      "https://roomflow.test/login?callbackURL=%2Fapp%2Fsettings%2Fsecurity&email=cam%40example.com&provider=google",
+      "https://roomflow.test/login?callbackURL=%2Fapp%2Fsettings%2Fsecurity&email=cam%40example.com&provider=google&plan=org&invite=invite-token-123&source=ai-tool&utm_campaign=launch-week",
     disableRedirect: true,
     provider: "google",
   });

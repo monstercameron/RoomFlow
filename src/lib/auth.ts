@@ -11,7 +11,9 @@ import {
   getConfiguredSocialAuthProviderIds,
   getConfiguredSocialAuthProviders,
 } from "@/lib/auth-providers";
+import { WorkspacePlanType } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getWorkflow1WorkspaceBootstrapDecision } from "@/lib/workflow1";
 import { ensureWorkspaceForUser } from "@/lib/workspaces";
 
 const oneHourInSeconds = 60 * 60;
@@ -93,8 +95,20 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        async after(user) {
+        async after(user, context) {
           if (!user?.id || !user.email) {
+            return;
+          }
+
+          const callbackPath =
+            typeof context?.body?.callbackURL === "string"
+              ? context.body.callbackURL
+              : typeof context?.query?.callbackURL === "string"
+                ? context.query.callbackURL
+                : null;
+          const bootstrapDecision = getWorkflow1WorkspaceBootstrapDecision(callbackPath);
+
+          if (bootstrapDecision.shouldSkipWorkspaceCreation) {
             return;
           }
 
@@ -102,6 +116,11 @@ export const auth = betterAuth({
             id: user.id,
             email: user.email,
             name: user.name,
+          }, {
+            planType:
+              bootstrapDecision.plan === "org"
+                ? WorkspacePlanType.ORG
+                : WorkspacePlanType.PERSONAL,
           });
         },
       },

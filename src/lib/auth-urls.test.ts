@@ -88,10 +88,14 @@ test("buildEmailVerificationPagePath and buildMagicLinkPagePath encode query par
 
   const magicLinkPath = buildMagicLinkPagePath({
     emailAddress: "cam+ops@example.com",
+    inviteToken: "invite-token-123",
     nextPath: "/app/inbox?filter=unread",
+    plan: "org",
     token: "magic token",
     errorCode: "invalid_token",
+    source: "ai-tool",
     status: "sent",
+    utmCampaign: "launch-week",
   });
 
   assert.equal(
@@ -100,7 +104,7 @@ test("buildEmailVerificationPagePath and buildMagicLinkPagePath encode query par
   );
   assert.equal(
     magicLinkPath,
-    "/magic-link?email=cam%2Bops%40example.com&next=%2Fapp%2Finbox%3Ffilter%3Dunread&token=magic+token&error=invalid_token&status=sent",
+    "/magic-link?email=cam%2Bops%40example.com&next=%2Fapp%2Finbox%3Ffilter%3Dunread&token=magic+token&error=invalid_token&status=sent&plan=org&invite=invite-token-123&source=ai-tool&utm_campaign=launch-week",
   );
 });
 
@@ -117,7 +121,11 @@ test("buildAuthEntryPagePath defaults onboarding callbacks and sanitizes custom 
         emailAddress: "cam+ops@example.com",
         entryPath: "/signup",
         errorCode: "provider_not_configured",
+        inviteToken: "invite-token-123",
+        plan: "org",
         providerId: "google",
+        source: "ai-tool",
+        utmCampaign: "launch-week",
       }),
   );
 
@@ -133,7 +141,7 @@ test("buildAuthEntryPagePath defaults onboarding callbacks and sanitizes custom 
   assert.equal(defaultLoginPath, "/login");
   assert.equal(
     sanitizedSignupPath,
-    "/signup?callbackURL=%2F&email=cam%2Bops%40example.com&error=provider_not_configured&provider=google",
+    "/signup?callbackURL=%2F&email=cam%2Bops%40example.com&error=provider_not_configured&provider=google&plan=org&invite=invite-token-123&source=ai-tool&utm_campaign=launch-week",
   );
   assert.equal(customLoginPath, "/login?callbackURL=%2Fapp%2Fleads%3Ftab%3Dactivity");
 });

@@ -3,26 +3,43 @@ import { redirect } from "next/navigation";
 import { SocialSignInButton } from "@/components/auth/social-sign-in-button";
 import { LoginForm } from "@/components/auth/login-form";
 import {
+  buildAuthEntryPagePath,
   getSocialAuthErrorMessage,
   normalizeApplicationPath,
 } from "@/lib/auth-urls";
 import { getAuthenticatedRedirectPath } from "@/lib/app-data";
 import { getConfiguredSocialAuthProviderIds } from "@/lib/auth-providers";
 import { getServerSession } from "@/lib/session";
+import { buildWorkflow1InvitePath, getWorkflow1Intent } from "@/lib/workflow1";
 
 type LoginPageProps = {
   searchParams: Promise<{
     callbackURL?: string;
     email?: string;
     error?: string;
+    invite?: string;
+    plan?: string;
     provider?: string;
+    source?: string;
+    utm_campaign?: string;
   }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await getServerSession();
   const resolvedSearchParams = await searchParams;
-  const callbackPath = normalizeApplicationPath(resolvedSearchParams.callbackURL ?? "/onboarding");
+  const workflow1Intent = getWorkflow1Intent({
+    inviteToken: resolvedSearchParams.invite,
+    plan: resolvedSearchParams.plan,
+    source: resolvedSearchParams.source,
+    utmCampaign: resolvedSearchParams.utm_campaign,
+  });
+  const callbackPath = normalizeApplicationPath(
+    resolvedSearchParams.callbackURL ??
+      (workflow1Intent.inviteToken
+        ? buildWorkflow1InvitePath(workflow1Intent.inviteToken)
+        : "/onboarding"),
+  );
   const socialAuthErrorMessage = getSocialAuthErrorMessage({
     errorCode: resolvedSearchParams.error ?? null,
     providerId: resolvedSearchParams.provider ?? null,
@@ -38,6 +55,16 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   if (session) {
     redirect(resolvedSearchParams.callbackURL ? callbackPath : await getAuthenticatedRedirectPath());
   }
+
+  const signupPath = buildAuthEntryPagePath({
+    callbackPath,
+    emailAddress: resolvedSearchParams.email,
+    entryPath: "/signup",
+    inviteToken: workflow1Intent.inviteToken,
+    plan: workflow1Intent.plan,
+    source: workflow1Intent.source,
+    utmCampaign: workflow1Intent.utmCampaign,
+  });
 
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-10">
@@ -67,22 +94,25 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               {socialAuthErrorMessage}
             </div>
           ) : null}
-          {availableEntryProviderIds.map((providerId) => (
-            <SocialSignInButton
-              callbackPath={callbackPath}
-              defaultEmailAddress={resolvedSearchParams.email}
-              entryPath="/login"
-              key={providerId}
-              providerId={providerId}
-            />
-          ))}
+          <div className="mt-6 space-y-3">
+            {availableEntryProviderIds.map((providerId) => (
+              <SocialSignInButton
+                callbackPath={callbackPath}
+                defaultEmailAddress={resolvedSearchParams.email}
+                entryPath="/login"
+                key={providerId}
+                providerId={providerId}
+                workflow1Intent={workflow1Intent}
+              />
+            ))}
+          </div>
           <LoginForm
             callbackPath={callbackPath}
             defaultEmailAddress={resolvedSearchParams.email}
           />
           <div className="mt-4 text-sm text-[var(--color-muted)]">
             Need an account?{" "}
-            <Link className="font-medium text-[var(--color-accent-strong)]" href="/signup">
+            <Link className="font-medium text-[var(--color-accent-strong)]" href={signupPath}>
               Start here
             </Link>
           </div>

@@ -6,6 +6,37 @@ import { generateLeadInsightsAction, generatePortfolioInsightsAction } from "@/l
 export default async function DashboardPage() {
   const dashboard = await getDashboardViewData();
 
+  if (dashboard.propertyCount === 0) {
+    return (
+      <main>
+        <PageHeader
+          eyebrow="Dashboard"
+          title="Create your first property"
+          description="Create your first property to start qualifying leads."
+        />
+
+        <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-8 shadow-[var(--shadow-panel)]">
+          <div className="max-w-2xl">
+            <div className="text-lg font-semibold">
+              Roomflow needs a property context before the rest of the app becomes useful.
+            </div>
+            <div className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
+              Set up the first shared-home profile so rules, qualification, messaging, and scheduling all attach to a real property instead of staying abstract.
+            </div>
+            <div className="mt-6">
+              <Link
+                className="inline-flex rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-medium text-white"
+                href="/onboarding/property"
+              >
+                Create property
+              </Link>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main>
       <PageHeader

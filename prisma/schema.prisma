@@ -506,6 +506,7 @@ model Property {
   quietHoursTimeZone   String?
   schedulingEnabled   Boolean                    @default(false)
   workspace           Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  settings            PropertySettings?
   rules               PropertyRule[]
   questionSets        QualificationQuestionSet[]
   workflowDefinitions WorkflowDefinition[]
@@ -519,6 +520,17 @@ model Property {
   updatedAt           DateTime                   @updatedAt
 
   @@index([workspaceId])
+}
+
+model PropertySettings {
+  id                       String         @id @default(cuid())
+  propertyId               String         @unique
+  qualificationEnabled     Boolean        @default(true)
+  defaultChannelPreference MessageChannel @default(EMAIL)
+  defaultFollowUpPolicy    String         @default("conservative")
+  property                 Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
 }
 
 model LeadSource {

@@ -18,7 +18,11 @@ function redirectToAuthEntryPage(params: {
   emailAddress?: string;
   entryPath: "/login" | "/signup";
   errorCode: string;
+  inviteToken?: string;
+  plan?: string;
   providerId?: string;
+  source?: string;
+  utmCampaign?: string;
 }): never {
   redirect(
     buildAuthEntryPagePath({
@@ -26,7 +30,11 @@ function redirectToAuthEntryPage(params: {
       emailAddress: params.emailAddress,
       entryPath: params.entryPath,
       errorCode: params.errorCode,
+      inviteToken: params.inviteToken,
+      plan: params.plan,
       providerId: params.providerId,
+      source: params.source,
+      utmCampaign: params.utmCampaign,
     }),
   );
 }
@@ -66,7 +74,11 @@ function redirectToAuthEntryPageWithDependencies(
     emailAddress?: string;
     entryPath: "/login" | "/signup";
     errorCode: string;
+    inviteToken?: string;
+    plan?: string;
     providerId?: string;
+    source?: string;
+    utmCampaign?: string;
   },
   dependencies: Pick<StartSocialSignInActionDependencies, "buildAuthEntryPagePath" | "redirect">,
 ): never {
@@ -76,7 +88,11 @@ function redirectToAuthEntryPageWithDependencies(
       emailAddress: params.emailAddress,
       entryPath: params.entryPath,
       errorCode: params.errorCode,
+      inviteToken: params.inviteToken,
+      plan: params.plan,
       providerId: params.providerId,
+      source: params.source,
+      utmCampaign: params.utmCampaign,
     }),
   );
 }
@@ -91,6 +107,10 @@ export async function handleStartSocialSignInAction(
     String(formData.get("callbackPath") ?? "/onboarding"),
   );
   const emailAddress = String(formData.get("emailAddress") ?? "").trim() || undefined;
+  const inviteToken = String(formData.get("inviteToken") ?? "").trim() || undefined;
+  const plan = String(formData.get("plan") ?? "").trim() || undefined;
+  const source = String(formData.get("source") ?? "").trim() || undefined;
+  const utmCampaign = String(formData.get("utmCampaign") ?? "").trim() || undefined;
 
   if (entryPathValue !== "/login" && entryPathValue !== "/signup") {
     dependencies.redirect(
@@ -98,6 +118,10 @@ export async function handleStartSocialSignInAction(
         callbackPath,
         entryPath: "/login",
         errorCode: "invalid_entry",
+        inviteToken,
+        plan,
+        source,
+        utmCampaign,
       }),
     );
   }
@@ -108,7 +132,11 @@ export async function handleStartSocialSignInAction(
       emailAddress,
       entryPath: entryPathValue,
       errorCode: "provider_not_supported",
+      inviteToken,
+      plan,
       providerId,
+      source,
+      utmCampaign,
     }, dependencies);
   }
 
@@ -118,7 +146,11 @@ export async function handleStartSocialSignInAction(
       emailAddress,
       entryPath: entryPathValue,
       errorCode: "provider_not_configured",
+      inviteToken,
+      plan,
       providerId,
+      source,
+      utmCampaign,
     }, dependencies);
   }
 
@@ -132,7 +164,11 @@ export async function handleStartSocialSignInAction(
             callbackPath,
             emailAddress,
             entryPath: entryPathValue,
+            inviteToken,
+            plan,
             providerId,
+            source,
+            utmCampaign,
           }),
         ),
         disableRedirect: true,
@@ -146,7 +182,11 @@ export async function handleStartSocialSignInAction(
       emailAddress,
       entryPath: entryPathValue,
       errorCode: "social_sign_in_failed",
+      inviteToken,
+      plan,
       providerId,
+      source,
+      utmCampaign,
     }, dependencies);
   }
 
@@ -156,7 +196,11 @@ export async function handleStartSocialSignInAction(
       emailAddress,
       entryPath: entryPathValue,
       errorCode: "social_sign_in_failed",
+      inviteToken,
+      plan,
       providerId,
+      source,
+      utmCampaign,
     }, dependencies);
   }
 

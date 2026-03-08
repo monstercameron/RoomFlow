@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { buildMagicLinkPagePath, normalizeApplicationPath } from "@/lib/auth-urls";
+import type { Workflow1Intent } from "@/lib/workflow1";
 
 function getMagicLinkErrorMessage(errorCode?: string | null) {
   switch (errorCode) {
@@ -24,6 +25,7 @@ export function MagicLinkForm(props: {
   nextPath?: string | null;
   errorCode?: string | null;
   status?: "sent" | null;
+  workflow1Intent?: Workflow1Intent;
 }) {
   const normalizedNextPath = normalizeApplicationPath(props.nextPath);
   const [emailAddress, setEmailAddress] = useState(props.emailAddress ?? "");
@@ -57,7 +59,11 @@ export function MagicLinkForm(props: {
               callbackURL: normalizedNextPath,
               errorCallbackURL: buildMagicLinkPagePath({
                 emailAddress,
+                inviteToken: props.workflow1Intent?.inviteToken,
                 nextPath: normalizedNextPath,
+                plan: props.workflow1Intent?.plan,
+                source: props.workflow1Intent?.source,
+                utmCampaign: props.workflow1Intent?.utmCampaign,
               }),
             }),
           });

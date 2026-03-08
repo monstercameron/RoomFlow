@@ -33,7 +33,12 @@ function buildWorkspaceSlug(user: WorkspaceUser) {
   return `${base.slice(0, 32)}-${user.id.slice(-6)}`;
 }
 
-export async function ensureWorkspaceForUser(user: WorkspaceUser) {
+export async function ensureWorkspaceForUser(
+  user: WorkspaceUser,
+  options?: {
+    planType?: WorkspacePlanType;
+  },
+) {
   const membership = await prisma.membership.findFirst({
     where: {
       userId: user.id,
@@ -52,6 +57,7 @@ export async function ensureWorkspaceForUser(user: WorkspaceUser) {
 
   const workspaceName = buildWorkspaceName(user);
   const workspaceSlug = buildWorkspaceSlug(user);
+  const workspacePlanType = options?.planType ?? WorkspacePlanType.PERSONAL;
 
   return prisma.$transaction(async (tx) => {
     const workspace = await tx.workspace.upsert({
@@ -59,14 +65,16 @@ export async function ensureWorkspaceForUser(user: WorkspaceUser) {
         slug: workspaceSlug,
       },
       update: {
+        enabledCapabilities: getDefaultCapabilitiesForWorkspacePlan(workspacePlanType),
         name: workspaceName,
+        planType: workspacePlanType,
       },
       create: {
         billingOwnerUserId: user.id,
-        enabledCapabilities: getDefaultCapabilitiesForWorkspacePlan(WorkspacePlanType.PERSONAL),
+        enabledCapabilities: getDefaultCapabilitiesForWorkspacePlan(workspacePlanType),
         name: workspaceName,
         planStatus: WorkspacePlanStatus.TRIAL,
-        planType: WorkspacePlanType.PERSONAL,
+        planType: workspacePlanType,
         slug: workspaceSlug,
       },
     });

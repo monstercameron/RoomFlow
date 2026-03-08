@@ -716,3 +716,142 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [ ] Add insurance referral flows.
 - [ ] Add lockbox or showing-tool integrations.
 - [ ] Add resident onboarding workflows after lead-to-move-in handoff is mature.
+
+## Workflow 1: Sign up and create workspace
+
+### Playwright coverage
+
+- [x] Split Workflow 1 coverage out of `scripts/playwright-smoke.mjs` into a dedicated Playwright flow or helper-backed runtime suite.
+- [x] Add a Playwright helper for creating a fresh Workflow 1 test user and isolating seeded data assumptions.
+- [x] Add a Playwright helper for loading signup pages with query-string variants and asserting preserved params.
+- [x] Add a Playwright test for the base `/signup` entry route rendering the expected auth controls and default next-step behavior.
+- [x] Add a Playwright test for `/signup?plan=personal` asserting the selected signup intent or visible plan state stays Personal through submission.
+- [x] Add a Playwright test for `/signup?plan=org` asserting the selected signup intent or visible plan state stays Org through submission.
+- [x] Add a Playwright test for `/signup?source=ai-tool` asserting source attribution survives the signup handoff.
+- [x] Add a Playwright test for `/signup?utm_campaign=test` asserting UTM attribution survives the signup handoff.
+- [x] Add a Playwright test for `/signup?invite=<token>` asserting invite context is preserved from signup entry into invite acceptance.
+- [x] Add a Playwright test for the email-password happy path asserting user creation, successful submit, and redirect to the approved next route.
+- [x] Add a Playwright assertion for the email-password happy path that the flow does not dead-end on a blank or incorrect redirect.
+- [x] Add a Playwright assertion for the direct-signup happy path that exactly one intended workspace is created for a non-invite account.
+- [x] Add a Playwright test for invite-based account creation asserting the flow does not create an unintended extra personal workspace before invite acceptance.
+- [x] Add a Playwright test asserting invite-based signup lands on the correct invite continuation route rather than generic app routing.
+- [x] Add a Playwright test for invalid email formatting with a visible validation error and blocked submission.
+- [x] Add a Playwright test for weak password rejection with the expected error messaging and blocked submission.
+- [x] Add a Playwright test for confirm-password mismatch with a visible validation error and blocked submission.
+- [x] Add a Playwright test for duplicate-signup handling with the expected recovery path to login or account recovery.
+- [x] Add a Playwright test for magic-link request initiation from Workflow 1 entry.
+- [x] Add a Playwright test for magic-link verification completion if new-user magic-link signup is enabled. Not applicable in the current environment because magic-link sign-up remains disabled.
+- [x] Add a Playwright test for unverified-email resend and verification completion behavior.
+- [x] Add a Playwright test for OAuth conflict handling with the expected account-linking or login guidance.
+- [x] Add a Playwright test for the signed-out invite page state on `src/app/invite/[token]/page.tsx`.
+- [x] Add a Playwright test for the wrong-account invite state on `src/app/invite/[token]/page.tsx`.
+- [x] Add a Playwright test for the matching-account invite acceptance state on `src/app/invite/[token]/page.tsx`.
+- [x] Add a Playwright test for an already accepted invite on `src/app/invite/[token]/page.tsx`.
+- [x] Add a Playwright test for an expired invite on `src/app/invite/[token]/page.tsx`.
+- [x] Add a Playwright test for a revoked invite on `src/app/invite/[token]/page.tsx`.
+- [x] Add a Playwright mobile-width test for `/signup` ensuring the form remains single-column and fully usable.
+- [x] Add a Playwright mobile-width test for `src/app/invite/[token]/page.tsx` ensuring invite copy, actions, and errors remain readable and tappable.
+- [x] Add a Playwright mobile-width test for the first onboarding destination after Workflow 1 completion.
+- [x] Decide whether Google auth will be fully automated in Playwright or covered only by unit plus manual testing.
+- [x] Document the provider rule for Playwright runs: only automate third-party auth providers when the environment supports deterministic mocking or stable test credentials.
+
+### Manual QA checklist
+
+- [ ] Run a desktop manual QA pass for the base `/signup` route and confirm the expected auth methods, copy, and default redirect behavior.
+- [ ] Run a desktop manual QA pass for `/signup?plan=personal` and confirm the plan intent shown to the user matches the final bootstrap outcome.
+- [ ] Run a desktop manual QA pass for `/signup?plan=org` and confirm the plan intent shown to the user matches the final bootstrap outcome.
+- [ ] Run a desktop manual QA pass for `/signup?source=ai-tool` and confirm source attribution is retained after signup.
+- [ ] Run a desktop manual QA pass for `/signup?utm_campaign=test` and confirm campaign attribution is retained after signup.
+- [ ] Run a desktop manual QA pass for `/signup?invite=<token>` and confirm invite context is preserved into acceptance.
+- [ ] Manually verify the direct email-password signup happy path from form completion to the first post-signup route.
+- [ ] Manually verify that a direct non-invite signup creates the expected user, workspace, membership, and session records.
+- [ ] Manually verify that invite-based signup does not create an unintended extra workspace before invite acceptance.
+- [ ] Manually verify that invite acceptance applies the expected membership role and lands in the correct workspace context.
+- [ ] Manually verify invalid email handling with clear inline feedback.
+- [ ] Manually verify weak password handling with clear inline feedback.
+- [ ] Manually verify confirm-password mismatch handling with clear inline feedback.
+- [ ] Manually verify duplicate-signup handling and the recovery path back to login or account recovery.
+- [ ] Manually verify magic-link issuance from the Workflow 1 entry surface.
+- [ ] Manually verify magic-link completion behavior if new-user magic-link signup is enabled.
+- [ ] Manually verify Google login behavior and any account-linking recovery guidance.
+- [ ] Manually verify the approved verification-gating rule, including resend behavior and final post-verification redirect.
+- [ ] Manually inspect the created records for Workflow 1 and confirm user, workspace, membership, session, attribution, and audit-event integrity.
+- [ ] Manually verify the signup flow on a mobile viewport for tap target size, readable copy, and single-column layout integrity.
+- [ ] Manually verify autofill and password-manager behavior on the signup form.
+- [ ] Manually verify social-auth and invite actions remain usable and readable on mobile.
+- [ ] Manually verify keyboard-only navigation through signup, invite acceptance, and first redirect.
+- [ ] Manually verify visible focus states on all primary Workflow 1 controls.
+- [ ] Manually verify form labels, validation text, and auth actions remain understandable for assistive technology users.
+- [x] Add a Workflow 1 QA signoff template capturing environment, seed state, auth method, route tested, expected result, actual result, bug links, and whether the scenario is automated in Playwright.
+
+### Workflow testing follow-up
+
+- [ ] Repeat this structure for each major workflow as implementation deepens.
+- [ ] Require each workflow backlog section to include dedicated Playwright coverage tasks, mobile tasks, accessibility tasks, and manual QA signoff tasks before the workflow is considered complete.
+
+## Workflow 2: Create first property
+
+### Unit and route coverage
+
+- [x] Extract the Workflow 2 save action out of `src/app/(auth)/onboarding/property/page.tsx` into a testable handler with injectable dependencies.
+- [x] Add unit coverage for the required-submit validation rules: property name, property type, location, and rentable room count.
+- [ ] Add unit coverage asserting a missing property name returns the approved inline validation message instead of defaulting to a placeholder property.
+- [x] Add unit coverage asserting a blank property name blocks submission and preserves entered form values.
+- [x] Add unit coverage asserting a blank property type blocks submission and preserves entered form values.
+- [x] Add unit coverage asserting a blank location blocks submission and preserves entered form values.
+- [x] Add unit coverage asserting rentable room count must be at least 1.
+- [x] Add unit coverage asserting shared bathroom count rejects negative values.
+- [x] Add unit coverage asserting optional fields can remain blank without blocking creation.
+- [x] Add unit coverage asserting the first property create path writes the property to the current workspace only.
+- [x] Add unit coverage asserting the first property update path edits the existing onboarding property rather than creating a duplicate.
+- [x] Add unit coverage asserting Workflow 2 creates the expected audit event with `property_created` and onboarding metadata.
+- [x] Add unit coverage asserting Workflow 2 redirects to `/onboarding/house-rules` only after successful save.
+- [x] Add unit coverage asserting failure paths return a stable form-level error instead of throwing away the form state.
+- [x] Add unit coverage asserting manager or viewer users without create-property permission are blocked from forcing first-property setup.
+- [x] Add unit coverage asserting owner or admin users can complete Workflow 2 when the workspace has no properties.
+- [x] Add unit coverage asserting Workflow 2 prepares any draft suggested downstream artifacts required by the spec.
+
+### Playwright coverage
+
+- [x] Split Workflow 2 coverage into a dedicated Playwright flow or helper-backed runtime suite rather than relying on generic smoke coverage.
+- [x] Add a Playwright helper for creating a fresh post-Workflow-1 user who has a workspace but no property.
+- [x] Add a Playwright test for the base `/onboarding/property` route rendering the expected header, helper copy, step framing, and CTA.
+- [x] Add a Playwright test asserting the property name field receives autofocus on first load.
+- [x] Add a Playwright test asserting the property type control is visually obvious and constrained to the approved options.
+- [x] Add a Playwright test asserting a user can create the first property with only the required Workflow 2 fields.
+- [x] Add a Playwright test asserting optional preferences can be filled without blocking save or corrupting required data.
+- [x] Add a Playwright test asserting default values are visible and editable for property type and house-preference fields.
+- [x] Add a Playwright test for missing-name submission with visible inline validation and blocked redirect.
+- [x] Add a Playwright test for missing-property-type submission with visible inline validation and blocked redirect.
+- [x] Add a Playwright test for missing-location submission with visible inline validation and blocked redirect.
+- [x] Add a Playwright test for zero or invalid rentable-room submission with visible inline validation and blocked redirect.
+- [x] Add a Playwright test asserting form values persist after a validation failure.
+- [x] Add a Playwright test asserting a successful save routes directly to `/onboarding/house-rules`.
+- [x] Add a Playwright assertion that the created property appears in `/app/properties` with the expected summary fields.
+- [x] Add a Playwright assertion that a signed-in user with no property sees the expected “create your first property” recovery path from the app.
+- [x] Add a Playwright test asserting the first-property flow does not ask for deferred fields such as rent amount, utilities, photos, or compliance details.
+- [x] Add a Playwright mobile-width test for `/onboarding/property` ensuring a single-column layout, readable copy, and tappable controls.
+- [x] Add a Playwright mobile-width test asserting property-type selection cards or controls remain usable and readable on small screens.
+- [ ] Add a Playwright keyboard-navigation test covering all Workflow 2 controls from first focus through submit.
+
+### Manual QA checklist
+
+- [ ] Run a desktop manual QA pass for `/onboarding/property` and confirm the page framing matches Workflow 2 rather than generic CRUD.
+- [ ] Manually verify the required-fields-only happy path from property entry to `/onboarding/house-rules`.
+- [ ] Manually verify the created property belongs to the correct workspace and becomes the active onboarding property.
+- [ ] Manually verify the property name copy, examples, and helper text feel operational rather than enterprise or abstract.
+- [ ] Manually verify property type choices are understandable to shared-housing operators.
+- [ ] Manually verify missing-name handling with clear inline feedback.
+- [ ] Manually verify missing-property-type handling with clear inline feedback.
+- [ ] Manually verify missing-location handling with clear inline feedback.
+- [ ] Manually verify invalid rentable-room counts with clear inline feedback.
+- [ ] Manually verify optional preferences are low-pressure, clearly labeled, and editable.
+- [ ] Manually inspect created records for property data integrity, audit logging, and suggested downstream setup artifacts.
+- [ ] Manually verify the flow on a mobile viewport for stacked layout, readable copy, and comfortable tap targets.
+- [ ] Manually verify keyboard-only navigation, focus visibility, and label clarity for assistive technology users.
+- [x] Add a Workflow 2 QA signoff section or template capturing environment, route tested, property fixture, expected result, actual result, data checks, and bugs.
+
+### Workflow testing follow-up
+
+- [x] Decide whether Workflow 2 should be added to the existing dedicated onboarding runtime suite or moved into its own dedicated `test:workflow2` script.
+- [ ] Require Workflow 2 completion to include passing unit coverage, passing Playwright coverage, and manual QA signoff before the workflow is marked complete.

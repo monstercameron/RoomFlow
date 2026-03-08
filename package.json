@@ -10,6 +10,8 @@
     "start": "next start",
     "pretest": "npm run db:generate",
     "test": "tsx --test",
+    "test:workflow1": "tsx scripts/playwright-workflow1.ts",
+    "test:workflow2": "tsx scripts/playwright-workflow2.ts",
     "openai:realtime:smoke": "tsx scripts/openai-realtime-smoke.ts",
     "lint": "eslint .",
     "pretypecheck": "npm run db:generate",

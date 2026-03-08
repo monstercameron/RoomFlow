@@ -1,3 +1,5 @@
+import { applyWorkflow1IntentSearchParams } from "@/lib/workflow1";
+
 const fallbackApplicationBaseUrl = "http://127.0.0.1:3001";
 
 function getApplicationBaseUrl() {
@@ -78,10 +80,14 @@ export function buildEmailVerificationPagePath(params: {
 
 export function buildMagicLinkPagePath(params: {
   emailAddress?: string | null;
+  inviteToken?: string | null;
   nextPath?: string | null;
+  plan?: string | null;
   token?: string | null;
   errorCode?: string | null;
+  source?: string | null;
   status?: "sent";
+  utmCampaign?: string | null;
 }) {
   const normalizedNextPath = normalizeApplicationPath(params.nextPath);
   const magicLinkUrl = new URL("/magic-link", fallbackApplicationBaseUrl);
@@ -106,6 +112,13 @@ export function buildMagicLinkPagePath(params: {
     magicLinkUrl.searchParams.set("status", params.status);
   }
 
+  applyWorkflow1IntentSearchParams(magicLinkUrl.searchParams, {
+    inviteToken: params.inviteToken,
+    plan: params.plan,
+    source: params.source,
+    utmCampaign: params.utmCampaign,
+  });
+
   return `${magicLinkUrl.pathname}${magicLinkUrl.search}`;
 }
 
@@ -114,7 +127,11 @@ export function buildAuthEntryPagePath(params: {
   emailAddress?: string | null;
   entryPath: "/login" | "/signup";
   errorCode?: string | null;
+  inviteToken?: string | null;
+  plan?: string | null;
   providerId?: string | null;
+  source?: string | null;
+  utmCampaign?: string | null;
 }) {
   const normalizedCallbackPath = normalizeApplicationPath(params.callbackPath ?? "/onboarding");
   const authEntryUrl = new URL(params.entryPath, fallbackApplicationBaseUrl);
@@ -134,6 +151,13 @@ export function buildAuthEntryPagePath(params: {
   if (params.providerId) {
     authEntryUrl.searchParams.set("provider", params.providerId);
   }
+
+  applyWorkflow1IntentSearchParams(authEntryUrl.searchParams, {
+    inviteToken: params.inviteToken,
+    plan: params.plan,
+    source: params.source,
+    utmCampaign: params.utmCampaign,
+  });
 
   return `${authEntryUrl.pathname}${authEntryUrl.search}`;
 }

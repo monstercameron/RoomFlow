@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useState } from "react";
 import type { MembershipRole } from "@/generated/prisma/client";
+import { buildAuthEntryPagePath } from "@/lib/auth-urls";
 import { LogoutButton } from "@/components/logout-button";
 
 const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
@@ -96,21 +97,34 @@ export function WorkspaceInviteAcceptancePanel(props: {
   }
 
   if (!props.signedInEmailAddress) {
+    const loginPath = buildAuthEntryPagePath({
+      callbackPath,
+      emailAddress: props.invitedEmailAddress,
+      entryPath: "/login",
+      inviteToken: props.inviteToken,
+    });
+    const signupPath = buildAuthEntryPagePath({
+      callbackPath,
+      emailAddress: props.invitedEmailAddress,
+      entryPath: "/signup",
+      inviteToken: props.inviteToken,
+    });
+
     return (
       <div className="mt-8 space-y-4">
         <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
           Sign in or create an account with {props.invitedEmailAddress} to accept this workspace invite.
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <Link
-            className="inline-flex rounded-2xl bg-[var(--color-accent)] px-4 py-3 font-medium text-white"
-            href={`/login?email=${encodeURIComponent(props.invitedEmailAddress)}&callbackURL=${encodeURIComponent(callbackPath)}`}
+            className="inline-flex w-full justify-center rounded-2xl bg-[var(--color-accent)] px-4 py-3 font-medium text-white sm:w-auto"
+            href={loginPath}
           >
             Log in to accept
           </Link>
           <Link
-            className="inline-flex rounded-2xl border border-[var(--color-line)] px-4 py-3 font-medium text-[var(--color-accent-strong)]"
-            href={`/signup?email=${encodeURIComponent(props.invitedEmailAddress)}&callbackURL=${encodeURIComponent(callbackPath)}`}
+            className="inline-flex w-full justify-center rounded-2xl border border-[var(--color-line)] px-4 py-3 font-medium text-[var(--color-accent-strong)] sm:w-auto"
+            href={signupPath}
           >
             Create account to accept
           </Link>
@@ -120,16 +134,23 @@ export function WorkspaceInviteAcceptancePanel(props: {
   }
 
   if (!signedInEmailMatchesInvite) {
+    const switchAccountPath = buildAuthEntryPagePath({
+      callbackPath,
+      emailAddress: props.invitedEmailAddress,
+      entryPath: "/login",
+      inviteToken: props.inviteToken,
+    });
+
     return (
       <div className="mt-8 space-y-4">
         <div className="rounded-2xl border border-[rgba(184,88,51,0.25)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm text-[var(--color-accent-strong)]">
           You are signed in as {props.signedInEmailAddress}, but this invite belongs to {props.invitedEmailAddress}.
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <LogoutButton />
           <Link
-            className="inline-flex rounded-2xl border border-[var(--color-line)] px-4 py-3 font-medium text-[var(--color-accent-strong)]"
-            href={`/login?email=${encodeURIComponent(props.invitedEmailAddress)}&callbackURL=${encodeURIComponent(callbackPath)}`}
+            className="inline-flex w-full justify-center rounded-2xl border border-[var(--color-line)] px-4 py-3 font-medium text-[var(--color-accent-strong)] sm:w-auto"
+            href={switchAccountPath}
           >
             Switch accounts
           </Link>

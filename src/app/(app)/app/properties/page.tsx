@@ -111,9 +111,26 @@ export default async function PropertiesPage(props: {
       </div>
 
       {filteredProperties.length === 0 ? (
-        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 text-sm text-[var(--color-muted)] shadow-[var(--shadow-panel)]">
-          No properties matched this filter.
-        </div>
+        properties.length === 0 ? (
+          <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-8 shadow-[var(--shadow-panel)]">
+            <div className="text-xl font-semibold">Create your first property to start qualifying leads.</div>
+            <div className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-muted)]">
+              This workspace does not have a property yet, so Roomflow cannot attach rules, questions, or lead-routing context to anything real.
+            </div>
+            <div className="mt-6">
+              <Link
+                className="inline-flex rounded-2xl bg-[var(--color-accent)] px-5 py-3 text-sm font-medium text-white"
+                href="/onboarding/property"
+              >
+                Create property
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 text-sm text-[var(--color-muted)] shadow-[var(--shadow-panel)]">
+            No properties matched this filter.
+          </div>
+        )
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {filteredProperties.map((property) => (

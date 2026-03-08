@@ -843,6 +843,11 @@ export const getAppShellData = cache(async () => {
 
 export const getDashboardViewData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
+  const propertyCount = await prisma.property.count({
+    where: {
+      workspaceId: membership.workspaceId,
+    },
+  });
   const hasAiAssist = workspaceHasCapability(
     membership.workspace.enabledCapabilities,
     WorkspaceCapability.AI_ASSIST,
@@ -1039,6 +1044,7 @@ export const getDashboardViewData = cache(async () => {
 
   return {
     hasAiAssist,
+    propertyCount,
     metrics: [
       {
         label: "New leads today",
