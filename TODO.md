@@ -441,7 +441,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [x] Build `/forgot-password` request flow and `/reset-password` completion flow.
 - [x] Build `/verify-email` and enforce verification gates for non-trusted providers.
 - [x] Add magic-link login and recovery flow with single-use token expiry.
-- [ ] Add Google login with safe account-linking behavior for existing verified emails.
+- [x] Add Google login with safe account-linking behavior for existing verified emails.
 - [ ] Add Facebook / Meta login for channel-heavy operators.
 - [ ] Add Microsoft login for Org workspaces.
 - [ ] Add Apple login with private-relay email handling.

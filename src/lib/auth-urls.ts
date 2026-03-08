@@ -4,6 +4,13 @@ function getApplicationBaseUrl() {
   return process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL ?? fallbackApplicationBaseUrl;
 }
 
+export function buildAbsoluteApplicationUrl(candidatePath?: string | null) {
+  const applicationBaseUrl = new URL(getApplicationBaseUrl());
+  const normalizedCandidatePath = normalizeApplicationPath(candidatePath);
+
+  return new URL(normalizedCandidatePath, applicationBaseUrl).toString();
+}
+
 export function normalizeApplicationPath(candidatePath?: string | null) {
   if (!candidatePath) {
     return "/";
@@ -100,4 +107,50 @@ export function buildMagicLinkPagePath(params: {
   }
 
   return `${magicLinkUrl.pathname}${magicLinkUrl.search}`;
+}
+
+export function buildAuthEntryPagePath(params: {
+  callbackPath?: string | null;
+  emailAddress?: string | null;
+  entryPath: "/login" | "/signup";
+  errorCode?: string | null;
+}) {
+  const normalizedCallbackPath = normalizeApplicationPath(params.callbackPath ?? "/onboarding");
+  const authEntryUrl = new URL(params.entryPath, fallbackApplicationBaseUrl);
+
+  if (normalizedCallbackPath !== "/onboarding") {
+    authEntryUrl.searchParams.set("callbackURL", normalizedCallbackPath);
+  }
+
+  if (params.emailAddress) {
+    authEntryUrl.searchParams.set("email", params.emailAddress);
+  }
+
+  if (params.errorCode) {
+    authEntryUrl.searchParams.set("error", params.errorCode);
+  }
+
+  return `${authEntryUrl.pathname}${authEntryUrl.search}`;
+}
+
+export function getSocialAuthErrorMessage(errorCode?: string | null) {
+  switch (errorCode) {
+    case "unable_to_link_account":
+    case "account_not_linked":
+      return "Google found an existing Roomflow account for this email. Sign in with email first, then link Google from Security settings.";
+    case "email_doesn't_match":
+      return "Google returned a different email address than the one already attached to this Roomflow account.";
+    case "provider_not_configured":
+      return "Google sign-in is not configured in this environment yet.";
+    case "provider_not_supported":
+    case "oauth_provider_not_found":
+      return "Google sign-in is unavailable right now.";
+    case "access_denied":
+    case "user_cancelled_authorize":
+      return "Google sign-in was cancelled before authorization completed.";
+    case "social_sign_in_failed":
+      return "Google sign-in could not be started. Try again or use email and password.";
+    default:
+      return null;
+  }
 }

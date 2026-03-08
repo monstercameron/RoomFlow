@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { LoginForm } from "@/components/auth/login-form";
-import { normalizeApplicationPath } from "@/lib/auth-urls";
+import {
+  getSocialAuthErrorMessage,
+  normalizeApplicationPath,
+} from "@/lib/auth-urls";
 import { getAuthenticatedRedirectPath } from "@/lib/app-data";
+import { getConfiguredSocialAuthProviderIds } from "@/lib/auth-providers";
 import { getServerSession } from "@/lib/session";
 
 type LoginPageProps = {
   searchParams: Promise<{
     callbackURL?: string;
     email?: string;
+    error?: string;
   }>;
 };
 
@@ -16,6 +22,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await getServerSession();
   const resolvedSearchParams = await searchParams;
   const callbackPath = normalizeApplicationPath(resolvedSearchParams.callbackURL ?? "/onboarding");
+  const socialAuthErrorMessage = getSocialAuthErrorMessage(resolvedSearchParams.error ?? null);
+  const isGoogleLoginAvailable = getConfiguredSocialAuthProviderIds().includes("google");
 
   if (session) {
     redirect(resolvedSearchParams.callbackURL ? callbackPath : await getAuthenticatedRedirectPath());
@@ -44,6 +52,18 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
             Test login is prefilled for local review.
           </div>
+          {socialAuthErrorMessage ? (
+            <div className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.25)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm text-[var(--color-accent-strong)]">
+              {socialAuthErrorMessage}
+            </div>
+          ) : null}
+          {isGoogleLoginAvailable ? (
+            <GoogleSignInButton
+              callbackPath={callbackPath}
+              defaultEmailAddress={resolvedSearchParams.email}
+              entryPath="/login"
+            />
+          ) : null}
           <LoginForm
             callbackPath={callbackPath}
             defaultEmailAddress={resolvedSearchParams.email}

@@ -6,9 +6,12 @@ import {
   buildPasswordResetApplicationUrl,
 } from "@/lib/auth-email";
 import {
+  buildAuthEntryPagePath,
+  buildAbsoluteApplicationUrl,
   buildEmailVerificationCallbackPath,
   buildEmailVerificationPagePath,
   buildMagicLinkPagePath,
+  getSocialAuthErrorMessage,
   normalizeApplicationPath,
 } from "@/lib/auth-urls";
 
@@ -80,5 +83,28 @@ test("buildMagicLinkPagePath includes recovery state", () => {
       status: "sent",
     }),
     "/magic-link?email=test%40roomflow.local&next=%2Fapp&status=sent",
+  );
+});
+
+test("buildAuthEntryPagePath preserves callback, email, and error state", () => {
+  assert.equal(
+    buildAuthEntryPagePath({
+      callbackPath: "/invite/test-token",
+      emailAddress: "test@roomflow.local",
+      entryPath: "/login",
+      errorCode: "unable_to_link_account",
+    }),
+    "/login?callbackURL=%2Finvite%2Ftest-token&email=test%40roomflow.local&error=unable_to_link_account",
+  );
+});
+
+test("buildAbsoluteApplicationUrl resolves normalized in-app paths", () => {
+  assert.equal(buildAbsoluteApplicationUrl("/signup?callbackURL=%2Fapp"), "http://127.0.0.1:3001/signup?callbackURL=%2Fapp");
+});
+
+test("getSocialAuthErrorMessage explains explicit linking fallback", () => {
+  assert.equal(
+    getSocialAuthErrorMessage("unable_to_link_account"),
+    "Google found an existing Roomflow account for this email. Sign in with email first, then link Google from Security settings.",
   );
 });

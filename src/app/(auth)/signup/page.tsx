@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { SignupForm } from "@/components/auth/signup-form";
-import { normalizeApplicationPath } from "@/lib/auth-urls";
+import {
+  getSocialAuthErrorMessage,
+  normalizeApplicationPath,
+} from "@/lib/auth-urls";
 import { getAuthenticatedRedirectPath } from "@/lib/app-data";
+import { getConfiguredSocialAuthProviderIds } from "@/lib/auth-providers";
 import { getServerSession } from "@/lib/session";
 
 type SignupPageProps = {
   searchParams: Promise<{
     callbackURL?: string;
     email?: string;
+    error?: string;
   }>;
 };
 
@@ -16,6 +22,8 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   const session = await getServerSession();
   const resolvedSearchParams = await searchParams;
   const callbackPath = normalizeApplicationPath(resolvedSearchParams.callbackURL ?? "/onboarding");
+  const socialAuthErrorMessage = getSocialAuthErrorMessage(resolvedSearchParams.error ?? null);
+  const isGoogleLoginAvailable = getConfiguredSocialAuthProviderIds().includes("google");
 
   if (session) {
     redirect(resolvedSearchParams.callbackURL ? callbackPath : await getAuthenticatedRedirectPath());
@@ -34,6 +42,18 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
           The initial build path is single-workspace and single-operator first.
           Team roles, billing, and external integrations come later.
         </p>
+        {socialAuthErrorMessage ? (
+          <div className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.25)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm text-[var(--color-accent-strong)]">
+            {socialAuthErrorMessage}
+          </div>
+        ) : null}
+        {isGoogleLoginAvailable ? (
+          <GoogleSignInButton
+            callbackPath={callbackPath}
+            defaultEmailAddress={resolvedSearchParams.email}
+            entryPath="/signup"
+          />
+        ) : null}
         <SignupForm
           callbackPath={callbackPath}
           defaultEmailAddress={resolvedSearchParams.email}
