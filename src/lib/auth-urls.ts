@@ -114,6 +114,7 @@ export function buildAuthEntryPagePath(params: {
   emailAddress?: string | null;
   entryPath: "/login" | "/signup";
   errorCode?: string | null;
+  providerId?: string | null;
 }) {
   const normalizedCallbackPath = normalizeApplicationPath(params.callbackPath ?? "/onboarding");
   const authEntryUrl = new URL(params.entryPath, fallbackApplicationBaseUrl);
@@ -130,26 +131,48 @@ export function buildAuthEntryPagePath(params: {
     authEntryUrl.searchParams.set("error", params.errorCode);
   }
 
+  if (params.providerId) {
+    authEntryUrl.searchParams.set("provider", params.providerId);
+  }
+
   return `${authEntryUrl.pathname}${authEntryUrl.search}`;
 }
 
-export function getSocialAuthErrorMessage(errorCode?: string | null) {
-  switch (errorCode) {
+function getSocialAuthProviderLabel(providerId?: string | null) {
+  switch (providerId) {
+    case "facebook":
+      return "Facebook";
+    case "microsoft":
+      return "Microsoft";
+    case "apple":
+      return "Apple";
+    default:
+      return "Google";
+  }
+}
+
+export function getSocialAuthErrorMessage(params: {
+  errorCode?: string | null;
+  providerId?: string | null;
+}) {
+  const providerLabel = getSocialAuthProviderLabel(params.providerId);
+
+  switch (params.errorCode) {
     case "unable_to_link_account":
     case "account_not_linked":
-      return "Google found an existing Roomflow account for this email. Sign in with email first, then link Google from Security settings.";
+      return `${providerLabel} found an existing Roomflow account for this email. Sign in with email first, then link ${providerLabel} from Security settings.`;
     case "email_doesn't_match":
-      return "Google returned a different email address than the one already attached to this Roomflow account.";
+      return `${providerLabel} returned a different email address than the one already attached to this Roomflow account.`;
     case "provider_not_configured":
-      return "Google sign-in is not configured in this environment yet.";
+      return `${providerLabel} sign-in is not configured in this environment yet.`;
     case "provider_not_supported":
     case "oauth_provider_not_found":
-      return "Google sign-in is unavailable right now.";
+      return `${providerLabel} sign-in is unavailable right now.`;
     case "access_denied":
     case "user_cancelled_authorize":
-      return "Google sign-in was cancelled before authorization completed.";
+      return `${providerLabel} sign-in was cancelled before authorization completed.`;
     case "social_sign_in_failed":
-      return "Google sign-in could not be started. Try again or use email and password.";
+      return `${providerLabel} sign-in could not be started. Try again or use email and password.`;
     default:
       return null;
   }

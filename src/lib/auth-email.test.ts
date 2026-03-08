@@ -93,8 +93,9 @@ test("buildAuthEntryPagePath preserves callback, email, and error state", () => 
       emailAddress: "test@roomflow.local",
       entryPath: "/login",
       errorCode: "unable_to_link_account",
+      providerId: "google",
     }),
-    "/login?callbackURL=%2Finvite%2Ftest-token&email=test%40roomflow.local&error=unable_to_link_account",
+    "/login?callbackURL=%2Finvite%2Ftest-token&email=test%40roomflow.local&error=unable_to_link_account&provider=google",
   );
 });
 
@@ -104,7 +105,7 @@ test("buildAbsoluteApplicationUrl resolves normalized in-app paths", () => {
 
 test("getSocialAuthErrorMessage explains explicit linking fallback", () => {
   assert.equal(
-    getSocialAuthErrorMessage("unable_to_link_account"),
+    getSocialAuthErrorMessage({ errorCode: "unable_to_link_account", providerId: "google" }),
     "Google found an existing Roomflow account for this email. Sign in with email first, then link Google from Security settings.",
   );
 });

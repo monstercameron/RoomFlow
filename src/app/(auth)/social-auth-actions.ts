@@ -18,6 +18,7 @@ function redirectToAuthEntryPage(params: {
   emailAddress?: string;
   entryPath: "/login" | "/signup";
   errorCode: string;
+  providerId?: string;
 }): never {
   redirect(
     buildAuthEntryPagePath({
@@ -25,6 +26,7 @@ function redirectToAuthEntryPage(params: {
       emailAddress: params.emailAddress,
       entryPath: params.entryPath,
       errorCode: params.errorCode,
+      providerId: params.providerId,
     }),
   );
 }
@@ -45,6 +47,7 @@ export async function startSocialSignInAction(formData: FormData) {
       emailAddress,
       entryPath: entryPathValue,
       errorCode: "provider_not_supported",
+      providerId,
     });
   }
 
@@ -54,6 +57,7 @@ export async function startSocialSignInAction(formData: FormData) {
       emailAddress,
       entryPath: entryPathValue,
       errorCode: "provider_not_configured",
+      providerId,
     });
   }
 
@@ -65,6 +69,7 @@ export async function startSocialSignInAction(formData: FormData) {
             callbackPath,
             emailAddress,
             entryPath: entryPathValue,
+            providerId,
           }),
         ),
         disableRedirect: true,
@@ -81,6 +86,7 @@ export async function startSocialSignInAction(formData: FormData) {
         emailAddress,
         entryPath: entryPathValue,
         errorCode: "social_sign_in_failed",
+        providerId,
       });
     }
 
@@ -91,6 +97,7 @@ export async function startSocialSignInAction(formData: FormData) {
       emailAddress,
       entryPath: entryPathValue,
       errorCode: "social_sign_in_failed",
+      providerId,
     });
   }
 }

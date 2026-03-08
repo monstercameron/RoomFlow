@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
+import { SocialSignInButton } from "@/components/auth/social-sign-in-button";
 import { SignupForm } from "@/components/auth/signup-form";
 import {
   getSocialAuthErrorMessage,
@@ -15,6 +15,7 @@ type SignupPageProps = {
     callbackURL?: string;
     email?: string;
     error?: string;
+    provider?: string;
   }>;
 };
 
@@ -22,8 +23,13 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   const session = await getServerSession();
   const resolvedSearchParams = await searchParams;
   const callbackPath = normalizeApplicationPath(resolvedSearchParams.callbackURL ?? "/onboarding");
-  const socialAuthErrorMessage = getSocialAuthErrorMessage(resolvedSearchParams.error ?? null);
-  const isGoogleLoginAvailable = getConfiguredSocialAuthProviderIds().includes("google");
+  const socialAuthErrorMessage = getSocialAuthErrorMessage({
+    errorCode: resolvedSearchParams.error ?? null,
+    providerId: resolvedSearchParams.provider ?? null,
+  });
+  const availableEntryProviderIds = getConfiguredSocialAuthProviderIds().filter(
+    (providerId) => providerId === "google" || providerId === "facebook",
+  );
 
   if (session) {
     redirect(resolvedSearchParams.callbackURL ? callbackPath : await getAuthenticatedRedirectPath());
@@ -47,13 +53,15 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
             {socialAuthErrorMessage}
           </div>
         ) : null}
-        {isGoogleLoginAvailable ? (
-          <GoogleSignInButton
+        {availableEntryProviderIds.map((providerId) => (
+          <SocialSignInButton
             callbackPath={callbackPath}
             defaultEmailAddress={resolvedSearchParams.email}
             entryPath="/signup"
+            key={providerId}
+            providerId={providerId}
           />
-        ) : null}
+        ))}
         <SignupForm
           callbackPath={callbackPath}
           defaultEmailAddress={resolvedSearchParams.email}
