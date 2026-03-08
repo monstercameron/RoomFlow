@@ -37,6 +37,8 @@ enum WorkspaceCapability {
   PROPERTY_PIPELINE
   MESSAGING
   INTEGRATIONS
+  WHATSAPP_MESSAGING
+  INSTAGRAM_MESSAGING
   ORG_MEMBERS
   ADVANCED_AUTOMATIONS
   ADVANCED_ANALYTICS
@@ -170,6 +172,8 @@ enum AuditActorType {
 enum MessageChannel {
   EMAIL
   SMS
+  WHATSAPP
+  INSTAGRAM
   INTERNAL_NOTE
 }
 
@@ -363,6 +367,14 @@ model Lead {
   isSoftDeclined          Boolean               @default(false)
   optOutAt                DateTime?
   optOutReason            String?
+  emailOptOutAt           DateTime?
+  emailOptOutReason       String?
+  smsOptOutAt             DateTime?
+  smsOptOutReason         String?
+  whatsappOptOutAt        DateTime?
+  whatsappOptOutReason    String?
+  instagramOptOutAt       DateTime?
+  instagramOptOutReason   String?
   isStale                 Boolean               @default(false)
   staleAt                 DateTime?
   staleReason             String?

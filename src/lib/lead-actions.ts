@@ -16,6 +16,11 @@ import {
 import { getCurrentWorkspaceState } from "@/lib/app-data";
 import { serializeDeliveryStatus } from "@/lib/delivery-status";
 import {
+  buildLeadChannelOptOutUpdate,
+  formatMessageChannelLabel,
+  isLeadChannelOptedOut,
+} from "@/lib/lead-channel-opt-outs";
+import {
   isProviderConfigurationError,
   markMessageDeliveryFailure,
   markMessageProviderUnresolved,
@@ -489,6 +494,26 @@ function parseMessageChannelFromFormValue(value: FormDataEntryValue | null) {
     return MessageChannel.INTERNAL_NOTE;
   }
 
+  if (value === MessageChannel.WHATSAPP) {
+    return MessageChannel.WHATSAPP;
+  }
+
+  if (value === MessageChannel.INSTAGRAM) {
+    return MessageChannel.INSTAGRAM;
+  }
+
+  return null;
+}
+
+function parseBooleanFormValue(value: FormDataEntryValue | null) {
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
   return null;
 }
 
@@ -718,6 +743,13 @@ export async function sendManualOutboundMessageAction(
       );
     }
 
+    if (isLeadChannelOptedOut(lead, outboundMessageChannel)) {
+      throw new LeadWorkflowError(
+        "ACTION_BLOCKED_OPT_OUT",
+        `Lead has opted out of ${formatMessageChannelLabel(outboundMessageChannel)} messaging.`,
+      );
+    }
+
     const conversation =
       lead.conversation ??
       (await prisma.conversation.create({
@@ -834,6 +866,116 @@ export async function sendManualOutboundMessageAction(
             messageId: messageRecord.id,
             channel: outboundMessageChannel,
             optOutAt: lead.optOutAt?.toISOString() ?? null,
+          },
+        },
+      });
+    });
+  } catch (error) {
+    if (isLeadWorkflowError(error)) {
+      redirectToWorkflowErrorPath(redirectPath, error.code);
+    }
+
+    throw error;
+  }
+
+  refreshLeadWorkflow(leadId);
+  redirect(redirectPath);
+}
+
+export async function updateLeadChannelOptOutAction(
+  leadId: string,
+  formData: FormData,
+) {
+  const actionContext = await getActionContext(leadId);
+  const channel = parseMessageChannelFromFormValue(formData.get("channel"));
+  const isOptedOut = parseBooleanFormValue(formData.get("isOptedOut"));
+  const reasonValue = formData.get("reason");
+  const redirectTargetValue = formData.get("redirectTo");
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : getLeadDetailPath(leadId);
+
+  try {
+    await assertLeadActionPermission({
+      ...actionContext,
+      leadActionPermissionKey: "requestInfo",
+    });
+
+    if (
+      !channel ||
+      channel === MessageChannel.INTERNAL_NOTE ||
+      isOptedOut === null
+    ) {
+      throw new LeadWorkflowError(
+        "ACTION_REQUIRES_CONTACT_CHANNEL",
+        "A valid contact channel is required for opt-out updates.",
+      );
+    }
+
+    const lead = await prisma.lead.findFirst({
+      where: {
+        id: leadId,
+        workspaceId: actionContext.workspaceId,
+      },
+      select: {
+        id: true,
+        propertyId: true,
+        optOutAt: true,
+        optOutReason: true,
+        emailOptOutAt: true,
+        emailOptOutReason: true,
+        smsOptOutAt: true,
+        smsOptOutReason: true,
+        whatsappOptOutAt: true,
+        whatsappOptOutReason: true,
+        instagramOptOutAt: true,
+        instagramOptOutReason: true,
+      },
+    });
+
+    if (!lead) {
+      throw new LeadWorkflowError(
+        "LEAD_NOT_FOUND",
+        `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
+      );
+    }
+
+    const changedAt = new Date();
+    const updateData = buildLeadChannelOptOutUpdate({
+      lead,
+      channel,
+      isOptedOut,
+      changedAt,
+      reason: typeof reasonValue === "string" ? reasonValue : null,
+    });
+
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.lead.update({
+        where: {
+          id: lead.id,
+        },
+        data: {
+          ...updateData,
+          lastActivityAt: changedAt,
+        },
+      });
+
+      await transactionClient.auditEvent.create({
+        data: {
+          workspaceId: actionContext.workspaceId,
+          leadId: lead.id,
+          propertyId: lead.propertyId,
+          actorUserId: actionContext.actorUserId,
+          actorType: AuditActorType.USER,
+          eventType: isOptedOut ? "lead_opted_out" : "lead_opted_in",
+          payload: {
+            channel,
+            reason:
+              typeof reasonValue === "string" && reasonValue.trim().length > 0
+                ? reasonValue.trim()
+                : null,
+            source: "operator_control",
           },
         },
       });

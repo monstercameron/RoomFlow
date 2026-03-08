@@ -145,6 +145,20 @@ export async function sendQueuedMessage(messageId: string, retryCount = 0) {
         }),
       },
     });
+
+    return;
+  }
+
+  if (message.channel === MessageChannel.WHATSAPP) {
+    if (!recipientPhone) {
+      throw new Error("Lead is missing a phone number.");
+    }
+
+    throw new Error("WhatsApp delivery is not configured.");
+  }
+
+  if (message.channel === MessageChannel.INSTAGRAM) {
+    throw new Error("Instagram delivery is not configured.");
   }
 }
 
@@ -186,6 +200,10 @@ export async function markMessageProviderUnresolved(params: {
       ? "resend"
       : existingMessageRecord?.channel === MessageChannel.SMS
         ? "twilio"
+        : existingMessageRecord?.channel === MessageChannel.WHATSAPP
+          ? "whatsapp"
+          : existingMessageRecord?.channel === MessageChannel.INSTAGRAM
+            ? "instagram"
         : "unknown";
 
   await prisma.message.update({

@@ -24,6 +24,8 @@ type LeadFieldMetadataRow = {
   confidencePercent: number;
   isSuggested: boolean;
   lastUpdatedAt: string;
+  evidenceSnippet: string | null;
+  sourceMessageReference: string | null;
 };
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -70,6 +72,8 @@ export function buildLeadFieldMetadataRows(
     const sourceValue = metadataEntry.source;
     const lastUpdatedAtValue = metadataEntry.lastUpdatedAt;
     const isSuggestedValue = metadataEntry.isSuggested;
+    const evidenceSnippetValue = metadataEntry.evidenceSnippet;
+    const sourceMessageReferenceValue = metadataEntry.sourceMessageReference;
 
     if (
       typeof confidenceValue !== "number" ||
@@ -88,6 +92,12 @@ export function buildLeadFieldMetadataRows(
       isSuggested:
         typeof isSuggestedValue === "boolean" ? isSuggestedValue : confidenceValue < 0.8,
       lastUpdatedAt: lastUpdatedAtValue,
+      evidenceSnippet:
+        typeof evidenceSnippetValue === "string" ? evidenceSnippetValue : null,
+      sourceMessageReference:
+        typeof sourceMessageReferenceValue === "string"
+          ? sourceMessageReferenceValue
+          : null,
     });
   }
 

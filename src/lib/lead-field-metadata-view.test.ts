@@ -10,6 +10,8 @@ test("buildLeadFieldMetadataRows maps metadata entries into display rows", () =>
       confidence: 0.75,
       lastUpdatedAt: "2026-03-07T12:00:00.000Z",
       isSuggested: true,
+      evidenceSnippet: "Hi, I'm Jordan and I'm looking for a room near downtown.",
+      sourceMessageReference: "message_abc",
     },
     email: {
       value: "jordan@example.com",
@@ -17,6 +19,8 @@ test("buildLeadFieldMetadataRows maps metadata entries into display rows", () =>
       confidence: 0.99,
       lastUpdatedAt: "2026-03-07T12:00:00.000Z",
       isSuggested: false,
+      evidenceSnippet: "You can reach me at jordan@example.com.",
+      sourceMessageReference: "message_abc",
     },
   });
 
@@ -27,6 +31,11 @@ test("buildLeadFieldMetadataRows maps metadata entries into display rows", () =>
   assert.equal(fullNameRow?.value, "Jordan Kim");
   assert.equal(fullNameRow?.confidencePercent, 75);
   assert.equal(fullNameRow?.isSuggested, true);
+  assert.equal(
+    fullNameRow?.evidenceSnippet,
+    "Hi, I'm Jordan and I'm looking for a room near downtown.",
+  );
+  assert.equal(fullNameRow?.sourceMessageReference, "message_abc");
 
   assert.equal(emailRow?.label, "Email");
   assert.equal(emailRow?.confidencePercent, 99);

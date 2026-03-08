@@ -3,6 +3,11 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { getLeadDetailViewData } from "@/lib/app-data";
 import {
+  generateLeadInsightsAction,
+  generateLeadTranslationAction,
+  reviewLeadFieldSuggestionAction,
+} from "@/lib/ai-actions";
+import {
   getLeadWorkflowErrorUserMessage,
   parseLeadWorkflowErrorCode,
 } from "@/lib/lead-workflow-errors";
@@ -16,6 +21,7 @@ import {
   declineLeadAction,
   overrideLeadRoutingAction,
   sendManualOutboundMessageAction,
+  updateLeadChannelOptOutAction,
 } from "@/lib/lead-actions";
 
 type LeadDetailPageProps = {
@@ -123,6 +129,107 @@ export default async function LeadDetailPage({
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <section className="space-y-6">
+          {lead.hasAiAssist ? (
+            <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-lg font-semibold">AI operator assist</div>
+                  <p className="mt-2 text-sm text-[var(--color-muted)]">
+                    Generate a lead summary, reply draft, missing-info follow-up, conflict explanation, duplicate rationale, and next-best-action recommendation.
+                  </p>
+                </div>
+                <form action={generateLeadInsightsAction.bind(null, lead.id)}>
+                  <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                  <button
+                    className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
+                    type="submit"
+                  >
+                    Generate AI insights
+                  </button>
+                </form>
+              </div>
+              {lead.leadInsightsArtifact?.status === "failed" ? (
+                <div className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] px-4 py-4 text-sm text-[var(--color-accent-strong)]">
+                  AI generation failed {lead.leadInsightsArtifact.generatedAt}: {lead.leadInsightsArtifact.error}
+                </div>
+              ) : null}
+              {lead.leadInsightsArtifact?.status === "ready" ? (
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                      Lead summary | {lead.leadInsightsArtifact.generatedAt}
+                    </div>
+                    <div className="mt-2 text-sm leading-7">
+                      {lead.leadInsightsArtifact.data.summary}
+                    </div>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                      <div className="text-sm font-medium">Next best action</div>
+                      <div className="mt-2 text-sm font-medium">
+                        {lead.leadInsightsArtifact.data.nextBestAction.label}
+                      </div>
+                      <div className="mt-2 text-sm text-[var(--color-muted)]">
+                        {lead.leadInsightsArtifact.data.nextBestAction.rationale}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                      <div className="text-sm font-medium">Conflict explanation</div>
+                      <div className="mt-2 text-sm text-[var(--color-muted)]">
+                        {lead.leadInsightsArtifact.data.conflictExplanation}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                      <div className="text-sm font-medium">Duplicate review</div>
+                      <div className="mt-2 text-sm text-[var(--color-muted)]">
+                        {lead.leadInsightsArtifact.data.duplicateSuggestion.rationale}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                      <div className="text-sm font-medium">Stale lead recommendation</div>
+                      <div className="mt-2 text-sm text-[var(--color-muted)]">
+                        {lead.leadInsightsArtifact.data.staleLeadRecommendation}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                      <div className="text-sm font-medium">Reply draft</div>
+                      {lead.leadInsightsArtifact.data.replyDraft.subject ? (
+                        <div className="mt-2 text-sm font-medium">
+                          Subject: {lead.leadInsightsArtifact.data.replyDraft.subject}
+                        </div>
+                      ) : null}
+                      <div className="mt-2 whitespace-pre-wrap text-sm leading-7 text-[var(--color-muted)]">
+                        {lead.leadInsightsArtifact.data.replyDraft.body}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                      <div className="text-sm font-medium">Missing-info follow-up</div>
+                      {lead.leadInsightsArtifact.data.missingInfoFollowUp.subject ? (
+                        <div className="mt-2 text-sm font-medium">
+                          Subject: {lead.leadInsightsArtifact.data.missingInfoFollowUp.subject}
+                        </div>
+                      ) : null}
+                      <div className="mt-2 whitespace-pre-wrap text-sm leading-7 text-[var(--color-muted)]">
+                        {lead.leadInsightsArtifact.data.missingInfoFollowUp.body}
+                      </div>
+                      {lead.leadInsightsArtifact.data.missingInfoFollowUp.missingItems.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
+                          {lead.leadInsightsArtifact.data.missingInfoFollowUp.missingItems.map((item) => (
+                            <span key={item} className="rounded-full border border-[var(--color-line)] px-3 py-1">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           {lead.possibleDuplicateCandidate ? (
             <div className="rounded-[2rem] border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] p-6 shadow-[var(--shadow-panel)]">
               <div className="text-lg font-semibold">Possible duplicate lead</div>
@@ -209,6 +316,76 @@ export default async function LeadDetailPage({
               </div>
             </dl>
             <p className="mt-4 text-sm text-[var(--color-muted)]">{lead.notes}</p>
+            {lead.actions.manualOutbound ? (
+              <div className="mt-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+                <div className="text-sm font-semibold">Contact preferences</div>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">
+                  Track channel-specific opt-outs and operator overrides directly on the lead.
+                </p>
+                <div className="mt-3 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm">
+                  {lead.optOutSummary.isOptedOut
+                    ? `Latest opt-out: ${lead.optOutSummary.optedOutAt}${
+                        lead.optOutSummary.optedOutReason
+                          ? ` | ${lead.optOutSummary.optedOutReason}`
+                          : ""
+                      }`
+                    : "No active opt-outs recorded."}
+                </div>
+                <div className="mt-4 space-y-3">
+                  {lead.channelOptOuts.map((channelOptOut) => (
+                    <form
+                      key={channelOptOut.value}
+                      action={updateLeadChannelOptOutAction.bind(null, lead.id)}
+                      className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium">{channelOptOut.label}</div>
+                          <div className="mt-1 text-sm text-[var(--color-muted)]">
+                            {channelOptOut.isOptedOut
+                              ? `Opted out${channelOptOut.optedOutAt ? ` ${channelOptOut.optedOutAt}` : ""}`
+                              : "Available for outreach"}
+                          </div>
+                          {channelOptOut.optedOutReason ? (
+                            <div className="mt-2 text-xs text-[var(--color-muted)]">
+                              Reason: {channelOptOut.optedOutReason}
+                            </div>
+                          ) : null}
+                        </div>
+                        <button
+                          className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2 text-sm font-medium"
+                          type="submit"
+                        >
+                          {channelOptOut.isOptedOut ? "Mark opted in" : "Mark opted out"}
+                        </button>
+                      </div>
+                      <input type="hidden" name="channel" value={channelOptOut.value} />
+                      <input
+                        type="hidden"
+                        name="isOptedOut"
+                        value={channelOptOut.isOptedOut ? "false" : "true"}
+                      />
+                      <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                      <label className="mt-3 block space-y-2">
+                        <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                          {channelOptOut.isOptedOut ? "Optional note" : "Reason"}
+                        </span>
+                        <input
+                          className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 outline-none"
+                          name="reason"
+                          placeholder={
+                            channelOptOut.isOptedOut
+                              ? "Optional opt-in note"
+                              : "Optional opt-out reason"
+                          }
+                          type="text"
+                        />
+                      </label>
+                    </form>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {lead.availableProperties.length > 0 &&
             lead.property === "Unassigned" &&
             lead.actions.assignProperty ? (
@@ -431,9 +608,12 @@ export default async function LeadDetailPage({
                       required
                       defaultValue="EMAIL"
                     >
-                      {["EMAIL", "SMS"].map((manualChannelOption) => (
-                        <option key={manualChannelOption} value={manualChannelOption}>
-                          {manualChannelOption.replaceAll("_", " ")}
+                      {lead.manualOutboundChannels.map((manualChannelOption) => (
+                        <option
+                          key={manualChannelOption.value}
+                          value={manualChannelOption.value}
+                        >
+                          {manualChannelOption.label}
                         </option>
                       ))}
                     </select>
@@ -491,13 +671,125 @@ export default async function LeadDetailPage({
                       </div>
                     </div>
                     <div className="mt-2 text-sm">{fieldRow.value}</div>
+                    {fieldRow.evidenceSnippet ? (
+                      <div className="mt-2 rounded-xl border border-[var(--color-line)] bg-white px-3 py-2 text-sm text-[var(--color-muted)]">
+                        "{fieldRow.evidenceSnippet}"
+                      </div>
+                    ) : null}
                     <div className="mt-2 text-xs text-[var(--color-muted)]">
                       source: {fieldRow.source} | updated: {fieldRow.lastUpdatedAt}
+                      {fieldRow.sourceMessageReference
+                        ? ` | message: ${fieldRow.sourceMessageReference}`
+                        : ""}
                       {fieldRow.isSuggested ? " | suggested review" : ""}
                     </div>
+                    {lead.hasAiAssist && fieldRow.isSuggested ? (
+                      <form
+                        action={reviewLeadFieldSuggestionAction.bind(null, lead.id)}
+                        className="mt-3 rounded-2xl border border-[var(--color-line)] bg-white p-3"
+                      >
+                        <div className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                          Review suggestion
+                        </div>
+                        <input type="hidden" name="fieldKey" value={fieldRow.key} />
+                        <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                        <input
+                          className="mt-3 w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 outline-none"
+                          defaultValue={fieldRow.value}
+                          name="editedValue"
+                          type="text"
+                        />
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2 text-sm font-medium"
+                            name="reviewAction"
+                            type="submit"
+                            value="accept"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2 text-sm font-medium"
+                            name="reviewAction"
+                            type="submit"
+                            value="edit"
+                          >
+                            Save edit
+                          </button>
+                          <button
+                            className="rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] px-4 py-2 text-sm font-medium"
+                            name="reviewAction"
+                            type="submit"
+                            value="reject"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </form>
+                    ) : null}
                   </div>
                 ))}
               </div>
+            </div>
+          ) : null}
+
+          {lead.hasAiAssist && lead.latestMessageForTranslation ? (
+            <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-lg font-semibold">Translation assist</div>
+                  <p className="mt-2 text-sm text-[var(--color-muted)]">
+                    Translate the latest inbound or outbound message while preserving the original thread text.
+                  </p>
+                </div>
+                <form
+                  action={generateLeadTranslationAction.bind(null, lead.id)}
+                  className="flex flex-wrap items-end gap-3"
+                >
+                  <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                  <input type="hidden" name="sourceText" value={lead.latestMessageForTranslation.body} />
+                  <input
+                    type="hidden"
+                    name="sourceSummary"
+                    value={lead.latestMessageForTranslation.sourceSummary}
+                  />
+                  <label className="space-y-2">
+                    <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                      Target language
+                    </span>
+                    <input
+                      className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      defaultValue="Spanish"
+                      name="targetLanguage"
+                      type="text"
+                    />
+                  </label>
+                  <button
+                    className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
+                    type="submit"
+                  >
+                    Translate latest message
+                  </button>
+                </form>
+              </div>
+              <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4 text-sm leading-7">
+                {lead.latestMessageForTranslation.body}
+              </div>
+              {lead.translationArtifact?.status === "failed" ? (
+                <div className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] px-4 py-4 text-sm text-[var(--color-accent-strong)]">
+                  Translation failed {lead.translationArtifact.generatedAt}: {lead.translationArtifact.error}
+                </div>
+              ) : null}
+              {lead.translationArtifact?.status === "ready" ? (
+                <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-4">
+                  <div className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                    {lead.translationArtifact.data.language} | {lead.translationArtifact.generatedAt}
+                  </div>
+                  <div className="mt-2 whitespace-pre-wrap text-sm leading-7 text-[var(--color-muted)]">
+                    {lead.translationArtifact.data.translatedText}
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -549,58 +841,50 @@ export default async function LeadDetailPage({
 
         <section className="space-y-6">
           <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
-            <div className="text-lg font-semibold">Timeline</div>
+            <div className="text-lg font-semibold">Shared thread</div>
+            <p className="mt-2 text-sm text-[var(--color-muted)]">
+              A single chronological thread for messages, notes, status changes, and system events.
+            </p>
             <div className="mt-4 space-y-3">
-              {lead.timeline.map((item) => (
-                <div key={`${item.at}-${item.event}`} className="flex gap-4">
+              {lead.sharedThread.map((item: (typeof lead.sharedThread)[number]) => (
+                <div key={`${item.kind}-${item.id}`} className="flex gap-4">
                   <div className="w-24 shrink-0 text-sm text-[var(--color-muted)]">
                     {item.at}
                   </div>
-                  <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3">
-                    {item.event}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
-              <div className="text-lg font-semibold">Messages</div>
-              <div className="mt-4 space-y-3">
-              {lead.messages.map((message: (typeof lead.messages)[number]) => (
-                <div
-                  key={`${message.at}-${message.direction}-${message.channel}`}
-                  className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3"
-                >
-                  <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
-                    {message.channel} | {message.direction} | {message.at}
-                  </div>
-                  {message.deliveryStatusLabel ? (
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
-                      <span className="rounded-full border border-[var(--color-line)] px-3 py-1">
-                        {message.deliveryStatusLabel}
-                      </span>
-                      {message.deliveryStatusDetail ? <span>{message.deliveryStatusDetail}</span> : null}
-                    </div>
-                  ) : null}
-                  <div className="mt-2 text-sm leading-7">{message.body}</div>
-                  {message.deliveryStatusError ? (
-                    <div className="mt-3 text-xs text-[var(--color-accent-strong)]">
-                      Delivery issue: {message.deliveryStatusError}
-                    </div>
-                  ) : null}
-                  {message.mentionedTeammates.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
-                      {message.mentionedTeammates.map((mention) => (
-                        <span
-                          key={`${message.at}-${mention.userId}`}
-                          className="rounded-full border border-[var(--color-line)] px-3 py-1"
-                        >
-                          @{mention.canonicalHandle} | {mention.name}
+                  <div className="flex-1 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                      <span>{item.kindLabel}</span>
+                      {item.meta ? (
+                        <span className="rounded-full border border-[var(--color-line)] px-3 py-1 normal-case tracking-normal">
+                          {item.meta}
                         </span>
-                      ))}
+                      ) : null}
                     </div>
-                  ) : null}
+                    <div className="mt-2 font-medium">{item.title}</div>
+                    {item.detail ? (
+                      <div className="mt-2 text-sm text-[var(--color-muted)]">{item.detail}</div>
+                    ) : null}
+                    {item.body ? (
+                      <div className="mt-3 text-sm leading-7">{item.body}</div>
+                    ) : null}
+                    {item.error ? (
+                      <div className="mt-3 text-xs text-[var(--color-accent-strong)]">
+                        Delivery issue: {item.error}
+                      </div>
+                    ) : null}
+                    {item.mentionedTeammates.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
+                        {item.mentionedTeammates.map((mention) => (
+                          <span
+                            key={`${item.id}-${mention.userId}`}
+                            className="rounded-full border border-[var(--color-line)] px-3 py-1"
+                          >
+                            @{mention.canonicalHandle} | {mention.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>

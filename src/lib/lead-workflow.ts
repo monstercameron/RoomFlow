@@ -54,6 +54,10 @@ import {
   sendQueuedMessage,
 } from "@/lib/message-delivery";
 import { formatBrandedMessageForLead } from "@/lib/message-branding";
+import {
+  formatMessageChannelLabel,
+  isLeadChannelOptedOut,
+} from "@/lib/lead-channel-opt-outs";
 import { sendOwnerAdminNotificationEmail } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
 import {
@@ -1264,10 +1268,10 @@ export async function performLeadWorkflowAction(params: {
     );
   }
 
-  if (lead.optOutAt) {
+  if (isLeadChannelOptedOut(lead, outboundMessageChannel)) {
     throw new LeadWorkflowError(
       "ACTION_BLOCKED_OPT_OUT",
-      "Lead has opted out and cannot receive automated outbound messages.",
+      `Lead has opted out of ${formatMessageChannelLabel(outboundMessageChannel)} messaging.`,
     );
   }
 
@@ -1392,6 +1396,15 @@ export async function performLeadWorkflowAction(params: {
     manualOnlyModeEnabled,
     channelPriorityOrder: outboundMessageChannelPriorityOrder,
   });
+
+  if (
+    isLeadChannelOptedOut(lead, finalOutboundMessageChannel)
+  ) {
+    throw new LeadWorkflowError(
+      "ACTION_BLOCKED_OPT_OUT",
+      `Lead has opted out of ${formatMessageChannelLabel(finalOutboundMessageChannel)} messaging.`,
+    );
+  }
 
   if (
     !isChannelDeliverableForLead({
@@ -1781,7 +1794,7 @@ export function getLeadActionAvailability(
     lead.automatedSendCountDate &&
     isSameUtcDay(lead.automatedSendCountDate, currentTime) &&
     lead.automatedSendCount >= lead.workspace.dailyAutomatedSendCap;
-  const blockedByOptOut = Boolean(lead.optOutAt);
+  const blockedByOptOut = isLeadChannelOptedOut(lead, defaultOutboundChannel);
   const effectiveQuietHours = resolveEffectiveQuietHours({
     workspaceQuietHoursStartLocal: lead.workspace.quietHoursStartLocal,
     workspaceQuietHoursEndLocal: lead.workspace.quietHoursEndLocal,
@@ -1928,8 +1941,10 @@ export function getLeadAutomationSuppressionSummaries(
     commonReasons.push("Lead is no longer active for automated outreach.");
   }
 
-  if (lead.optOutAt) {
-    commonReasons.push("Lead opted out of automated messaging.");
+  if (isLeadChannelOptedOut(lead, defaultOutboundChannel)) {
+    commonReasons.push(
+      `Lead opted out of ${formatMessageChannelLabel(defaultOutboundChannel)} messaging.`,
+    );
   }
 
   if (blockedByQuietHours) {

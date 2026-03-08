@@ -188,6 +188,34 @@ export default async function IntegrationsSettingsPage() {
         </div>
 
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-xl font-semibold">WhatsApp business messaging</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
+            {messagingSettings.hasWhatsAppMessagingCapability
+              ? "Org workspaces can now stage WhatsApp conversations on the lead thread. Provider wiring still needs production credentials before delivery can succeed."
+              : "WhatsApp messaging is reserved for Org workspaces and stays hidden from Personal plans."}
+          </p>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm">
+            {messagingSettings.hasWhatsAppMessagingCapability
+              ? "Conversation support is enabled for this workspace."
+              : "Upgrade to Org to enable WhatsApp messaging controls."}
+          </div>
+        </div>
+
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-xl font-semibold">Instagram business messaging</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
+            {messagingSettings.hasInstagramMessagingCapability
+              ? "Org workspaces can now keep Instagram conversation context on the lead thread. Delivery remains provider-unresolved until a business messaging adapter is configured."
+              : "Instagram messaging is reserved for Org workspaces and stays hidden from Personal plans."}
+          </p>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm">
+            {messagingSettings.hasInstagramMessagingCapability
+              ? "Conversation support is enabled for this workspace."
+              : "Upgrade to Org to enable Instagram messaging controls."}
+          </div>
+        </div>
+
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
           <div className="text-xl font-semibold">Supported v1 channels</div>
           <div className="mt-4 space-y-3">
             {directChannels.map((channel) => (

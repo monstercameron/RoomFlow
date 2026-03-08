@@ -24,6 +24,8 @@ export type NormalizedLeadFieldMetadataEntry = {
   lastUpdatedAt: string;
   isSuggested: boolean;
   isConflicted: boolean;
+  evidenceSnippet?: string | null;
+  sourceMessageReference?: string | null;
 };
 
 export type NormalizedLeadFieldMetadata = Record<
@@ -37,6 +39,15 @@ type BuildNormalizedLeadFieldMetadataParams = {
   sourceLabel: string;
   fieldValues: Partial<Record<NormalizedLeadFieldKey, string | number | boolean | null>>;
   fieldConfidences?: Partial<Record<NormalizedLeadFieldKey, number>>;
+  fieldEvidence?: Partial<
+    Record<
+      NormalizedLeadFieldKey,
+      {
+        evidenceSnippet?: string | null;
+        sourceMessageReference?: string | null;
+      }
+    >
+  >;
 };
 
 function clampConfidence(value: number | undefined) {
@@ -71,6 +82,8 @@ function parseExistingMetadataEntry(
   const lastUpdatedAtCandidate = existingEntry.lastUpdatedAt;
   const isSuggestedCandidate = existingEntry.isSuggested;
   const isConflictedCandidate = existingEntry.isConflicted;
+  const evidenceSnippetCandidate = existingEntry.evidenceSnippet;
+  const sourceMessageReferenceCandidate = existingEntry.sourceMessageReference;
 
   const isAllowedValueType =
     valueCandidate === null ||
@@ -97,6 +110,12 @@ function parseExistingMetadataEntry(
       typeof isSuggestedCandidate === "boolean" ? isSuggestedCandidate : false,
     isConflicted:
       typeof isConflictedCandidate === "boolean" ? isConflictedCandidate : false,
+    evidenceSnippet:
+      typeof evidenceSnippetCandidate === "string" ? evidenceSnippetCandidate : null,
+    sourceMessageReference:
+      typeof sourceMessageReferenceCandidate === "string"
+        ? sourceMessageReferenceCandidate
+        : null,
   };
 }
 
@@ -110,6 +129,8 @@ function buildDefaultMetadataEntry(
     lastUpdatedAt: normalizedAtIsoString,
     isSuggested: false,
     isConflicted: false,
+    evidenceSnippet: null,
+    sourceMessageReference: null,
   };
 }
 
@@ -185,6 +206,11 @@ export function buildNormalizedLeadFieldMetadata(
         lastUpdatedAt: normalizedAtIsoString,
         isSuggested: shouldTreatFieldConfidenceAsSuggested(incomingConfidence),
         isConflicted: hasConflictingValue,
+        evidenceSnippet:
+          params.fieldEvidence?.[normalizedLeadFieldKey]?.evidenceSnippet?.trim() || null,
+        sourceMessageReference:
+          params.fieldEvidence?.[normalizedLeadFieldKey]?.sourceMessageReference?.trim() ||
+          null,
       };
       continue;
     }

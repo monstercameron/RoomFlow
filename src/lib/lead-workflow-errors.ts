@@ -53,7 +53,7 @@ const userFacingMessageByWorkflowErrorCode: Record<
   ACTION_BLOCKED_INACTIVE_LEAD:
     "This lead is not active for automated actions.",
   ACTION_BLOCKED_OPT_OUT:
-    "This lead opted out of automated messaging.",
+    "This lead opted out of the selected outbound channel.",
   ACTION_BLOCKED_QUIET_HOURS:
     "Automated messaging is paused during the active quiet-hours window.",
   ACTION_BLOCKED_CHANNEL_INVALID:

@@ -3,11 +3,13 @@ import { cookies } from "next/headers";
 import {
   LeadStatus,
   MessageChannel,
+  MessageDirection,
   PropertyLifecycleStatus,
   QualificationFit,
   RuleSeverity,
   TemplateType,
   TourEventStatus,
+  WorkspaceCapability,
 } from "@/generated/prisma/client";
 import {
   buildLeadTimeline,
@@ -35,13 +37,30 @@ import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
 import { getLeadActionPermissionsForMembershipRole } from "@/lib/membership-role-permissions";
 import { parseDeliveryStatus } from "@/lib/delivery-status";
 import { resolveInternalNoteMentions } from "@/lib/internal-note-mentions";
+import {
+  formatMessageChannelLabel,
+  resolveLeadChannelOptOutState,
+  resolveLeadOptOutSummary,
+} from "@/lib/lead-channel-opt-outs";
+import {
+  findLatestAiArtifact,
+  houseRulesGeneratorSchema,
+  intakeFormGeneratorSchema,
+  leadAiInsightsSchema,
+  listingAnalyzerSchema,
+  portfolioInsightsSchema,
+  translationArtifactSchema,
+  workflowTemplateGeneratorSchema,
+} from "@/lib/ai-assist";
 import { prisma } from "@/lib/prisma";
 import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
 import { formatPropertyListingSyncStatus } from "@/lib/property-listing-sync";
 import { formatPropertyLifecycleStatus } from "@/lib/property-lifecycle";
 import { formatQuietHours, resolveEffectiveQuietHours } from "@/lib/quiet-hours";
 import { getServerSession } from "@/lib/session";
+import { workspaceHasCapability } from "@/lib/workspace-plan";
 import { activeWorkspaceCookieName, ensureWorkspaceForUser } from "@/lib/workspaces";
+import { sortTimelineEventsDeterministically } from "@/lib/workflow-events";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -110,6 +129,39 @@ function formatEnumLabel(value: string) {
     .join(" ");
 }
 
+function formatAiArtifactView<T>(
+  artifact:
+    | {
+        createdAt: Date;
+        data: T;
+        status: "ready";
+      }
+    | {
+        createdAt: Date;
+        error: string;
+        status: "failed";
+      }
+    | null,
+) {
+  if (!artifact) {
+    return null;
+  }
+
+  if (artifact.status === "failed") {
+    return {
+      error: artifact.error,
+      generatedAt: formatRelativeTime(artifact.createdAt),
+      status: artifact.status,
+    };
+  }
+
+  return {
+    data: artifact.data,
+    generatedAt: formatRelativeTime(artifact.createdAt),
+    status: artifact.status,
+  };
+}
+
 function formatFitLabel(value: QualificationFit) {
   return formatEnumLabel(value);
 }
@@ -119,7 +171,7 @@ function formatStatusLabel(value: LeadStatus) {
 }
 
 function formatChannelLabel(value: MessageChannel) {
-  return value === MessageChannel.INTERNAL_NOTE ? "Internal note" : value;
+  return formatMessageChannelLabel(value);
 }
 
 function formatDeliveryProviderLabel(value: string | null | undefined) {
@@ -163,6 +215,60 @@ function buildDeliveryStatusDisplay(deliveryStatusValue: string | null | undefin
     detail: detailParts.join(" | "),
     error: parsedDeliveryStatus.error ?? null,
   };
+}
+
+function formatAuditEventTitle(event: {
+  eventType: string;
+  payload: unknown;
+}) {
+  const payload =
+    event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+      ? (event.payload as Record<string, unknown>)
+      : null;
+  const channelValue =
+    typeof payload?.channel === "string" ? payload.channel : null;
+
+  if (event.eventType === "lead_opted_out" && channelValue) {
+    return `${formatMessageChannelLabel(channelValue as MessageChannel)} opted out`;
+  }
+
+  if (event.eventType === "lead_opted_in" && channelValue) {
+    return `${formatMessageChannelLabel(channelValue as MessageChannel)} opted back in`;
+  }
+
+  if (event.eventType.includes("_")) {
+    return formatEnumLabel(event.eventType);
+  }
+
+  return event.eventType;
+}
+
+function formatAuditEventDetail(event: {
+  eventType: string;
+  payload: unknown;
+}) {
+  const payload =
+    event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+      ? (event.payload as Record<string, unknown>)
+      : null;
+
+  if (!payload) {
+    return null;
+  }
+
+  if (
+    (event.eventType === "lead_opted_out" || event.eventType === "lead_opted_in") &&
+    typeof payload.reason === "string" &&
+    payload.reason.trim().length > 0
+  ) {
+    return payload.reason;
+  }
+
+  if (typeof payload.reason === "string" && payload.reason.trim().length > 0) {
+    return payload.reason;
+  }
+
+  return null;
 }
 
 const getWorkspaceMentionMembers = cache(async (workspaceId: string) => {
@@ -470,6 +576,10 @@ export const getAppShellData = cache(async () => {
 
 export const getDashboardViewData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
+  const hasAiAssist = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.AI_ASSIST,
+  );
   const startToday = startOfDay(new Date());
   const startYesterday = daysAgo(1);
   startYesterday.setHours(0, 0, 0, 0);
@@ -581,6 +691,49 @@ export const getDashboardViewData = cache(async () => {
       snapshotDate: "desc",
     },
   });
+  const workspaceAiArtifacts = hasAiAssist
+    ? await prisma.auditEvent.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+          eventType: "ai_artifact_generated",
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+        select: {
+          createdAt: true,
+          eventType: true,
+          payload: true,
+        },
+      })
+    : [];
+  const staleLeads = hasAiAssist
+    ? await prisma.lead.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+          isStale: true,
+        },
+        include: {
+          auditEvents: {
+            where: {
+              eventType: "ai_artifact_generated",
+            },
+            orderBy: {
+              createdAt: "asc",
+            },
+            select: {
+              createdAt: true,
+              eventType: true,
+              payload: true,
+            },
+          },
+        },
+        orderBy: {
+          staleAt: "desc",
+        },
+        take: 6,
+      })
+    : [];
 
   const newLeadDelta = newToday - newYesterday;
   const statusCounts = new Map<LeadStatus, number>();
@@ -618,6 +771,7 @@ export const getDashboardViewData = cache(async () => {
   }
 
   return {
+    hasAiAssist,
     metrics: [
       {
         label: "New leads today",
@@ -689,6 +843,26 @@ export const getDashboardViewData = cache(async () => {
       latestUsageSnapshot.activeProperties > 10
         ? ["Property count is above the soft starter-plan threshold (10)."]
         : [],
+    portfolioInsights: formatAiArtifactView(
+      findLatestAiArtifact({
+        artifactKind: "portfolio_insights",
+        auditEvents: workspaceAiArtifacts,
+        schema: portfolioInsightsSchema,
+      }),
+    ),
+    staleLeadRecommendations: staleLeads.map((lead) => ({
+      id: lead.id,
+      name: lead.fullName,
+      staleAt: formatRelativeTime(lead.staleAt),
+      status: formatStatusLabel(lead.status),
+      recommendation: formatAiArtifactView(
+        findLatestAiArtifact({
+          artifactKind: "lead_insights",
+          auditEvents: lead.auditEvents,
+          schema: leadAiInsightsSchema,
+        }),
+      ),
+    })),
     seedWindowLabel: `Demo data compares today (${formatDate(startToday)}) against yesterday (${formatDate(startYesterday)}).`,
   };
 });
@@ -800,6 +974,10 @@ export const getLeadListViewData = cache(async () => {
 
 export const getLeadDetailViewData = cache(async (leadId: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const hasAiAssist = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.AI_ASSIST,
+  );
   const lead = await getLeadWorkflowContext(membership.workspaceId, leadId);
 
   if (!lead) {
@@ -872,6 +1050,44 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     }));
 
   const timeline = buildLeadTimeline(lead);
+  const manualOutboundChannels = [
+    MessageChannel.EMAIL,
+    MessageChannel.SMS,
+    ...(workspaceHasCapability(
+      membership.workspace.enabledCapabilities,
+      WorkspaceCapability.WHATSAPP_MESSAGING,
+    )
+      ? [MessageChannel.WHATSAPP]
+      : []),
+    ...(workspaceHasCapability(
+      membership.workspace.enabledCapabilities,
+      WorkspaceCapability.INSTAGRAM_MESSAGING,
+    )
+      ? [MessageChannel.INSTAGRAM]
+      : []),
+  ].map((channel) => ({
+    value: channel,
+    label: formatMessageChannelLabel(channel),
+  }));
+  const channelOptOuts = [
+    MessageChannel.EMAIL,
+    MessageChannel.SMS,
+    MessageChannel.WHATSAPP,
+    MessageChannel.INSTAGRAM,
+  ].map((channel) => {
+    const optOutState = resolveLeadChannelOptOutState(lead, channel);
+
+    return {
+      value: channel,
+      label: formatMessageChannelLabel(channel),
+      isOptedOut: Boolean(optOutState.optedOutAt),
+      optedOutAt: optOutState.optedOutAt
+        ? formatRelativeTime(optOutState.optedOutAt)
+        : null,
+      optedOutReason: optOutState.reason ?? null,
+    };
+  });
+  const aggregateOptOutSummary = resolveLeadOptOutSummary(lead);
   const normalizedFieldMetadataRows = buildLeadFieldMetadataRows(lead.fieldMetadata);
   const workspaceMentionMembers = await getWorkspaceMentionMembers(
     membership.workspaceId,
@@ -914,13 +1130,87 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
           })) ?? [],
       };
     }) ?? [];
+  const sharedThread = sortTimelineEventsDeterministically([
+    ...lead.statusHistory.map((entry) => ({
+      id: entry.id,
+      leadId: lead.id,
+      eventType: "lead_status_changed",
+      createdAt: entry.createdAt,
+      kind: "status" as const,
+      title: `Status changed to ${formatStatusLabel(entry.toStatus)}`,
+      detail: entry.reason ?? null,
+      body: null,
+      meta: null,
+      error: null,
+      mentionedTeammates: [],
+    })),
+    ...lead.auditEvents.map((event) => ({
+      id: event.id,
+      leadId: lead.id,
+      eventType: event.eventType,
+      createdAt: event.createdAt,
+      kind: "event" as const,
+      title: formatAuditEventTitle(event),
+      detail: formatAuditEventDetail(event),
+      body: null,
+      meta: null,
+      error: null,
+      mentionedTeammates: [],
+    })),
+    ...messages.map((message, index) => ({
+      id: `${lead.id}-message-${index}`,
+      leadId: lead.id,
+      eventType: "message_event",
+      createdAt:
+        lead.conversation?.messages[index]?.sentAt ??
+        lead.conversation?.messages[index]?.receivedAt ??
+        lead.conversation?.messages[index]?.createdAt ??
+        new Date(),
+      kind: "message" as const,
+      title: `${message.channel} ${message.direction}`,
+      detail: message.deliveryStatusDetail,
+      body: message.body,
+      meta: message.deliveryStatusLabel,
+      error: message.deliveryStatusError,
+      mentionedTeammates: message.mentionedTeammates,
+    })),
+  ]).map((item) => ({
+    ...item,
+    at: formatRelativeTime(item.createdAt),
+    kindLabel:
+      item.kind === "message"
+        ? "Message"
+        : item.kind === "status"
+          ? "Status"
+          : "System",
+  }));
 
   const preferredContact =
     lead.preferredContactChannel ??
     lead.contact?.preferredChannel ??
     (lead.email ? "EMAIL" : lead.phone ? "SMS" : null);
+  const latestConversationMessage = lead.conversation?.messages.at(-1) ?? null;
+  const leadInsightsArtifact = hasAiAssist
+    ? formatAiArtifactView(
+        findLatestAiArtifact({
+          artifactKind: "lead_insights",
+          auditEvents: lead.auditEvents,
+          schema: leadAiInsightsSchema,
+        }),
+      )
+    : null;
+  const translationArtifact = hasAiAssist
+    ? formatAiArtifactView(
+        findLatestAiArtifact({
+          artifactKind: "translation",
+          auditEvents: lead.auditEvents,
+          schema: translationArtifactSchema,
+        }),
+      )
+    : null;
 
   return {
+    hasAiAssist,
     id: lead.id,
     source: lead.leadSource?.name ?? "Manual",
     name: lead.fullName,
@@ -947,8 +1237,17 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     budget: formatCurrency(lead.monthlyBudget),
     stayLength: formatStayLength(lead.stayLengthMonths),
     availableInternalNoteMentions,
+    manualOutboundChannels,
     workStatus: lead.workStatus ?? "Not provided",
     notes: lead.notes ?? "No operator notes yet.",
+    optOutSummary: {
+      isOptedOut: Boolean(aggregateOptOutSummary.optOutAt),
+      optedOutAt: aggregateOptOutSummary.optOutAt
+        ? formatRelativeTime(aggregateOptOutSummary.optOutAt)
+        : null,
+      optedOutReason: aggregateOptOutSummary.optOutReason ?? null,
+    },
+    channelOptOuts,
     schedulingUrl: lead.property?.schedulingUrl ?? null,
     fit: formatFitLabel(lead.fitResult),
     fitValue: lead.fitResult,
@@ -962,10 +1261,21 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     recommendedStatus: formatStatusLabel(evaluation.recommendedStatus),
     qualificationAnswers: answers,
     automationSuppressionSummaries,
+    sharedThread,
     timeline,
     messages,
     normalizedFieldMetadataRows,
+    latestMessageForTranslation: latestConversationMessage
+      ? {
+          body: latestConversationMessage.body,
+          sourceSummary: `${formatChannelLabel(latestConversationMessage.channel)} ${formatEnumLabel(
+            latestConversationMessage.direction,
+          )}`,
+        }
+      : null,
+    leadInsightsArtifact,
     possibleDuplicateCandidate,
+    translationArtifact,
     actions: {
       evaluateFit:
         workflowActionAvailability.evaluateFit && roleActionPermissions.evaluateFit,
@@ -989,6 +1299,10 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
 
 export const getInboxViewData = cache(async (queueFilter?: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const hasAiAssist = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.AI_ASSIST,
+  );
   const workspaceMentionMembers = await getWorkspaceMentionMembers(
     membership.workspaceId,
   );
@@ -1078,6 +1392,7 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
               "missing information requested",
               "possible_duplicate_flagged",
               "lead_conflict_detected",
+              "ai_artifact_generated",
             ],
           },
         },
@@ -1088,6 +1403,7 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
         select: {
           eventType: true,
           createdAt: true,
+          payload: true,
         },
       },
       conversation: {
@@ -1311,11 +1627,36 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
       latestMessageIsInternalNote:
         lead.conversation?.messages[0]?.channel === MessageChannel.INTERNAL_NOTE,
       availableInternalNoteMentions,
+      hasAiAssist,
+      leadInsightsArtifact: hasAiAssist
+        ? formatAiArtifactView(
+            findLatestAiArtifact({
+              artifactKind: "lead_insights",
+              auditEvents: lead.auditEvents,
+              schema: leadAiInsightsSchema,
+            }),
+          )
+        : null,
+      translationArtifact: hasAiAssist
+        ? formatAiArtifactView(
+            findLatestAiArtifact({
+              artifactKind: "translation",
+              auditEvents: lead.auditEvents,
+              schema: translationArtifactSchema,
+            }),
+          )
+        : null,
       needsAssignment: !lead.propertyId && roleActionPermissions.assignProperty,
+      translationSourceSummary: lead.conversation?.messages[0]
+        ? `${formatChannelLabel(lead.conversation.messages[0].channel)} ${formatEnumLabel(
+            lead.conversation.messages[0].direction,
+          )}`
+        : "No thread",
       availableProperties: properties,
     };
   });
 
+  const filteredThreads = (() => {
   if (!queueFilter || queueFilter === "all") {
     return mappedThreads;
   }
@@ -1341,10 +1682,20 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
   }
 
   return mappedThreads;
+  })();
+
+  return {
+    hasAiAssist,
+    threads: filteredThreads,
+  };
 });
 
 export const getPropertyQuestionsViewData = cache(async (propertyId: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const hasAiAssist = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.AI_ASSIST,
+  );
   const property = await prisma.property.findFirst({
     where: {
       id: propertyId,
@@ -1370,7 +1721,33 @@ export const getPropertyQuestionsViewData = cache(async (propertyId: string) => 
     return null;
   }
 
+  const propertyAiAuditEvents = hasAiAssist
+    ? await prisma.auditEvent.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+          propertyId: property.id,
+          eventType: "ai_artifact_generated",
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+        select: {
+          createdAt: true,
+          eventType: true,
+          payload: true,
+        },
+      })
+    : [];
+
   return {
+    hasAiAssist,
+    intakeFormArtifact: formatAiArtifactView(
+      findLatestAiArtifact({
+        artifactKind: "intake_form_generator",
+        auditEvents: propertyAiAuditEvents,
+        schema: intakeFormGeneratorSchema,
+      }),
+    ),
     propertyId: property.id,
     propertyName: property.name,
     lifecycleStatus: formatPropertyLifecycleStatus(property.lifecycleStatus),
@@ -1391,6 +1768,10 @@ export const getPropertyQuestionsViewData = cache(async (propertyId: string) => 
 
 export const getPropertyDetailViewData = cache(async (propertyId: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const hasAiAssist = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.AI_ASSIST,
+  );
   const recentInquiryWindowStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const qualifiedLeadStatuses = new Set<LeadStatus>([
     LeadStatus.QUALIFIED,
@@ -1524,8 +1905,33 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
     property._count.leads > 0
       ? `${Math.round((scheduledTourCount / property._count.leads) * 100)}%`
       : "No inquiries yet";
+  const propertyAiAuditEvents = hasAiAssist
+    ? await prisma.auditEvent.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+          propertyId: property.id,
+          eventType: "ai_artifact_generated",
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+        select: {
+          createdAt: true,
+          eventType: true,
+          payload: true,
+        },
+      })
+    : [];
 
   return {
+    hasAiAssist,
+    houseRulesArtifact: formatAiArtifactView(
+      findLatestAiArtifact({
+        artifactKind: "house_rules_generator",
+        auditEvents: propertyAiAuditEvents,
+        schema: houseRulesGeneratorSchema,
+      }),
+    ),
     id: property.id,
     name: property.name,
     lifecycleStatus: formatPropertyLifecycleStatus(property.lifecycleStatus),
@@ -1534,6 +1940,13 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
     listingSourceName: property.listingSourceName,
     listingSourceType: property.listingSourceType,
     listingSourceUrl: property.listingSourceUrl,
+    listingAnalyzerArtifact: formatAiArtifactView(
+      findLatestAiArtifact({
+        artifactKind: "listing_analyzer",
+        auditEvents: propertyAiAuditEvents,
+        schema: listingAnalyzerSchema,
+      }),
+    ),
     listingSyncMessage: property.listingSyncMessage,
     listingSyncStatus: property.listingSyncStatus
       ? formatPropertyListingSyncStatus(property.listingSyncStatus)
@@ -1819,6 +2232,10 @@ export const getCalendarViewData = cache(async () => {
 
 export const getTemplatesViewData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
+  const hasAiAssist = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.AI_ASSIST,
+  );
   const templates = await prisma.messageTemplate.findMany({
     where: {
       workspaceId: membership.workspaceId,
@@ -1877,8 +2294,33 @@ export const getTemplatesViewData = cache(async () => {
       createdAt: "asc",
     },
   });
+  const workspaceAiArtifacts = hasAiAssist
+    ? await prisma.auditEvent.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+          eventType: "ai_artifact_generated",
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+        select: {
+          createdAt: true,
+          eventType: true,
+          payload: true,
+        },
+      })
+    : [];
 
-  return templates.map((template) => {
+  return {
+    generatedWorkflowTemplate: formatAiArtifactView(
+      findLatestAiArtifact({
+        artifactKind: "workflow_template_generator",
+        auditEvents: workspaceAiArtifacts,
+        schema: workflowTemplateGeneratorSchema,
+      }),
+    ),
+    hasAiAssist,
+    templates: templates.map((template) => {
     const rendered = sampleLead
       ? renderTemplateForLead(template, sampleLead)
       : { subject: template.subject ?? "", body: template.body };
@@ -1897,7 +2339,8 @@ export const getTemplatesViewData = cache(async () => {
       subject: template.subject,
       preview: previewBody,
     };
-  });
+    }),
+  };
 });
 
 export const getMessagingSettingsViewData = cache(async () => {
@@ -1920,6 +2363,14 @@ export const getMessagingSettingsViewData = cache(async () => {
 
   return {
     dailyAutomatedSendCap: membership.workspace.dailyAutomatedSendCap,
+    hasWhatsAppMessagingCapability: workspaceHasCapability(
+      membership.workspace.enabledCapabilities,
+      WorkspaceCapability.WHATSAPP_MESSAGING,
+    ),
+    hasInstagramMessagingCapability: workspaceHasCapability(
+      membership.workspace.enabledCapabilities,
+      WorkspaceCapability.INSTAGRAM_MESSAGING,
+    ),
     missingInfoPromptThrottleMinutes:
       membership.workspace.missingInfoPromptThrottleMinutes,
     workspaceQuietHoursStartLocal: membership.workspace.quietHoursStartLocal,

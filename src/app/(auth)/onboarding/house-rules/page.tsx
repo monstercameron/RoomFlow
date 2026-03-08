@@ -1,5 +1,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import {
+  applyPropertyHouseRulesAction,
+  generatePropertyHouseRulesAction,
+} from "@/lib/ai-actions";
 import { getCurrentWorkspaceMembership } from "@/lib/app-data";
 import { onboardingRulePresets } from "@/lib/onboarding";
 import { prisma } from "@/lib/prisma";
@@ -85,6 +89,37 @@ export default async function HouseRulesOnboardingPage() {
           These rules become the first fit screen for inbound leads at{" "}
           <span className="font-medium">{property.name}</span>.
         </p>
+
+        <div className="mt-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">AI rule-set generator</div>
+              <div className="mt-1 text-xs text-[var(--color-muted)]">
+                Generate a starter house-rule set from the property profile, then apply it before continuing onboarding.
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <form action={generatePropertyHouseRulesAction.bind(null, property.id)}>
+                <input type="hidden" name="redirectTo" value="/onboarding/house-rules" />
+                <button
+                  className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-2 text-sm font-medium"
+                  type="submit"
+                >
+                  Generate AI rules
+                </button>
+              </form>
+              <form action={applyPropertyHouseRulesAction.bind(null, property.id)}>
+                <input type="hidden" name="redirectTo" value="/onboarding/house-rules" />
+                <button
+                  className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-2 text-sm font-medium"
+                  type="submit"
+                >
+                  Apply latest AI rules
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
 
         <div className="mt-8 grid gap-3">
           {onboardingRulePresets.map((rule) => (

@@ -22,6 +22,10 @@ import {
   buildNormalizedLeadFieldMetadata,
   extractConflictedNormalizedLeadFieldKeys,
 } from "@/lib/lead-field-metadata";
+import {
+  buildLeadChannelOptOutUpdate,
+  formatMessageChannelLabel,
+} from "@/lib/lead-channel-opt-outs";
 import { prisma } from "@/lib/prisma";
 import { workflowEventTypes } from "@/lib/workflow-events";
 
@@ -43,6 +47,33 @@ const normalizedLeadPayloadSchema = z.object({
 });
 
 export type NormalizedLeadPayload = z.infer<typeof normalizedLeadPayloadSchema>;
+
+function buildFieldEvidenceFromPayload(
+  payload: NormalizedLeadPayload,
+  fieldValues: Partial<Record<string, string | number | boolean | null>>,
+) {
+  const sourceMessageReference =
+    payload.externalMessageId ??
+    payload.externalThreadId ??
+    `${payload.channel.toLowerCase()}-${payload.receivedAt.toISOString()}`;
+  const normalizedSnippet = payload.body.replace(/\s+/g, " ").trim();
+  const evidenceSnippet =
+    normalizedSnippet.length > 160
+      ? `${normalizedSnippet.slice(0, 157).trimEnd()}...`
+      : normalizedSnippet || null;
+
+  return Object.fromEntries(
+    Object.entries(fieldValues)
+      .filter(([, value]) => value !== null && value !== undefined && value !== "")
+      .map(([fieldKey]) => [
+        fieldKey,
+        {
+          evidenceSnippet,
+          sourceMessageReference,
+        },
+      ]),
+  );
+}
 
 function slugFromName(value: string) {
   return value
@@ -574,6 +605,11 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
             email: payload.email ? 0.99 : 0,
             phone: payload.phone ? 0.99 : 0,
           },
+          fieldEvidence: buildFieldEvidenceFromPayload(payload, {
+            fullName: payload.fullName,
+            email: payload.email ?? null,
+            phone: payload.phone ?? null,
+          }),
         }),
       },
     }));
@@ -585,19 +621,20 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
   const resolvedLeadPhoneNumber = baseLead.phone ?? payload.phone ?? null;
   const resolvedLeadPropertyId = baseLead.propertyId ?? property?.id ?? null;
   const resolvedPreferredContactChannel = getPreferredContactChannel(payload.channel);
+  const extractedFieldValues = {
+    fullName: resolvedLeadFullName,
+    email: resolvedLeadEmailAddress,
+    phone: resolvedLeadPhoneNumber,
+    moveInDate: baseLead.moveInDate ? baseLead.moveInDate.toISOString() : null,
+    monthlyBudget: baseLead.monthlyBudget ?? null,
+    stayLengthMonths: baseLead.stayLengthMonths ?? null,
+    workStatus: baseLead.workStatus ?? null,
+  };
   const mergedLeadFieldMetadata = buildNormalizedLeadFieldMetadata({
     existingFieldMetadata: baseLead.fieldMetadata,
     normalizedAt: payload.receivedAt,
     sourceLabel: payload.leadSourceName,
-    fieldValues: {
-      fullName: resolvedLeadFullName,
-      email: resolvedLeadEmailAddress,
-      phone: resolvedLeadPhoneNumber,
-      moveInDate: baseLead.moveInDate ? baseLead.moveInDate.toISOString() : null,
-      monthlyBudget: baseLead.monthlyBudget ?? null,
-      stayLengthMonths: baseLead.stayLengthMonths ?? null,
-      workStatus: baseLead.workStatus ?? null,
-    },
+    fieldValues: extractedFieldValues,
     fieldConfidences: {
       fullName: resolvedLeadFullName === payload.fullName ? 0.75 : 0.9,
       email: resolvedLeadEmailAddress ? 0.99 : 0,
@@ -607,8 +644,23 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
       stayLengthMonths: baseLead.stayLengthMonths !== null ? 0.9 : 0,
       workStatus: baseLead.workStatus ? 0.9 : 0,
     },
+    fieldEvidence: buildFieldEvidenceFromPayload(payload, extractedFieldValues),
   });
   const optOutDirective = resolveInboundOptOutDirective(payload.body);
+  const shouldApplyOptOutDirective =
+    Boolean(optOutDirective) && payload.channel !== MessageChannel.INTERNAL_NOTE;
+  const optOutUpdateData = shouldApplyOptOutDirective
+    ? buildLeadChannelOptOutUpdate({
+        lead: baseLead,
+        channel: payload.channel,
+        isOptedOut: optOutDirective === "opt_out",
+        changedAt: payload.receivedAt,
+        reason:
+          optOutDirective === "opt_out"
+            ? `Inbound ${formatMessageChannelLabel(payload.channel)} STOP/UNSUBSCRIBE signal`
+            : null,
+      })
+    : null;
   const conflictedFieldKeys = extractConflictedNormalizedLeadFieldKeys(
     mergedLeadFieldMetadata,
   );
@@ -633,18 +685,7 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
       phone: resolvedLeadPhoneNumber,
       preferredContactChannel: resolvedPreferredContactChannel,
       lastActivityAt: payload.receivedAt,
-      optOutAt:
-        optOutDirective === "opt_out"
-          ? payload.receivedAt
-          : optOutDirective === "opt_in"
-            ? null
-            : baseLead.optOutAt,
-      optOutReason:
-        optOutDirective === "opt_out"
-          ? "Inbound STOP/UNSUBSCRIBE signal"
-          : optOutDirective === "opt_in"
-            ? null
-            : baseLead.optOutReason,
+      ...(optOutUpdateData ?? {}),
       fieldMetadata: mergedLeadFieldMetadata,
     },
   });
@@ -955,7 +996,7 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
     },
   });
 
-  if (optOutDirective === "opt_out") {
+  if (shouldApplyOptOutDirective && optOutDirective === "opt_out") {
     await prisma.auditEvent.create({
       data: {
         workspaceId: payload.workspaceId,
@@ -970,7 +1011,7 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
     });
   }
 
-  if (optOutDirective === "opt_in") {
+  if (shouldApplyOptOutDirective && optOutDirective === "opt_in") {
     await prisma.auditEvent.create({
       data: {
         workspaceId: payload.workspaceId,

@@ -480,28 +480,28 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [x] Add delivery/read-state UI where provider data is available.
 - [x] Add quiet-hours configuration per workspace or property.
 - [x] Add throttling configuration UI and operator-visible suppression reasons.
-- [ ] Add opt-out event visibility and channel-specific opt-out controls.
-- [ ] Add WhatsApp conversation support behind integration capability flags.
-- [ ] Add Instagram business messaging support behind integration capability flags.
-- [ ] Add shared-thread timeline that cleanly mixes email, SMS, WhatsApp, Instagram, notes, and system events.
+- [x] Add opt-out event visibility and channel-specific opt-out controls.
+- [x] Add WhatsApp conversation support behind integration capability flags.
+- [x] Add Instagram business messaging support behind integration capability flags.
+- [x] Add shared-thread timeline that cleanly mixes email, SMS, WhatsApp, Instagram, notes, and system events.
 
 ## Phase 16: AI-assisted workflow tools
 
-- [ ] Add extracted-field evidence display for inquiry-to-profile AI output.
-- [ ] Add operator accept/edit/reject flow for AI-suggested field values.
-- [ ] Add AI-generated lead summaries on lead detail and inbox surfaces.
-- [ ] Add AI reply drafting for common operator actions.
-- [ ] Add AI follow-up drafting tied to missing-info state and property context.
-- [ ] Add AI conflict explanations for caution and mismatch outcomes.
-- [ ] Add AI next-best-action recommendations on the lead detail page.
-- [ ] Add AI duplicate suggestions without auto-merge.
-- [ ] Add inbound/outbound translation tools while preserving original text.
-- [ ] Add AI listing analyzer UI for clarity and expectation-mismatch recommendations.
-- [ ] Add AI house-rules generator during onboarding and property setup.
-- [ ] Add AI intake-form generator for property-specific questionnaires.
-- [ ] Add reusable AI workflow-template generator.
-- [ ] Add Org-only portfolio AI insight summaries.
-- [ ] Add stale-lead AI recommendations for archive, reminder, review, or re-engagement.
+- [x] Add extracted-field evidence display for inquiry-to-profile AI output.
+- [x] Add operator accept/edit/reject flow for AI-suggested field values.
+- [x] Add AI-generated lead summaries on lead detail and inbox surfaces.
+- [x] Add AI reply drafting for common operator actions.
+- [x] Add AI follow-up drafting tied to missing-info state and property context.
+- [x] Add AI conflict explanations for caution and mismatch outcomes.
+- [x] Add AI next-best-action recommendations on the lead detail page.
+- [x] Add AI duplicate suggestions without auto-merge.
+- [x] Add inbound/outbound translation tools while preserving original text.
+- [x] Add AI listing analyzer UI for clarity and expectation-mismatch recommendations.
+- [x] Add AI house-rules generator during onboarding and property setup.
+- [x] Add AI intake-form generator for property-specific questionnaires.
+- [x] Add reusable AI workflow-template generator.
+- [x] Add Org-only portfolio AI insight summaries.
+- [x] Add stale-lead AI recommendations for archive, reminder, review, or re-engagement.
 
 ## Phase 17: workflow builder and automation templates
 

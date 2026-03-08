@@ -28,6 +28,22 @@ function getUpgradePromptCopy(upgradeCapability?: string) {
     };
   }
 
+  if (upgradeCapability === "whatsapp-messaging") {
+    return {
+      description:
+        "WhatsApp conversation support is limited to Org workspaces because it depends on the advanced messaging integration set.",
+      title: "Upgrade to unlock WhatsApp messaging",
+    };
+  }
+
+  if (upgradeCapability === "instagram-messaging") {
+    return {
+      description:
+        "Instagram business messaging is limited to Org workspaces because it depends on the advanced messaging integration set.",
+      title: "Upgrade to unlock Instagram messaging",
+    };
+  }
+
   return null;
 }
 

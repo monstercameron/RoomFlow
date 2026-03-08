@@ -48,6 +48,19 @@ provider you want to enable:
 
 Providers without both values stay hidden from Better Auth and show as not configured in the app.
 
+### OpenAI Realtime smoke test
+
+Roomflow now includes a server-side Realtime WebSocket smoke path that matches the published OpenAI flow for backend applications.
+
+1. Add `OPENAI_API_KEY` to `.env`
+2. Run `npm run openai:realtime:smoke -- "Draft a short, friendly follow-up to a shared-housing lead."`
+
+Notes:
+
+* This uses a backend WebSocket connection to `wss://api.openai.com/v1/realtime?model=gpt-realtime`
+* The helper sends `session.update`, `conversation.item.create`, and `response.create` events for text-only output
+* For browser or mobile voice clients, OpenAI recommends WebRTC instead of direct WebSocket connections
+
 The first implementation slice is intentionally narrow and follows the build order in [TODO.md](./TODO.md).
 
 ---

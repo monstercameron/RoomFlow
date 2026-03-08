@@ -15,6 +15,8 @@ type MetadataRecord = Record<
     lastUpdatedAt: string;
     isSuggested: boolean;
     isConflicted: boolean;
+    evidenceSnippet?: string | null;
+    sourceMessageReference?: string | null;
   }
 >;
 
@@ -35,6 +37,12 @@ test("buildNormalizedLeadFieldMetadata defines the full normalized field schema"
       email: 0.99,
       phone: 0.99,
     },
+    fieldEvidence: {
+      fullName: {
+        evidenceSnippet: "Hi, I'm Avery and I need a room next month.",
+        sourceMessageReference: "message_123",
+      },
+    },
   }) as MetadataRecord;
 
   for (const fieldKey of normalizedLeadFieldKeys) {
@@ -51,6 +59,11 @@ test("buildNormalizedLeadFieldMetadata defines the full normalized field schema"
 
   assert.equal(metadata.fullName.value, "Avery Mason");
   assert.equal(metadata.fullName.isSuggested, true);
+  assert.equal(
+    metadata.fullName.evidenceSnippet,
+    "Hi, I'm Avery and I need a room next month.",
+  );
+  assert.equal(metadata.fullName.sourceMessageReference, "message_123");
   assert.equal(metadata.email.value, "avery@example.com");
   assert.equal(metadata.email.isSuggested, false);
   assert.equal(metadata.phone.value, "+14015550101");
@@ -87,6 +100,7 @@ test("buildNormalizedLeadFieldMetadata preserves existing values when no new val
   assert.equal(metadata.workStatus.lastUpdatedAt, "2026-03-06T11:00:00.000Z");
   assert.equal(metadata.workStatus.isSuggested, false);
   assert.equal(metadata.workStatus.isConflicted, false);
+  assert.equal(metadata.workStatus.evidenceSnippet ?? null, null);
 });
 
 test("buildNormalizedLeadFieldMetadata does not overwrite existing high-confidence values with lower-confidence input", () => {
@@ -117,6 +131,7 @@ test("buildNormalizedLeadFieldMetadata does not overwrite existing high-confiden
   assert.equal(metadata.fullName.lastUpdatedAt, "2026-03-06T11:00:00.000Z");
   assert.equal(metadata.fullName.isSuggested, false);
   assert.equal(metadata.fullName.isConflicted, true);
+  assert.equal(metadata.fullName.evidenceSnippet ?? null, null);
 });
 
 test("extractConflictedNormalizedLeadFieldKeys returns fields marked as conflicted", () => {

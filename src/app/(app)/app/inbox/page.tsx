@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
+import {
+  generateLeadInsightsAction,
+  generateLeadTranslationAction,
+} from "@/lib/ai-actions";
 import { getInboxViewData } from "@/lib/app-data";
 import {
   getLeadWorkflowErrorUserMessage,
@@ -25,7 +29,8 @@ type InboxPageProps = {
 export default async function InboxPage({ searchParams }: InboxPageProps) {
   const resolvedSearchParams = await searchParams;
   const queueFilter = resolvedSearchParams.queue ?? "all";
-  const threads = await getInboxViewData(queueFilter);
+  const inbox = await getInboxViewData(queueFilter);
+  const threads = inbox.threads;
   const workflowErrorCode = parseLeadWorkflowErrorCode(
     resolvedSearchParams.workflowError,
   );
@@ -150,6 +155,82 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                     </div>
                   ) : null}
                 </div>
+                {inbox.hasAiAssist ? (
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-sm font-medium">AI summary</div>
+                        <form action={generateLeadInsightsAction.bind(null, thread.id)}>
+                          <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
+                          <button
+                            className="rounded-2xl border border-[var(--color-line)] bg-white px-3 py-2 text-xs font-medium"
+                            type="submit"
+                          >
+                            Refresh AI
+                          </button>
+                        </form>
+                      </div>
+                      {thread.leadInsightsArtifact?.status === "failed" ? (
+                        <div className="mt-3 text-sm text-[var(--color-accent-strong)]">
+                          {thread.leadInsightsArtifact.error}
+                        </div>
+                      ) : null}
+                      {thread.leadInsightsArtifact?.status === "ready" ? (
+                        <>
+                          <div className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
+                            {thread.leadInsightsArtifact.data.summary}
+                          </div>
+                          <div className="mt-3 rounded-xl border border-[var(--color-line)] bg-white px-3 py-3 text-sm">
+                            <div className="font-medium">
+                              {thread.leadInsightsArtifact.data.nextBestAction.label}
+                            </div>
+                            <div className="mt-1 text-[var(--color-muted)]">
+                              {thread.leadInsightsArtifact.data.nextBestAction.rationale}
+                            </div>
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                      <div className="text-sm font-medium">Translation</div>
+                      <form
+                        action={generateLeadTranslationAction.bind(null, thread.id)}
+                        className="mt-3 flex flex-wrap items-end gap-3"
+                      >
+                        <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
+                        <input type="hidden" name="sourceSummary" value={thread.translationSourceSummary} />
+                        <input type="hidden" name="sourceText" value={thread.latestMessage} />
+                        <label className="space-y-2">
+                          <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                            Language
+                          </span>
+                          <input
+                            className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                            defaultValue="Spanish"
+                            name="targetLanguage"
+                            type="text"
+                          />
+                        </label>
+                        <button
+                          className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm font-medium"
+                          type="submit"
+                        >
+                          Translate
+                        </button>
+                      </form>
+                      {thread.translationArtifact?.status === "failed" ? (
+                        <div className="mt-3 text-sm text-[var(--color-accent-strong)]">
+                          {thread.translationArtifact.error}
+                        </div>
+                      ) : null}
+                      {thread.translationArtifact?.status === "ready" ? (
+                        <div className="mt-3 rounded-xl border border-[var(--color-line)] bg-white px-3 py-3 text-sm leading-7 text-[var(--color-muted)]">
+                          {thread.translationArtifact.data.translatedText}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
                 {thread.automationSuppressionSummaries.length > 0 ? (
                   <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
                     <div className="text-sm font-medium">Automation suppression reasons</div>

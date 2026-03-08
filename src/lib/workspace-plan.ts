@@ -10,11 +10,13 @@ const workspaceCapabilityLabels: Record<WorkspaceCapability, string> = {
   [WorkspaceCapability.AI_ASSIST]: "AI assist",
   [WorkspaceCapability.CALENDAR_SYNC]: "Calendar sync",
   [WorkspaceCapability.CORE_CRM]: "Core CRM",
+  [WorkspaceCapability.INSTAGRAM_MESSAGING]: "Instagram messaging",
   [WorkspaceCapability.INTEGRATIONS]: "Integrations",
   [WorkspaceCapability.MESSAGING]: "Messaging",
   [WorkspaceCapability.ORG_MEMBERS]: "Org members",
   [WorkspaceCapability.PROPERTY_PIPELINE]: "Property pipeline",
   [WorkspaceCapability.SCREENING]: "Screening",
+  [WorkspaceCapability.WHATSAPP_MESSAGING]: "WhatsApp messaging",
 };
 
 const defaultCapabilitiesByWorkspacePlanType: Record<
@@ -26,6 +28,8 @@ const defaultCapabilitiesByWorkspacePlanType: Record<
     WorkspaceCapability.PROPERTY_PIPELINE,
     WorkspaceCapability.MESSAGING,
     WorkspaceCapability.INTEGRATIONS,
+    WorkspaceCapability.WHATSAPP_MESSAGING,
+    WorkspaceCapability.INSTAGRAM_MESSAGING,
     WorkspaceCapability.ORG_MEMBERS,
     WorkspaceCapability.ADVANCED_AUTOMATIONS,
     WorkspaceCapability.ADVANCED_ANALYTICS,
@@ -113,6 +117,8 @@ export function getMinimumWorkspacePlanForCapability(
 ) {
   switch (requiredCapability) {
     case WorkspaceCapability.ORG_MEMBERS:
+    case WorkspaceCapability.WHATSAPP_MESSAGING:
+    case WorkspaceCapability.INSTAGRAM_MESSAGING:
     case WorkspaceCapability.ADVANCED_AUTOMATIONS:
     case WorkspaceCapability.ADVANCED_ANALYTICS:
     case WorkspaceCapability.AI_ASSIST:

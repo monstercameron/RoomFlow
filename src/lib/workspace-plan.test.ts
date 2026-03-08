@@ -33,6 +33,8 @@ test("getDefaultCapabilitiesForWorkspacePlan includes org member tooling for org
     WorkspaceCapability.PROPERTY_PIPELINE,
     WorkspaceCapability.MESSAGING,
     WorkspaceCapability.INTEGRATIONS,
+    WorkspaceCapability.WHATSAPP_MESSAGING,
+    WorkspaceCapability.INSTAGRAM_MESSAGING,
     WorkspaceCapability.ORG_MEMBERS,
     WorkspaceCapability.ADVANCED_AUTOMATIONS,
     WorkspaceCapability.ADVANCED_ANALYTICS,
@@ -45,11 +47,17 @@ test("getDefaultCapabilitiesForWorkspacePlan includes org member tooling for org
 test("workspace plan formatting helpers return operator-friendly labels", () => {
   assert.equal(formatWorkspacePlanLabel(WorkspacePlanType.ORG), "Org");
   assert.equal(formatWorkspacePlanStatusLabel(WorkspacePlanStatus.PAST_DUE), "Past due");
+  assert.equal(
+    formatWorkspaceCapabilityLabel(WorkspaceCapability.WHATSAPP_MESSAGING),
+    "WhatsApp messaging",
+  );
   assert.equal(formatWorkspaceCapabilityLabel(WorkspaceCapability.CALENDAR_SYNC), "Calendar sync");
 });
 
 test("getLockedCapabilitiesForWorkspacePlan exposes org-only capabilities on personal plans", () => {
   assert.deepEqual(getLockedCapabilitiesForWorkspacePlan(WorkspacePlanType.PERSONAL), [
+    WorkspaceCapability.WHATSAPP_MESSAGING,
+    WorkspaceCapability.INSTAGRAM_MESSAGING,
     WorkspaceCapability.ORG_MEMBERS,
     WorkspaceCapability.ADVANCED_AUTOMATIONS,
     WorkspaceCapability.ADVANCED_ANALYTICS,
@@ -78,6 +86,10 @@ test("workspaceHasCapability checks enabled capability membership", () => {
 
 test("getMinimumWorkspacePlanForCapability marks org-only features correctly", () => {
   assert.equal(
+    getMinimumWorkspacePlanForCapability(WorkspaceCapability.WHATSAPP_MESSAGING),
+    WorkspacePlanType.ORG,
+  );
+  assert.equal(
     getMinimumWorkspacePlanForCapability(WorkspaceCapability.ORG_MEMBERS),
     WorkspacePlanType.ORG,
   );
@@ -104,6 +116,8 @@ test("resolveDisabledCapabilitiesForWorkspacePlanChange reports what a downgrade
       targetWorkspacePlanType: WorkspacePlanType.PERSONAL,
     }),
     [
+      WorkspaceCapability.WHATSAPP_MESSAGING,
+      WorkspaceCapability.INSTAGRAM_MESSAGING,
       WorkspaceCapability.ORG_MEMBERS,
       WorkspaceCapability.ADVANCED_AUTOMATIONS,
       WorkspaceCapability.ADVANCED_ANALYTICS,

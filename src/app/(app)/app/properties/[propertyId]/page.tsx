@@ -3,6 +3,11 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { getPropertyDetailViewData } from "@/lib/app-data";
 import {
+  applyPropertyHouseRulesAction,
+  generatePropertyHouseRulesAction,
+  generatePropertyListingAnalyzerAction,
+} from "@/lib/ai-actions";
+import {
   updatePropertyCalendarTargetAction,
   updatePropertyLifecycleStatusAction,
   updatePropertyListingSourceMetadataAction,
@@ -196,6 +201,126 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
           </div>
         </div>
       </section>
+
+      {property.hasAiAssist ? (
+        <section className="mt-6 grid gap-4 xl:grid-cols-2">
+          <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xl font-semibold">AI listing analyzer</div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  Review AI-generated strengths, gaps, and concrete recommendations for this listing.
+                </div>
+              </div>
+              <form action={generatePropertyListingAnalyzerAction.bind(null, property.id)}>
+                <input type="hidden" name="redirectTo" value={`/app/properties/${property.id}`} />
+                <button
+                  className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
+                  type="submit"
+                >
+                  Analyze listing
+                </button>
+              </form>
+            </div>
+            {property.listingAnalyzerArtifact?.status === "failed" ? (
+              <div className="mt-4 text-sm text-[var(--color-accent-strong)]">
+                {property.listingAnalyzerArtifact.error}
+              </div>
+            ) : null}
+            {property.listingAnalyzerArtifact?.status === "ready" ? (
+              <div className="mt-4 space-y-3">
+                <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                  <div className="text-sm font-medium">{property.listingAnalyzerArtifact.data.headline}</div>
+                  <div className="mt-2 text-xs text-[var(--color-muted)]">
+                    Generated {property.listingAnalyzerArtifact.generatedAt}
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                    <div className="text-sm font-medium">Strengths</div>
+                    <div className="mt-3 space-y-2 text-sm text-[var(--color-muted)]">
+                      {property.listingAnalyzerArtifact.data.strengths.map((item) => (
+                        <div key={item}>{item}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                    <div className="text-sm font-medium">Gaps</div>
+                    <div className="mt-3 space-y-2 text-sm text-[var(--color-muted)]">
+                      {property.listingAnalyzerArtifact.data.gaps.map((item) => (
+                        <div key={item}>{item}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                    <div className="text-sm font-medium">Recommendations</div>
+                    <div className="mt-3 space-y-2 text-sm text-[var(--color-muted)]">
+                      {property.listingAnalyzerArtifact.data.recommendations.map((item) => (
+                        <div key={item}>{item}</div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xl font-semibold">AI house-rules generator</div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  Draft a rule set from the current property profile, then apply it into property rules when it looks right.
+                </div>
+              </div>
+              <form action={generatePropertyHouseRulesAction.bind(null, property.id)}>
+                <input type="hidden" name="redirectTo" value={`/app/properties/${property.id}`} />
+                <button
+                  className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
+                  type="submit"
+                >
+                  Generate rules
+                </button>
+              </form>
+            </div>
+            {property.houseRulesArtifact?.status === "failed" ? (
+              <div className="mt-4 text-sm text-[var(--color-accent-strong)]">
+                {property.houseRulesArtifact.error}
+              </div>
+            ) : null}
+            {property.houseRulesArtifact?.status === "ready" ? (
+              <div className="mt-4 space-y-3">
+                <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4 text-sm text-[var(--color-muted)]">
+                  {property.houseRulesArtifact.data.summary}
+                </div>
+                {property.houseRulesArtifact.data.rules.map((rule) => (
+                  <div
+                    key={rule.label}
+                    className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-medium">{rule.label}</div>
+                      <div className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                        {rule.severity} | {rule.category}
+                      </div>
+                    </div>
+                    <div className="mt-2 text-sm text-[var(--color-muted)]">{rule.description}</div>
+                  </div>
+                ))}
+                <form action={applyPropertyHouseRulesAction.bind(null, property.id)}>
+                  <input type="hidden" name="redirectTo" value={`/app/properties/${property.id}`} />
+                  <button
+                    className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                    type="submit"
+                  >
+                    Apply generated rules
+                  </button>
+                </form>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <div className="mt-6 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-4">
