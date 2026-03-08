@@ -11,6 +11,7 @@ import {
   TemplateType,
 } from "../src/generated/prisma/client";
 import { auth } from "../src/lib/auth";
+import { isDevelopmentModeVerificationBypassEnabled } from "../src/lib/dev-auth-bypass";
 import { serializeDeliveryStatus } from "../src/lib/delivery-status";
 import { prisma } from "../src/lib/prisma";
 import { ensureWorkspaceForUser } from "../src/lib/workspaces";
@@ -53,6 +54,20 @@ async function main() {
       email: TEST_EMAIL,
     },
   });
+
+  if (
+    isDevelopmentModeVerificationBypassEnabled(user.email) &&
+    !user.emailVerified
+  ) {
+    await prisma.user.update({
+      where: {
+        id: user.id,
+      },
+      data: {
+        emailVerified: true,
+      },
+    });
+  }
 
   const existingWorkspace = await ensureWorkspaceForUser({
     id: user.id,
