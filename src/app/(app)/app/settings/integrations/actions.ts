@@ -2,6 +2,9 @@
 
 import {
   CalendarSyncProvider,
+  ScreeningChargeMode,
+  ScreeningConnectionAuthState,
+  ScreeningProvider,
   TourSchedulingMode,
   WorkspaceCapability,
 } from "@/generated/prisma/client";
@@ -24,6 +27,7 @@ import {
   serializeTourReminderSequence,
   parseCalendarConnectionsConfig,
 } from "@/lib/tour-scheduling";
+import { serializeScreeningPackageConfig } from "@/lib/screening";
 import { workspaceHasCapability } from "@/lib/workspace-plan";
 
 function parseOptionalQuietHoursText(value: FormDataEntryValue | null) {
@@ -107,6 +111,43 @@ function parseTourSchedulingMode(value: FormDataEntryValue | null) {
   }
 
   throw new Error("A valid tour scheduling mode is required.");
+}
+
+function parseScreeningProvider(value: FormDataEntryValue | null) {
+  if (
+    value === ScreeningProvider.CHECKR ||
+    value === ScreeningProvider.TRANSUNION ||
+    value === ScreeningProvider.ZUMPER
+  ) {
+    return value;
+  }
+
+  throw new Error("A valid screening provider is required.");
+}
+
+function parseScreeningConnectionAuthState(value: FormDataEntryValue | null) {
+  if (
+    value === ScreeningConnectionAuthState.DISCONNECTED ||
+    value === ScreeningConnectionAuthState.CONFIGURED ||
+    value === ScreeningConnectionAuthState.ACTIVE ||
+    value === ScreeningConnectionAuthState.ERROR
+  ) {
+    return value;
+  }
+
+  throw new Error("A valid screening auth state is required.");
+}
+
+function parseScreeningChargeMode(value: FormDataEntryValue | null) {
+  if (
+    value === ScreeningChargeMode.APPLICANT_PAY ||
+    value === ScreeningChargeMode.LANDLORD_PAY ||
+    value === ScreeningChargeMode.PASS_THROUGH
+  ) {
+    return value;
+  }
+
+  throw new Error("A valid screening charge mode is required.");
 }
 
 export async function updateWorkspaceQuietHoursAction(formData: FormData) {
@@ -417,6 +458,113 @@ export async function updateWorkspaceTourSchedulingSettingsAction(
   revalidatePath("/app/leads");
   revalidatePath("/app/settings/integrations");
   revalidatePath("/app/settings/members");
+
+  const redirectTarget =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : "/app/settings/integrations";
+
+  redirect(redirectTarget);
+}
+
+export async function updateWorkspaceScreeningConnectionAction(formData: FormData) {
+  const workspaceMembership = await getCurrentWorkspaceMembership();
+  const workspaceState = await getCurrentWorkspaceState();
+  const redirectTargetValue = formData.get("redirectTo");
+  const provider = parseScreeningProvider(formData.get("provider"));
+  const authState = parseScreeningConnectionAuthState(formData.get("authState"));
+  const chargeMode = parseScreeningChargeMode(formData.get("chargeMode"));
+  const connectedAccount = parseOptionalQuietHoursText(formData.get("connectedAccount"));
+  const defaultPackageKey = parseOptionalQuietHoursText(formData.get("defaultPackageKey"));
+  const defaultPackageLabel = parseOptionalQuietHoursText(formData.get("defaultPackageLabel"));
+  const secondaryPackageKey = parseOptionalQuietHoursText(formData.get("secondaryPackageKey"));
+  const secondaryPackageLabel = parseOptionalQuietHoursText(formData.get("secondaryPackageLabel"));
+  const disclosureStrategy = parseOptionalQuietHoursText(formData.get("disclosureStrategy"));
+  const lastError = parseOptionalQuietHoursText(formData.get("lastError"));
+
+  if (
+    !workspaceHasCapability(
+      workspaceMembership.workspace.enabledCapabilities,
+      WorkspaceCapability.SCREENING,
+    )
+  ) {
+    throw new Error("Screening connections require the screening capability.");
+  }
+
+  if (
+    authState === ScreeningConnectionAuthState.ACTIVE &&
+    (!connectedAccount || !defaultPackageKey || !defaultPackageLabel)
+  ) {
+    throw new Error(
+      "An active screening connection requires a connected account and default package.",
+    );
+  }
+
+  const packageConfig = [
+    defaultPackageKey && defaultPackageLabel
+      ? { isDefault: true, key: defaultPackageKey, label: defaultPackageLabel }
+      : null,
+    secondaryPackageKey && secondaryPackageLabel
+      ? { isDefault: false, key: secondaryPackageKey, label: secondaryPackageLabel }
+      : null,
+  ].filter(
+    (entry): entry is { isDefault: boolean; key: string; label: string } => Boolean(entry),
+  );
+
+  await prisma.screeningProviderConnection.upsert({
+    where: {
+      workspaceId_provider: {
+        workspaceId: workspaceMembership.workspaceId,
+        provider,
+      },
+    },
+    update: {
+      authState,
+      chargeMode,
+      connectedAccount,
+      defaultPackageKey,
+      defaultPackageLabel,
+      disclosureStrategy,
+      lastAuthorizedAt:
+        authState === ScreeningConnectionAuthState.ACTIVE ? new Date() : null,
+      lastError,
+      packageConfig: serializeScreeningPackageConfig(packageConfig),
+    },
+    create: {
+      authState,
+      chargeMode,
+      connectedAccount,
+      defaultPackageKey,
+      defaultPackageLabel,
+      disclosureStrategy,
+      lastAuthorizedAt:
+        authState === ScreeningConnectionAuthState.ACTIVE ? new Date() : null,
+      lastError,
+      packageConfig: serializeScreeningPackageConfig(packageConfig),
+      provider,
+      workspaceId: workspaceMembership.workspaceId,
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: workspaceMembership.workspaceId,
+      actorUserId: workspaceState.user.id,
+      eventType: "workspace_screening_connection_updated",
+      payload: {
+        authState,
+        chargeMode,
+        connectedAccount,
+        defaultPackageKey,
+        defaultPackageLabel,
+        disclosureStrategy,
+        provider,
+      },
+    },
+  });
+
+  revalidatePath("/app/leads");
+  revalidatePath("/app/settings/integrations");
 
   const redirectTarget =
     typeof redirectTargetValue === "string" && redirectTargetValue.length > 0

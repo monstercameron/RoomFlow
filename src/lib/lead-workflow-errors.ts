@@ -31,7 +31,12 @@ export type LeadWorkflowErrorCode =
   | "PROPERTY_SELECTION_REQUIRED"
   | "PROPERTY_NOT_FOUND"
   | "PROPERTY_NOT_ACTIVE"
-  | "ACTIVE_TOUR_ALREADY_EXISTS";
+  | "ACTIVE_TOUR_ALREADY_EXISTS"
+  | "SCREENING_CONNECTION_REQUIRED"
+  | "SCREENING_CONNECTION_INACTIVE"
+  | "ACTIVE_SCREENING_ALREADY_EXISTS"
+  | "SCREENING_CONSENT_REQUIRED"
+  | "SCREENING_STATUS_TRANSITION_INVALID";
 
 const userFacingMessageByWorkflowErrorCode: Record<
   LeadWorkflowErrorCode,
@@ -98,6 +103,16 @@ const userFacingMessageByWorkflowErrorCode: Record<
     "Only active properties can receive new lead and workflow actions.",
   ACTIVE_TOUR_ALREADY_EXISTS:
     "This lead already has an active scheduled tour. Reschedule or cancel it first.",
+  SCREENING_CONNECTION_REQUIRED:
+    "Choose an active screening provider connection before launching screening.",
+  SCREENING_CONNECTION_INACTIVE:
+    "The selected screening provider connection is not active yet.",
+  ACTIVE_SCREENING_ALREADY_EXISTS:
+    "This lead already has an active screening request. Update it before launching another.",
+  SCREENING_CONSENT_REQUIRED:
+    "Record screening consent before advancing to in-progress, completed, reviewed, or adverse-action states.",
+  SCREENING_STATUS_TRANSITION_INVALID:
+    "This screening update skips a required review step or moves backward in the workflow.",
 };
 
 export class LeadWorkflowError extends Error {

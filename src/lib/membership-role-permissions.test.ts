@@ -29,6 +29,13 @@ test("manager has lead workflow permissions enabled", () => {
     true,
   );
   assert.equal(
+    canMembershipRolePerformLeadAction(
+      MembershipRole.MANAGER,
+      "launchScreening",
+    ),
+    true,
+  );
+  assert.equal(
     canMembershipRolePerformLeadAction(MembershipRole.MANAGER, "assignProperty"),
     true,
   );

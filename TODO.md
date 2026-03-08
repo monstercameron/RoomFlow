@@ -530,14 +530,14 @@ These are not part of the original narrow launch slice, but they are now broken 
 
 ## Phase 19: screening and verification orchestration
 
-- [ ] Build screening provider connection model with package selection and auth state.
-- [ ] Build screening launch flow from qualified leads.
-- [ ] Add screening status tracker with requested, invite sent, consent completed, in progress, completed, reviewed, and adverse-action recorded states.
-- [ ] Store screening report references and provider timestamps.
-- [ ] Add consent and authorization tracking to the lead timeline.
-- [ ] Add pass-through screening charge model hooks for future billing.
-- [ ] Add operator review workflow for completed screening results.
-- [ ] Add adverse-action workflow tracking without automating the decision itself.
+- [x] Build screening provider connection model with package selection and auth state.
+- [x] Build screening launch flow from qualified leads.
+- [x] Add screening status tracker with requested, invite sent, consent completed, in progress, completed, reviewed, and adverse-action recorded states.
+- [x] Store screening report references and provider timestamps.
+- [x] Add consent and authorization tracking to the lead timeline.
+- [x] Add pass-through screening charge model hooks for future billing.
+- [x] Add operator review workflow for completed screening results.
+- [x] Add adverse-action workflow tracking without automating the decision itself.
 
 ## Phase 20: integrations expansion
 

@@ -5,6 +5,7 @@ export type LeadActionPermissionKey =
   | "requestInfo"
   | "scheduleTour"
   | "sendApplication"
+  | "launchScreening"
   | "assignProperty"
   | "overrideFit"
   | "declineLead"
@@ -20,6 +21,7 @@ const leadActionPermissionsByMembershipRole: Readonly<
     requestInfo: true,
     scheduleTour: true,
     sendApplication: true,
+    launchScreening: true,
     assignProperty: true,
     overrideFit: true,
     declineLead: true,
@@ -30,6 +32,7 @@ const leadActionPermissionsByMembershipRole: Readonly<
     requestInfo: true,
     scheduleTour: true,
     sendApplication: true,
+    launchScreening: true,
     assignProperty: true,
     overrideFit: true,
     declineLead: true,
@@ -40,6 +43,7 @@ const leadActionPermissionsByMembershipRole: Readonly<
     requestInfo: true,
     scheduleTour: true,
     sendApplication: true,
+    launchScreening: true,
     assignProperty: true,
     overrideFit: true,
     declineLead: true,
@@ -50,6 +54,7 @@ const leadActionPermissionsByMembershipRole: Readonly<
     requestInfo: false,
     scheduleTour: false,
     sendApplication: false,
+    launchScreening: false,
     assignProperty: false,
     overrideFit: false,
     declineLead: false,

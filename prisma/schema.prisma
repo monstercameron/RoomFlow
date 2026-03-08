@@ -153,6 +153,35 @@ enum TourSchedulingMode {
   ROUND_ROBIN
 }
 
+enum ScreeningProvider {
+  CHECKR
+  TRANSUNION
+  ZUMPER
+}
+
+enum ScreeningConnectionAuthState {
+  DISCONNECTED
+  CONFIGURED
+  ACTIVE
+  ERROR
+}
+
+enum ScreeningChargeMode {
+  APPLICANT_PAY
+  LANDLORD_PAY
+  PASS_THROUGH
+}
+
+enum ScreeningRequestStatus {
+  REQUESTED
+  INVITE_SENT
+  CONSENT_COMPLETED
+  IN_PROGRESS
+  COMPLETED
+  REVIEWED
+  ADVERSE_ACTION_RECORDED
+}
+
 enum PropertyLifecycleStatus {
   ACTIVE
   INACTIVE
@@ -333,6 +362,8 @@ model Workspace {
   usageSnapshots        WorkspaceUsageSnapshot[]
   webhookDeliveries     OutboundWebhookDelivery[]
   tours                 TourEvent[]
+  screeningProviderConnections ScreeningProviderConnection[]
+  screeningRequests     ScreeningRequest[]
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 
@@ -415,6 +446,7 @@ model Property {
   leads               Lead[]
   auditEvents         AuditEvent[]
   tours               TourEvent[]
+  screeningRequests   ScreeningRequest[]
   createdAt           DateTime                   @default(now())
   updatedAt           DateTime                   @updatedAt
 
@@ -482,6 +514,7 @@ model Lead {
   statusHistory           LeadStatusHistory[]
   auditEvents             AuditEvent[]          @relation("LeadAuditEvents")
   tours                   TourEvent[]
+  screeningRequests       ScreeningRequest[]
   notifications           NotificationEvent[]
   webhookDeliveries       OutboundWebhookDelivery[]
   fieldMetadata           Json?
@@ -761,6 +794,114 @@ model TourEvent {
   @@index([leadId, createdAt])
   @@index([propertyId, createdAt])
   @@index([assignedMembershipId, createdAt])
+}
+
+model ScreeningProviderConnection {
+  id                 String                     @id @default(cuid())
+  workspaceId        String
+  provider           ScreeningProvider
+  authState          ScreeningConnectionAuthState @default(DISCONNECTED)
+  connectedAccount   String?
+  defaultPackageKey  String?
+  defaultPackageLabel String?
+  packageConfig      Json?
+  chargeMode         ScreeningChargeMode       @default(PASS_THROUGH)
+  allowedLaunchRoles MembershipRole[]          @default([OWNER, ADMIN, MANAGER])
+  disclosureStrategy String?
+  lastAuthorizedAt   DateTime?
+  lastSyncAt         DateTime?
+  lastError          String?
+  metadata           Json?
+  workspace          Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  screeningRequests  ScreeningRequest[]
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  @@unique([workspaceId, provider])
+  @@index([workspaceId, authState])
+}
+
+model ScreeningRequest {
+  id                          String                @id @default(cuid())
+  workspaceId                 String
+  leadId                      String
+  propertyId                  String?
+  screeningProviderConnectionId String
+  status                      ScreeningRequestStatus @default(REQUESTED)
+  packageKey                  String
+  packageLabel                String
+  chargeMode                  ScreeningChargeMode   @default(PASS_THROUGH)
+  providerApplicantId         String?
+  providerInvitationId        String?
+  providerReportId            String?
+  providerReportUrl           String?
+  providerReference           String?
+  providerUpdatedAt           DateTime?
+  requestedAt                 DateTime              @default(now())
+  inviteSentAt                DateTime?
+  consentCompletedAt          DateTime?
+  startedAt                   DateTime?
+  completedAt                 DateTime?
+  reviewedAt                  DateTime?
+  adverseActionRecordedAt     DateTime?
+  chargeAmountCents           Int?
+  chargeCurrency              String?
+  chargeReference             String?
+  reviewNotes                 String?
+  adverseActionNotes          String?
+  workspace                   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead                        Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  property                    Property?             @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  screeningProviderConnection ScreeningProviderConnection @relation(fields: [screeningProviderConnectionId], references: [id], onDelete: Cascade)
+  statusEvents                ScreeningStatusEvent[]
+  consentRecords              ScreeningConsentRecord[]
+  attachmentReferences        ScreeningAttachmentReference[]
+  createdAt                   DateTime              @default(now())
+  updatedAt                   DateTime              @updatedAt
+
+  @@index([workspaceId, status, createdAt])
+  @@index([leadId, createdAt])
+  @@index([screeningProviderConnectionId, createdAt])
+}
+
+model ScreeningStatusEvent {
+  id                 String                @id @default(cuid())
+  screeningRequestId String
+  status             ScreeningRequestStatus
+  detail             String?
+  providerTimestamp  DateTime?
+  payload            Json?
+  screeningRequest   ScreeningRequest      @relation(fields: [screeningRequestId], references: [id], onDelete: Cascade)
+  createdAt          DateTime              @default(now())
+
+  @@index([screeningRequestId, createdAt])
+}
+
+model ScreeningConsentRecord {
+  id                 String           @id @default(cuid())
+  screeningRequestId String
+  consentedAt        DateTime
+  source             String?
+  disclosureVersion  String?
+  providerReference  String?
+  payload            Json?
+  screeningRequest   ScreeningRequest @relation(fields: [screeningRequestId], references: [id], onDelete: Cascade)
+  createdAt          DateTime         @default(now())
+
+  @@index([screeningRequestId, createdAt])
+}
+
+model ScreeningAttachmentReference {
+  id                 String           @id @default(cuid())
+  screeningRequestId String
+  label              String
+  externalId         String?
+  url                String?
+  contentType        String?
+  screeningRequest   ScreeningRequest @relation(fields: [screeningRequestId], references: [id], onDelete: Cascade)
+  createdAt          DateTime         @default(now())
+
+  @@index([screeningRequestId, createdAt])
 }
 
 model NotificationEvent {

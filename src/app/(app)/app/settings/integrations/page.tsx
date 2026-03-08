@@ -4,11 +4,17 @@ import { updateWorkspaceQuietHoursAction } from "@/app/(app)/app/settings/integr
 import { updateWorkspaceMessagingThrottleSettingsAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateOperatorSchedulingAvailabilityAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateWorkspaceCalendarConnectionAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateWorkspaceScreeningConnectionAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateWorkspaceTourSchedulingSettingsAction } from "@/app/(app)/app/settings/integrations/actions";
 import { getMessagingSettingsViewData } from "@/lib/app-data";
 import { availabilityDayOptions } from "@/lib/availability-windows";
 import { validateInboundIntegrationConfiguration } from "@/lib/integration-config-validation";
 import { onboardingChannelOptions } from "@/lib/onboarding";
+import {
+  screeningChargeModeOptions,
+  screeningConnectionAuthStateOptions,
+  screeningProviderOptions,
+} from "@/lib/screening";
 import { calendarConnectionStatusOptions, tourSchedulingModeOptions } from "@/lib/tour-scheduling";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3001";
@@ -33,6 +39,12 @@ export default async function IntegrationsSettingsPage() {
     twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER,
     inboundWebhookSigningSecret: process.env.INBOUND_WEBHOOK_SIGNING_SECRET,
   });
+  const screeningConnectionsByProvider = new Map(
+    messagingSettings.screeningConnections.map((screeningConnection) => [
+      screeningConnection.provider,
+      screeningConnection,
+    ]),
+  );
 
   return (
     <main>
@@ -65,6 +77,145 @@ export default async function IntegrationsSettingsPage() {
             )}
           </div>
         </div>
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
+          <div className="text-xl font-semibold">Screening provider connections</div>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
+            Configure screening providers, default packages, and pass-through billing mode. Screening remains provider-hosted; Roomflow stores launch state, consent milestones, and report references.
+          </p>
+          {!messagingSettings.canUseScreening ? (
+            <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+              Screening connections require the Org package with the screening capability enabled.
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-4 xl:grid-cols-3">
+              {screeningProviderOptions.map((providerOption) => {
+                const connection = screeningConnectionsByProvider.get(providerOption.value);
+
+                return (
+                  <form
+                    action={updateWorkspaceScreeningConnectionAction}
+                    className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+                    key={providerOption.value}
+                  >
+                    <div className="text-sm font-medium">{providerOption.label}</div>
+                    <div className="mt-2 text-sm text-[var(--color-muted)]">
+                      Current state: {connection?.summary ?? "Not connected"}
+                    </div>
+                    <label className="mt-3 block space-y-2">
+                      <span className="text-sm font-medium">Auth state</span>
+                      <select
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={connection?.authState ?? "DISCONNECTED"}
+                        name="authState"
+                      >
+                        {screeningConnectionAuthStateOptions.map((authStateOption) => (
+                          <option key={authStateOption.value} value={authStateOption.value}>
+                            {authStateOption.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="mt-3 block space-y-2">
+                      <span className="text-sm font-medium">Connected account</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={connection?.connectedAccount ?? ""}
+                        name="connectedAccount"
+                        placeholder="screening@roomflow.app"
+                        type="text"
+                      />
+                    </label>
+                    <label className="mt-3 block space-y-2">
+                      <span className="text-sm font-medium">Default package key</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={connection?.defaultPackageKey ?? ""}
+                        name="defaultPackageKey"
+                        placeholder="standard"
+                        type="text"
+                      />
+                    </label>
+                    <label className="mt-3 block space-y-2">
+                      <span className="text-sm font-medium">Default package label</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={connection?.defaultPackageLabel ?? ""}
+                        name="defaultPackageLabel"
+                        placeholder="Standard screening"
+                        type="text"
+                      />
+                    </label>
+                    <label className="mt-3 block space-y-2">
+                      <span className="text-sm font-medium">Secondary package key</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={connection?.packageOptions[1]?.key ?? ""}
+                        name="secondaryPackageKey"
+                        placeholder="premium"
+                        type="text"
+                      />
+                    </label>
+                    <label className="mt-3 block space-y-2">
+                      <span className="text-sm font-medium">Secondary package label</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={connection?.packageOptions[1]?.label ?? ""}
+                        name="secondaryPackageLabel"
+                        placeholder="Premium screening"
+                        type="text"
+                      />
+                    </label>
+                    <label className="mt-3 block space-y-2">
+                      <span className="text-sm font-medium">Charge mode</span>
+                      <select
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={connection?.chargeMode ?? "PASS_THROUGH"}
+                        name="chargeMode"
+                      >
+                        {screeningChargeModeOptions.map((chargeModeOption) => (
+                          <option key={chargeModeOption.value} value={chargeModeOption.value}>
+                            {chargeModeOption.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="mt-3 block space-y-2">
+                      <span className="text-sm font-medium">Disclosure strategy</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={connection?.disclosureStrategy ?? ""}
+                        name="disclosureStrategy"
+                        placeholder="Provider-hosted disclosure + consent"
+                        type="text"
+                      />
+                    </label>
+                    <label className="mt-3 block space-y-2">
+                      <span className="text-sm font-medium">Error note</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={connection?.lastError ?? ""}
+                        name="lastError"
+                        placeholder="Credentials expired or provider approval pending."
+                        type="text"
+                      />
+                    </label>
+                    <input name="provider" type="hidden" value={providerOption.value} />
+                    <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                        type="submit"
+                      >
+                        Save {providerOption.label}
+                      </button>
+                    </div>
+                  </form>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
           <div className="text-xl font-semibold">Calendar sync connections</div>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">

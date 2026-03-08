@@ -544,6 +544,34 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
           },
         ],
       },
+      screeningRequests: {
+        include: {
+          screeningProviderConnection: true,
+          statusEvents: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+          consentRecords: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+          attachmentReferences: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+        },
+        orderBy: [
+          {
+            requestedAt: "desc",
+          },
+          {
+            createdAt: "desc",
+          },
+        ],
+      },
     },
   });
 }

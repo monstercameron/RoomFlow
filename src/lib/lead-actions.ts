@@ -13,6 +13,8 @@ import {
   NotificationType,
   PropertyLifecycleStatus,
   QualificationFit,
+  ScreeningConnectionAuthState,
+  ScreeningRequestStatus,
   TourSchedulingMode,
   TourEventStatus,
   WorkspaceCapability,
@@ -72,6 +74,12 @@ import {
   resolveAssignedTourMembershipId,
   resolveTourReminderDelays,
 } from "@/lib/tour-scheduling";
+import {
+  buildScreeningStatusTimestampUpdate,
+  resolveScreeningStatusTransitionGuard,
+  resolveScreeningWebhookEventType,
+  resolveScreeningWorkflowEventType,
+} from "@/lib/screening";
 import { workspaceHasCapability } from "@/lib/workspace-plan";
 import { workflowEventTypes } from "@/lib/workflow-events";
 import { appendWorkflowErrorCodeToPath } from "@/lib/workflow-error-routing";
@@ -525,6 +533,441 @@ export async function sendApplicationAction(leadId: string) {
   });
 }
 
+export async function launchScreeningAction(leadId: string, formData: FormData) {
+  const actionContext = await getActionContext(leadId);
+  const redirectTargetValue = formData.get("redirectTo");
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : getLeadDetailPath(leadId);
+
+  try {
+    await assertLeadActionPermission({
+      ...actionContext,
+      leadActionPermissionKey: "launchScreening",
+    });
+
+    const workspaceMembership = await getCurrentWorkspaceMembership();
+
+    if (
+      !workspaceHasCapability(
+        workspaceMembership.workspace.enabledCapabilities,
+        WorkspaceCapability.SCREENING,
+      )
+    ) {
+      throw new LeadWorkflowError(
+        "ACTION_FORBIDDEN_BY_ROLE",
+        "Screening is not enabled for this workspace.",
+      );
+    }
+
+    const screeningConnectionId = parseRequiredFormText(
+      formData.get("screeningConnectionId"),
+      "Screening connection",
+    );
+    const packageKey = parseRequiredFormText(formData.get("packageKey"), "Package key");
+    const packageLabel = parseRequiredFormText(
+      formData.get("packageLabel"),
+      "Package label",
+    );
+    const providerReference = parseOptionalFormText(formData.get("providerReference"));
+
+    const [lead, screeningConnection] = await Promise.all([
+      prisma.lead.findFirst({
+        where: {
+          id: leadId,
+          workspaceId: actionContext.workspaceId,
+        },
+        include: {
+          property: {
+            select: {
+              name: true,
+            },
+          },
+          workspace: {
+            select: {
+              webhookSigningSecret: true,
+            },
+          },
+          screeningRequests: {
+            where: {
+              status: {
+                notIn: [
+                  ScreeningRequestStatus.REVIEWED,
+                  ScreeningRequestStatus.ADVERSE_ACTION_RECORDED,
+                ],
+              },
+            },
+            take: 1,
+          },
+        },
+      }),
+      prisma.screeningProviderConnection.findFirst({
+        where: {
+          id: screeningConnectionId,
+          workspaceId: actionContext.workspaceId,
+        },
+      }),
+    ]);
+
+    if (!lead) {
+      throw new LeadWorkflowError(
+        "LEAD_NOT_FOUND",
+        `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
+      );
+    }
+
+    if (lead.status !== LeadStatus.QUALIFIED) {
+      throw new LeadWorkflowError(
+        "ACTION_REQUIRES_QUALIFIED_LEAD",
+        "Only qualified leads can start screening.",
+      );
+    }
+
+    if (lead.screeningRequests.length > 0) {
+      throw new LeadWorkflowError(
+        "ACTIVE_SCREENING_ALREADY_EXISTS",
+        `Lead ${lead.id} already has an active screening request.`,
+      );
+    }
+
+    if (!screeningConnection) {
+      throw new LeadWorkflowError(
+        "SCREENING_CONNECTION_REQUIRED",
+        "Select a configured screening provider before launching screening.",
+      );
+    }
+
+    if (screeningConnection.authState !== ScreeningConnectionAuthState.ACTIVE) {
+      throw new LeadWorkflowError(
+        "SCREENING_CONNECTION_INACTIVE",
+        "The selected screening provider connection is not active.",
+      );
+    }
+
+    const screeningRequest = await prisma.$transaction(async (transactionClient) => {
+      const screeningRequest = await transactionClient.screeningRequest.create({
+        data: {
+          chargeMode: screeningConnection.chargeMode,
+          inviteSentAt: new Date(),
+          leadId: lead.id,
+          packageKey,
+          packageLabel,
+          propertyId: lead.propertyId,
+          providerReference,
+          requestedAt: new Date(),
+          screeningProviderConnectionId: screeningConnection.id,
+          status: ScreeningRequestStatus.INVITE_SENT,
+          workspaceId: actionContext.workspaceId,
+        },
+      });
+
+      await transactionClient.screeningStatusEvent.createMany({
+        data: [
+          {
+            screeningRequestId: screeningRequest.id,
+            status: ScreeningRequestStatus.REQUESTED,
+            detail: `Screening requested for ${packageLabel}.`,
+          },
+          {
+            screeningRequestId: screeningRequest.id,
+            status: ScreeningRequestStatus.INVITE_SENT,
+            detail: `Provider-hosted invite launched with ${packageLabel}.`,
+          },
+        ],
+      });
+
+      await transactionClient.auditEvent.create({
+        data: {
+          workspaceId: actionContext.workspaceId,
+          leadId: lead.id,
+          propertyId: lead.propertyId,
+          actorUserId: actionContext.actorUserId,
+          actorType: AuditActorType.USER,
+          eventType: workflowEventTypes.screeningRequested,
+          payload: {
+            packageKey,
+            packageLabel,
+            provider: screeningConnection.provider,
+            screeningRequestId: screeningRequest.id,
+          },
+        },
+      });
+
+      return screeningRequest;
+    });
+
+    await appendNotificationEvent({
+      workspaceId: actionContext.workspaceId,
+      leadId: lead.id,
+      type: NotificationType.TOUR_SCHEDULED,
+      title: "Screening launched",
+      body: `${lead.fullName} started ${packageLabel} screening through ${screeningConnection.provider}.`,
+      payload: {
+        screeningRequestId: screeningRequest.id,
+      },
+    });
+
+    await queueOutboundWorkflowWebhook({
+      workspaceId: actionContext.workspaceId,
+      leadId: lead.id,
+      eventType: "screening.requested",
+      signingSecret: lead.workspace?.webhookSigningSecret ?? null,
+      payload: {
+        leadId: lead.id,
+        packageKey,
+        packageLabel,
+        provider: screeningConnection.provider,
+        screeningRequestId: screeningRequest.id,
+        workspaceId: actionContext.workspaceId,
+      },
+    });
+  } catch (error) {
+    if (isLeadWorkflowError(error)) {
+      redirectToWorkflowErrorPath(redirectPath, error.code);
+    }
+
+    throw error;
+  }
+
+  refreshLeadWorkflow(leadId);
+  redirect(redirectPath);
+}
+
+export async function updateScreeningRequestStatusAction(
+  leadId: string,
+  screeningRequestId: string,
+  formData: FormData,
+) {
+  const actionContext = await getActionContext(leadId);
+  const redirectTargetValue = formData.get("redirectTo");
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : getLeadDetailPath(leadId);
+
+  try {
+    await assertLeadActionPermission({
+      ...actionContext,
+      leadActionPermissionKey: "launchScreening",
+    });
+
+    const nextStatus = parseScreeningRequestStatusFromFormValue(formData.get("status"));
+    const detail = parseOptionalFormText(formData.get("detail"));
+    const providerReference = parseOptionalFormText(formData.get("providerReference"));
+    const providerReportId = parseOptionalFormText(formData.get("providerReportId"));
+    const providerReportUrl = parseOptionalFormText(formData.get("providerReportUrl"));
+    const providerTimestamp = parseOptionalFormDateTime(formData.get("providerTimestamp"));
+    const consentSource = parseOptionalFormText(formData.get("consentSource"));
+    const disclosureVersion = parseOptionalFormText(formData.get("disclosureVersion"));
+    const chargeAmountCents = parseOptionalFormCurrencyAmountToCents(
+      formData.get("chargeAmount"),
+    );
+    const chargeCurrency = parseOptionalFormCurrencyCode(formData.get("chargeCurrency"));
+    const chargeReference = parseOptionalFormText(formData.get("chargeReference"));
+    const reviewNotes = parseOptionalFormText(formData.get("reviewNotes"));
+    const adverseActionNotes = parseOptionalFormText(formData.get("adverseActionNotes"));
+    const attachmentLabel = parseOptionalFormText(formData.get("attachmentLabel"));
+    const attachmentUrl = parseOptionalFormText(formData.get("attachmentUrl"));
+    const attachmentExternalId = parseOptionalFormText(formData.get("attachmentExternalId"));
+    const attachmentContentType = parseOptionalFormText(formData.get("attachmentContentType"));
+
+    const screeningRequest = await prisma.screeningRequest.findFirst({
+      where: {
+        id: screeningRequestId,
+        leadId,
+        workspaceId: actionContext.workspaceId,
+      },
+      include: {
+        lead: {
+          include: {
+            workspace: {
+              select: {
+                webhookSigningSecret: true,
+              },
+            },
+          },
+        },
+        consentRecords: {
+          select: {
+            id: true,
+          },
+        },
+        screeningProviderConnection: true,
+      },
+    });
+
+    if (!screeningRequest) {
+      throw new LeadWorkflowError(
+        "LEAD_NOT_FOUND",
+        `Screening request ${screeningRequestId} was not found in workspace ${actionContext.workspaceId}.`,
+      );
+    }
+
+    const now = new Date();
+    const effectiveProviderTimestamp = providerTimestamp ?? now;
+    const transitionGuard = resolveScreeningStatusTransitionGuard({
+      completedAt: screeningRequest.completedAt,
+      consentCompletedAt: screeningRequest.consentCompletedAt,
+      currentStatus: screeningRequest.status,
+      nextStatus,
+      reviewedAt: screeningRequest.reviewedAt,
+    });
+
+    if (!transitionGuard.allowed) {
+      throw new LeadWorkflowError(
+        transitionGuard.reason === "consent_required"
+          ? "SCREENING_CONSENT_REQUIRED"
+          : "SCREENING_STATUS_TRANSITION_INVALID",
+        `Screening request ${screeningRequest.id} cannot transition from ${screeningRequest.status} to ${nextStatus}.`,
+      );
+    }
+
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.screeningRequest.update({
+        where: {
+          id: screeningRequest.id,
+        },
+        data: {
+          ...buildScreeningStatusTimestampUpdate(nextStatus, effectiveProviderTimestamp),
+          adverseActionNotes: adverseActionNotes ?? screeningRequest.adverseActionNotes,
+          chargeAmountCents: chargeAmountCents ?? screeningRequest.chargeAmountCents,
+          chargeCurrency:
+            chargeCurrency ??
+            screeningRequest.chargeCurrency ??
+            (chargeAmountCents !== null ? "USD" : null),
+          chargeReference: chargeReference ?? screeningRequest.chargeReference,
+          providerReference: providerReference ?? screeningRequest.providerReference,
+          providerReportId: providerReportId ?? screeningRequest.providerReportId,
+          providerReportUrl: providerReportUrl ?? screeningRequest.providerReportUrl,
+          providerUpdatedAt: effectiveProviderTimestamp,
+          reviewNotes: reviewNotes ?? screeningRequest.reviewNotes,
+          status: nextStatus,
+        },
+      });
+
+      await transactionClient.screeningStatusEvent.create({
+        data: {
+          screeningRequestId: screeningRequest.id,
+          status: nextStatus,
+          detail,
+          providerTimestamp: effectiveProviderTimestamp,
+          payload: {
+            attachmentExternalId,
+            attachmentLabel,
+            attachmentUrl,
+            chargeAmountCents,
+            chargeCurrency,
+            chargeReference,
+            providerReference,
+            providerReportId,
+            providerReportUrl,
+          },
+        },
+      });
+
+      if (
+        nextStatus === ScreeningRequestStatus.CONSENT_COMPLETED &&
+        screeningRequest.consentRecords.length === 0
+      ) {
+        await transactionClient.screeningConsentRecord.create({
+          data: {
+            screeningRequestId: screeningRequest.id,
+            consentedAt: effectiveProviderTimestamp,
+            disclosureVersion,
+            providerReference: providerReference ?? screeningRequest.providerReference,
+            source: consentSource,
+          },
+        });
+      }
+
+      if (attachmentLabel || attachmentUrl || attachmentExternalId) {
+        await transactionClient.screeningAttachmentReference.create({
+          data: {
+            contentType: attachmentContentType,
+            externalId: attachmentExternalId,
+            label:
+              attachmentLabel ??
+              providerReportId ??
+              providerReference ??
+              "Screening report reference",
+            screeningRequestId: screeningRequest.id,
+            url: attachmentUrl,
+          },
+        });
+      }
+
+      await transactionClient.auditEvent.create({
+        data: {
+          workspaceId: actionContext.workspaceId,
+          leadId: screeningRequest.leadId,
+          propertyId: screeningRequest.propertyId,
+          actorUserId: actionContext.actorUserId,
+          actorType: AuditActorType.USER,
+          eventType: workflowEventTypes[resolveScreeningWorkflowEventType(nextStatus)],
+          payload: {
+            chargeAmountCents,
+            chargeCurrency,
+            chargeReference,
+            nextStatus,
+            screeningRequestId: screeningRequest.id,
+          },
+        },
+      });
+    });
+
+    if (nextStatus === ScreeningRequestStatus.COMPLETED) {
+      await appendNotificationEvent({
+        workspaceId: actionContext.workspaceId,
+        leadId: screeningRequest.leadId,
+        type: NotificationType.TOUR_SCHEDULED,
+        title: "Screening completed",
+        body: `${screeningRequest.lead.fullName} has a completed screening result ready for review.`,
+        payload: {
+          screeningRequestId: screeningRequest.id,
+        },
+      });
+
+      await queueOutboundWorkflowWebhook({
+        workspaceId: actionContext.workspaceId,
+        leadId: screeningRequest.leadId,
+        eventType: resolveScreeningWebhookEventType(nextStatus),
+        signingSecret: screeningRequest.lead.workspace?.webhookSigningSecret ?? null,
+        payload: {
+          leadId: screeningRequest.leadId,
+          provider: screeningRequest.screeningProviderConnection.provider,
+          screeningRequestId: screeningRequest.id,
+          status: nextStatus,
+          workspaceId: actionContext.workspaceId,
+        },
+      });
+    } else {
+      await queueOutboundWorkflowWebhook({
+        workspaceId: actionContext.workspaceId,
+        leadId: screeningRequest.leadId,
+        eventType: resolveScreeningWebhookEventType(nextStatus),
+        signingSecret: screeningRequest.lead.workspace?.webhookSigningSecret ?? null,
+        payload: {
+          leadId: screeningRequest.leadId,
+          provider: screeningRequest.screeningProviderConnection.provider,
+          screeningRequestId: screeningRequest.id,
+          status: nextStatus,
+          workspaceId: actionContext.workspaceId,
+        },
+      });
+    }
+  } catch (error) {
+    if (isLeadWorkflowError(error)) {
+      redirectToWorkflowErrorPath(redirectPath, error.code);
+    }
+
+    throw error;
+  }
+
+  refreshLeadWorkflow(leadId);
+  redirect(redirectPath);
+}
+
 export async function assignLeadPropertyAction(leadId: string, formData: FormData) {
   const actionContext = await getActionContext(leadId);
   const propertyIdFormValue = formData.get("propertyId");
@@ -800,8 +1243,74 @@ function parseOptionalFormText(value: FormDataEntryValue | null) {
   return normalizedValue.length > 0 ? normalizedValue : null;
 }
 
+function parseOptionalFormDateTime(value: FormDataEntryValue | null) {
+  const normalizedValue = parseOptionalFormText(value);
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const parsedDate = new Date(normalizedValue);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new Error(`Invalid date value: ${normalizedValue}`);
+  }
+
+  return parsedDate;
+}
+
+function parseOptionalFormCurrencyAmountToCents(value: FormDataEntryValue | null) {
+  const normalizedValue = parseOptionalFormText(value);
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const parsedAmount = Number(normalizedValue);
+
+  if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
+    throw new Error(`Invalid screening charge amount: ${normalizedValue}`);
+  }
+
+  return Math.round(parsedAmount * 100);
+}
+
+function parseOptionalFormCurrencyCode(value: FormDataEntryValue | null) {
+  const normalizedValue = parseOptionalFormText(value);
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return normalizedValue.toUpperCase();
+}
+
+function parseRequiredFormText(value: FormDataEntryValue | null, fieldLabel: string) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${fieldLabel} is required.`);
+  }
+
+  return value.trim();
+}
+
 function parseAssignedMembershipIdFromFormValue(value: FormDataEntryValue | null) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function parseScreeningRequestStatusFromFormValue(value: FormDataEntryValue | null) {
+  if (
+    value === ScreeningRequestStatus.REQUESTED ||
+    value === ScreeningRequestStatus.INVITE_SENT ||
+    value === ScreeningRequestStatus.CONSENT_COMPLETED ||
+    value === ScreeningRequestStatus.IN_PROGRESS ||
+    value === ScreeningRequestStatus.COMPLETED ||
+    value === ScreeningRequestStatus.REVIEWED ||
+    value === ScreeningRequestStatus.ADVERSE_ACTION_RECORDED
+  ) {
+    return value;
+  }
+
+  throw new Error("A valid screening status is required.");
 }
 
 async function getEligibleTourCoverageMemberships(workspaceId: string) {

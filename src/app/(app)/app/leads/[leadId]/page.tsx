@@ -16,11 +16,13 @@ import {
   completeTourAction,
   createManualTourAction,
   evaluateLeadAction,
+  launchScreeningAction,
   markTourNoShowAction,
   requestInfoAction,
   rescheduleTourAction,
   scheduleTourAction,
   sendApplicationAction,
+  updateScreeningRequestStatusAction,
   assignLeadPropertyAction,
   confirmDuplicateLeadAction,
   declineLeadAction,
@@ -445,6 +447,381 @@ export default async function LeadDetailPage({
           </div>
         ) : null}
       </section>
+
+      {lead.canUseScreening ? (
+        <section className="mb-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-lg font-semibold">Screening and verification</div>
+              <p className="mt-2 max-w-3xl text-sm text-[var(--color-muted)]">
+                Launch provider-hosted screening from a qualified lead, then track consent, review readiness, report references, and adverse-action workflow steps here.
+              </p>
+            </div>
+            <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-2 text-sm font-medium">
+              {lead.screeningRequests.length} screening request{lead.screeningRequests.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          {lead.screeningConnections.length === 0 ? (
+            <div className="mt-5 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5 text-sm text-[var(--color-muted)]">
+              No active screening providers are configured yet. Add one from settings before launching a screening request.
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-4 xl:grid-cols-3">
+              {lead.screeningConnections.map((screeningConnection) => (
+                <form
+                  action={launchScreeningAction.bind(null, lead.id)}
+                  className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+                  key={screeningConnection.id}
+                >
+                  <div className="text-sm font-medium">Launch {screeningConnection.providerLabel}</div>
+                  <div className="mt-2 text-sm text-[var(--color-muted)]">
+                    {screeningConnection.summary}
+                  </div>
+                  <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                    Package
+                    <select
+                      className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      defaultValue={screeningConnection.packageOptions[0]?.key}
+                      name="packageKey"
+                    >
+                      {screeningConnection.packageOptions.map((packageOption) => (
+                        <option key={packageOption.key} value={packageOption.key}>
+                          {packageOption.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                    Package label
+                    <input
+                      className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      defaultValue={screeningConnection.packageOptions[0]?.label ?? ""}
+                      name="packageLabel"
+                      placeholder="Standard screening"
+                      type="text"
+                    />
+                  </label>
+                  <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                    Provider reference
+                    <input
+                      className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      name="providerReference"
+                      placeholder="Invite or applicant reference"
+                      type="text"
+                    />
+                  </label>
+                  <input name="screeningConnectionId" type="hidden" value={screeningConnection.id} />
+                  <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                  <button
+                    className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!lead.actions.launchScreening}
+                    type="submit"
+                  >
+                    Launch screening
+                  </button>
+                </form>
+              ))}
+            </div>
+          )}
+
+          {lead.screeningRequests.length > 0 ? (
+            <div className="mt-6 space-y-4 border-t border-[var(--color-line)] pt-5">
+              {lead.screeningRequests.map((screeningRequest) => (
+                <div
+                  className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+                  key={screeningRequest.id}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium">{screeningRequest.summary}</div>
+                      <div className="mt-2 text-sm text-[var(--color-muted)]">
+                        Requested {screeningRequest.requestedAt} · Invite {screeningRequest.invitedAt}
+                      </div>
+                      <div className="mt-2 text-sm text-[var(--color-muted)]">
+                        Current status: {screeningRequest.currentStatus} · Charge mode: {screeningRequest.chargeMode}
+                      </div>
+                    </div>
+                    <div className="text-sm text-[var(--color-muted)]">
+                      Provider: {screeningRequest.provider}
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
+                      <div>Consent completed: {screeningRequest.consentCompletedAt}</div>
+                      <div className="mt-2">Started: {screeningRequest.startedAt}</div>
+                      <div className="mt-2">Completed: {screeningRequest.completedAt}</div>
+                      <div className="mt-2">Reviewed: {screeningRequest.reviewedAt}</div>
+                      <div className="mt-2">
+                        Adverse action recorded: {screeningRequest.adverseActionRecordedAt}
+                      </div>
+                      <div className="mt-2">Provider updated: {screeningRequest.providerUpdatedAt}</div>
+                      <div className="mt-2">Charge recorded: {screeningRequest.chargeAmount}</div>
+                      {screeningRequest.chargeReference ? (
+                        <div className="mt-2">Charge reference: {screeningRequest.chargeReference}</div>
+                      ) : null}
+                      {screeningRequest.providerReference ? (
+                        <div className="mt-2">Provider reference: {screeningRequest.providerReference}</div>
+                      ) : null}
+                      {screeningRequest.providerReportId ? (
+                        <div className="mt-2">Report id: {screeningRequest.providerReportId}</div>
+                      ) : null}
+                      {screeningRequest.providerReportUrl ? (
+                        <div className="mt-2 break-all">Report url: {screeningRequest.providerReportUrl}</div>
+                      ) : null}
+                    </div>
+                    <div className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
+                      <div className="font-medium text-[color:var(--color-ink)]">Status timeline</div>
+                      <div className="mt-3 space-y-2">
+                        {screeningRequest.statusEvents.map((statusEvent) => (
+                          <div key={statusEvent.id}>
+                            {statusEvent.status} · {statusEvent.at}
+                            {statusEvent.detail ? ` · ${statusEvent.detail}` : ""}
+                          </div>
+                        ))}
+                      </div>
+                      {screeningRequest.consentRecords.length > 0 ? (
+                        <div className="mt-4 border-t border-[var(--color-line)] pt-3">
+                          <div className="font-medium text-[color:var(--color-ink)]">Consent records</div>
+                          <div className="mt-2 space-y-2">
+                            {screeningRequest.consentRecords.map((consentRecord) => (
+                              <div key={consentRecord.id}>
+                                {consentRecord.consentedAt}
+                                {consentRecord.source ? ` · ${consentRecord.source}` : ""}
+                                {consentRecord.disclosureVersion
+                                  ? ` · ${consentRecord.disclosureVersion}`
+                                  : ""}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {screeningRequest.attachmentReferences.length > 0 ? (
+                        <div className="mt-4 border-t border-[var(--color-line)] pt-3">
+                          <div className="font-medium text-[color:var(--color-ink)]">
+                            Report references
+                          </div>
+                          <div className="mt-2 space-y-2">
+                            {screeningRequest.attachmentReferences.map((attachmentReference) => (
+                              <div key={attachmentReference.id}>
+                                <div>
+                                  {attachmentReference.url ? (
+                                    <a
+                                      className="underline decoration-[var(--color-line)] underline-offset-4"
+                                      href={attachmentReference.url}
+                                      rel="noreferrer"
+                                      target="_blank"
+                                    >
+                                      {attachmentReference.label}
+                                    </a>
+                                  ) : (
+                                    attachmentReference.label
+                                  )}
+                                </div>
+                                <div className="mt-1 text-xs text-[var(--color-muted)]">
+                                  Added {attachmentReference.createdAt}
+                                  {attachmentReference.externalId
+                                    ? ` · ${attachmentReference.externalId}`
+                                    : ""}
+                                  {attachmentReference.contentType
+                                    ? ` · ${attachmentReference.contentType}`
+                                    : ""}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <form
+                    action={updateScreeningRequestStatusAction.bind(
+                      null,
+                      lead.id,
+                      screeningRequest.id,
+                    )}
+                    className="mt-4 grid gap-3 rounded-2xl border border-[var(--color-line)] bg-white p-4 md:grid-cols-2"
+                  >
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Update status</span>
+                      <select
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={screeningRequest.currentStatusValue}
+                        name="status"
+                      >
+                        <option value="REQUESTED">Requested</option>
+                        <option value="INVITE_SENT">Invite sent</option>
+                        <option value="CONSENT_COMPLETED">Consent completed</option>
+                        <option value="IN_PROGRESS">In progress</option>
+                        <option value="COMPLETED">Completed</option>
+                        <option value="REVIEWED">Reviewed</option>
+                        <option value="ADVERSE_ACTION_RECORDED">Adverse action recorded</option>
+                      </select>
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Status detail</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        name="detail"
+                        placeholder="Provider webhook, manual operator note, or review outcome"
+                        type="text"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Provider reference</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={screeningRequest.providerReference ?? ""}
+                        name="providerReference"
+                        type="text"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Report id</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={screeningRequest.providerReportId ?? ""}
+                        name="providerReportId"
+                        type="text"
+                      />
+                    </label>
+                    <label className="space-y-2 md:col-span-2">
+                      <span className="text-sm font-medium">Report url</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={screeningRequest.providerReportUrl ?? ""}
+                        name="providerReportUrl"
+                        type="url"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Provider timestamp</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        name="providerTimestamp"
+                        type="datetime-local"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Consent source</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        name="consentSource"
+                        placeholder="Provider-hosted authorization"
+                        type="text"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Disclosure version</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        name="disclosureVersion"
+                        placeholder="v1"
+                        type="text"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Charge amount</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={screeningRequest.chargeAmountValue}
+                        min="0"
+                        name="chargeAmount"
+                        placeholder="45.00"
+                        step="0.01"
+                        type="number"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Charge currency</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 uppercase outline-none"
+                        defaultValue={screeningRequest.chargeCurrency}
+                        maxLength={3}
+                        name="chargeCurrency"
+                        placeholder="USD"
+                        type="text"
+                      />
+                    </label>
+                    <label className="space-y-2 md:col-span-2">
+                      <span className="text-sm font-medium">Charge reference</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={screeningRequest.chargeReference ?? ""}
+                        name="chargeReference"
+                        placeholder="Provider invoice or charge id"
+                        type="text"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Reference label</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        name="attachmentLabel"
+                        placeholder="Tenant-safe report reference"
+                        type="text"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium">Reference external id</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        name="attachmentExternalId"
+                        placeholder="doc_123"
+                        type="text"
+                      />
+                    </label>
+                    <label className="space-y-2 md:col-span-2">
+                      <span className="text-sm font-medium">Reference url</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        name="attachmentUrl"
+                        placeholder="https://provider.example/reports/abc"
+                        type="url"
+                      />
+                    </label>
+                    <label className="space-y-2 md:col-span-2">
+                      <span className="text-sm font-medium">Reference content type</span>
+                      <input
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        name="attachmentContentType"
+                        placeholder="application/pdf"
+                        type="text"
+                      />
+                    </label>
+                    <label className="space-y-2 md:col-span-2">
+                      <span className="text-sm font-medium">Review notes</span>
+                      <textarea
+                        className="min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={screeningRequest.reviewNotes ?? ""}
+                        name="reviewNotes"
+                      />
+                    </label>
+                    <label className="space-y-2 md:col-span-2">
+                      <span className="text-sm font-medium">Adverse action notes</span>
+                      <textarea
+                        className="min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={screeningRequest.adverseActionNotes ?? ""}
+                        name="adverseActionNotes"
+                      />
+                    </label>
+                    <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                    <div className="md:col-span-2 flex justify-end">
+                      <button
+                        className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!lead.actions.manageScreening}
+                        type="submit"
+                      >
+                        Save screening update
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <section className="space-y-6">

@@ -7,6 +7,9 @@ import {
   PropertyLifecycleStatus,
   QualificationFit,
   RuleSeverity,
+  ScreeningConnectionAuthState,
+  ScreeningProvider,
+  ScreeningRequestStatus,
   TemplateType,
   TourEventStatus,
   WorkspaceCapability,
@@ -60,6 +63,10 @@ import { formatPropertyListingSyncStatus } from "@/lib/property-listing-sync";
 import { formatPropertyLifecycleStatus } from "@/lib/property-lifecycle";
 import { formatQuietHours, resolveEffectiveQuietHours } from "@/lib/quiet-hours";
 import {
+  formatScreeningConnectionSummary,
+  parseScreeningPackageConfig,
+} from "@/lib/screening";
+import {
   formatCalendarConnectionSummary,
   formatTourReminderSequenceSummary,
   formatTourSchedulingMode,
@@ -98,6 +105,19 @@ function formatCurrency(value: number | null) {
   }
 
   return currencyFormatter.format(value);
+}
+
+function formatCurrencyAmountCents(value: number | null, currency = "USD") {
+  if (value === null) {
+    return "Not recorded";
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  }).format(value / 100);
 }
 
 function formatDate(value: Date | null) {
@@ -167,6 +187,19 @@ function formatTourReminderStateSummary(value: unknown) {
   }
 
   return `${sentCount}/${reminderState.length} sent · next ${formatDateTime(new Date(nextPendingReminder.scheduledFor))}`;
+}
+
+function formatScreeningRequestSummary(params: {
+  provider: ScreeningProvider;
+  reportUrl: string | null;
+  status: ScreeningRequestStatus;
+}) {
+  const providerLabel = formatEnumLabel(params.provider);
+  const statusLabel = formatEnumLabel(params.status);
+
+  return params.reportUrl
+    ? `${providerLabel} · ${statusLabel} · report linked`
+    : `${providerLabel} · ${statusLabel}`;
 }
 
 function formatRelativeTime(value: Date | null) {
@@ -1057,6 +1090,10 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     membership.workspace.enabledCapabilities,
     WorkspaceCapability.AI_ASSIST,
   );
+  const canUseScreening = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.SCREENING,
+  );
   const lead = await getLeadWorkflowContext(membership.workspaceId, leadId);
 
   if (!lead) {
@@ -1177,6 +1214,20 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       (workspaceMember) => workspaceMember.userId !== membership.userId,
     ),
   }).availableMentions;
+  const screeningConnections = canUseScreening
+    ? await prisma.screeningProviderConnection.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+        },
+        orderBy: {
+          provider: "asc",
+        },
+      })
+    : [];
+  const activeScreeningConnections = screeningConnections.filter(
+    (screeningConnection) =>
+      screeningConnection.authState === ScreeningConnectionAuthState.ACTIVE,
+  );
 
   const messages =
     lead.conversation?.messages.map((message) => {
@@ -1253,6 +1304,40 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       error: message.deliveryStatusError,
       mentionedTeammates: message.mentionedTeammates,
     })),
+    ...lead.screeningRequests.flatMap((screeningRequest) =>
+      screeningRequest.statusEvents.map((statusEvent) => ({
+        id: statusEvent.id,
+        leadId: lead.id,
+        eventType: `screening_${statusEvent.status.toLowerCase()}`,
+        createdAt: statusEvent.createdAt,
+        kind: "event" as const,
+        title: `Screening ${formatEnumLabel(statusEvent.status)}`,
+        detail:
+          statusEvent.detail ??
+          `${formatEnumLabel(screeningRequest.screeningProviderConnection.provider)} ${screeningRequest.packageLabel}`,
+        body: null,
+        meta: null,
+        error: null,
+        mentionedTeammates: [],
+      })),
+    ),
+    ...lead.screeningRequests.flatMap((screeningRequest) =>
+      screeningRequest.consentRecords.map((consentRecord) => ({
+        id: consentRecord.id,
+        leadId: lead.id,
+        eventType: "screening_consent_recorded",
+        createdAt: consentRecord.createdAt,
+        kind: "event" as const,
+        title: "Screening consent recorded",
+        detail:
+          consentRecord.source ??
+          `${formatEnumLabel(screeningRequest.screeningProviderConnection.provider)} authorization`,
+        body: null,
+        meta: consentRecord.disclosureVersion,
+        error: null,
+        mentionedTeammates: [],
+      })),
+    ),
   ]).map((item) => ({
     ...item,
     at: formatRelativeTime(item.createdAt),
@@ -1347,6 +1432,70 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
         },
       })
     : [];
+  const screeningRequests = lead.screeningRequests.map((screeningRequest) => ({
+    attachmentReferences: screeningRequest.attachmentReferences.map((attachmentReference) => ({
+      contentType: attachmentReference.contentType ?? null,
+      createdAt: formatRelativeTime(attachmentReference.createdAt),
+      externalId: attachmentReference.externalId ?? null,
+      id: attachmentReference.id,
+      label: attachmentReference.label,
+      url: attachmentReference.url ?? null,
+    })),
+    adverseActionRecordedAt: formatDateTime(screeningRequest.adverseActionRecordedAt),
+    chargeMode: formatEnumLabel(screeningRequest.chargeMode),
+    chargeAmount: formatCurrencyAmountCents(
+      screeningRequest.chargeAmountCents,
+      screeningRequest.chargeCurrency ?? "USD",
+    ),
+    chargeAmountValue:
+      screeningRequest.chargeAmountCents !== null
+        ? (screeningRequest.chargeAmountCents / 100).toFixed(2)
+        : "",
+    chargeCurrency: screeningRequest.chargeCurrency ?? "USD",
+    chargeReference: screeningRequest.chargeReference ?? null,
+    completedAt: formatDateTime(screeningRequest.completedAt),
+    consentCompletedAt: formatDateTime(screeningRequest.consentCompletedAt),
+    consentRecords: screeningRequest.consentRecords.map((consentRecord) => ({
+      consentedAt: formatDateTime(consentRecord.consentedAt),
+      disclosureVersion: consentRecord.disclosureVersion ?? null,
+      id: consentRecord.id,
+      providerReference: consentRecord.providerReference ?? null,
+      source: consentRecord.source ?? null,
+    })),
+    currentStatus: formatEnumLabel(screeningRequest.status),
+    currentStatusValue: screeningRequest.status,
+    id: screeningRequest.id,
+    invitedAt: formatDateTime(screeningRequest.inviteSentAt),
+    packageKey: screeningRequest.packageKey,
+    packageLabel: screeningRequest.packageLabel,
+    provider: formatEnumLabel(screeningRequest.screeningProviderConnection.provider),
+    providerReference: screeningRequest.providerReference ?? null,
+    providerReportId: screeningRequest.providerReportId ?? null,
+    providerReportUrl: screeningRequest.providerReportUrl ?? null,
+    providerUpdatedAt: formatDateTime(screeningRequest.providerUpdatedAt),
+    requestedAt: formatDateTime(screeningRequest.requestedAt),
+    adverseActionNotes: screeningRequest.adverseActionNotes ?? null,
+    reviewNotes: screeningRequest.reviewNotes ?? null,
+    reviewedAt: formatDateTime(screeningRequest.reviewedAt),
+    startedAt: formatDateTime(screeningRequest.startedAt),
+    statusEvents: screeningRequest.statusEvents.map((statusEvent) => ({
+      at: formatDateTime(statusEvent.providerTimestamp ?? statusEvent.createdAt),
+      detail: statusEvent.detail ?? null,
+      id: statusEvent.id,
+      status: formatEnumLabel(statusEvent.status),
+      statusValue: statusEvent.status,
+    })),
+    summary: formatScreeningRequestSummary({
+      provider: screeningRequest.screeningProviderConnection.provider,
+      reportUrl: screeningRequest.providerReportUrl ?? null,
+      status: screeningRequest.status,
+    }),
+  }));
+  const activeScreeningRequest = lead.screeningRequests.find(
+    (screeningRequest) =>
+      screeningRequest.status !== ScreeningRequestStatus.REVIEWED &&
+      screeningRequest.status !== ScreeningRequestStatus.ADVERSE_ACTION_RECORDED,
+  );
   const tourHistory = orderedTours
     .filter((tour) => tour.id !== activeScheduledTour?.id)
     .map((tour) => ({
@@ -1376,6 +1525,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
 
   return {
     hasAiAssist,
+    canUseScreening,
     id: lead.id,
     source: lead.leadSource?.name ?? "Manual",
     name: lead.fullName,
@@ -1502,6 +1652,36 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       : null,
     leadInsightsArtifact,
     possibleDuplicateCandidate,
+    screeningConnections: activeScreeningConnections.map((screeningConnection) => {
+      const configuredPackages = parseScreeningPackageConfig(screeningConnection.packageConfig);
+      const packages = configuredPackages.length
+        ? configuredPackages
+        : screeningConnection.defaultPackageKey && screeningConnection.defaultPackageLabel
+          ? [
+              {
+                isDefault: true,
+                key: screeningConnection.defaultPackageKey,
+                label: screeningConnection.defaultPackageLabel,
+              },
+            ]
+          : [];
+
+      return {
+        authState: screeningConnection.authState,
+        chargeMode: screeningConnection.chargeMode,
+        id: screeningConnection.id,
+        packageOptions: packages,
+        provider: screeningConnection.provider,
+        providerLabel: formatEnumLabel(screeningConnection.provider),
+        summary: formatScreeningConnectionSummary({
+          authState: screeningConnection.authState,
+          connectedAccount: screeningConnection.connectedAccount,
+          defaultPackageLabel: screeningConnection.defaultPackageLabel,
+          lastError: screeningConnection.lastError,
+        }),
+      };
+    }),
+    screeningRequests,
     translationArtifact,
     actions: {
       evaluateFit:
@@ -1519,6 +1699,16 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       sendApplication:
         workflowActionAvailability.sendApplication &&
         roleActionPermissions.sendApplication,
+      launchScreening:
+        canUseScreening &&
+        roleActionPermissions.launchScreening &&
+        lead.status === LeadStatus.QUALIFIED &&
+        activeScreeningConnections.length > 0 &&
+        !activeScreeningRequest,
+      manageScreening:
+        canUseScreening &&
+        roleActionPermissions.launchScreening &&
+        screeningRequests.length > 0,
       manualOutbound: roleActionPermissions.requestInfo,
       assignProperty: roleActionPermissions.assignProperty,
       overrideFit: roleActionPermissions.overrideFit,
@@ -2711,12 +2901,29 @@ export const getMessagingSettingsViewData = cache(async () => {
         ],
       })
     : [];
+  const screeningConnections = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.SCREENING,
+  )
+    ? await prisma.screeningProviderConnection.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+        },
+        orderBy: {
+          provider: "asc",
+        },
+      })
+    : [];
 
   return {
     dailyAutomatedSendCap: membership.workspace.dailyAutomatedSendCap,
     canUseCalendarSync: workspaceHasCapability(
       membership.workspace.enabledCapabilities,
       WorkspaceCapability.CALENDAR_SYNC,
+    ),
+    canUseScreening: workspaceHasCapability(
+      membership.workspace.enabledCapabilities,
+      WorkspaceCapability.SCREENING,
     ),
     canUseTeamScheduling:
       membership.workspace.planType === WorkspacePlanType.ORG &&
@@ -2783,6 +2990,25 @@ export const getMessagingSettingsViewData = cache(async () => {
         parseAvailabilityWindowConfig(workspaceMembership.schedulingAvailability),
       ),
       lastTourAssignedAt: formatRelativeTime(workspaceMembership.lastTourAssignedAt),
+    })),
+    screeningConnections: screeningConnections.map((screeningConnection) => ({
+      authState: screeningConnection.authState,
+      chargeMode: screeningConnection.chargeMode,
+      connectedAccount: screeningConnection.connectedAccount ?? "",
+      defaultPackageKey: screeningConnection.defaultPackageKey ?? "",
+      defaultPackageLabel: screeningConnection.defaultPackageLabel ?? "",
+      disclosureStrategy: screeningConnection.disclosureStrategy ?? "",
+      id: screeningConnection.id,
+      lastError: screeningConnection.lastError ?? null,
+      packageOptions: parseScreeningPackageConfig(screeningConnection.packageConfig),
+      provider: screeningConnection.provider,
+      providerLabel: formatEnumLabel(screeningConnection.provider),
+      summary: formatScreeningConnectionSummary({
+        authState: screeningConnection.authState,
+        connectedAccount: screeningConnection.connectedAccount,
+        defaultPackageLabel: screeningConnection.defaultPackageLabel,
+        lastError: screeningConnection.lastError,
+      }),
     })),
     workspaceQuietHoursStartLocal: membership.workspace.quietHoursStartLocal,
     workspaceQuietHoursEndLocal: membership.workspace.quietHoursEndLocal,
