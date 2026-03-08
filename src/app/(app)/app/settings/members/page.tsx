@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { WorkspaceCapability } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { WorkspaceMembersPanel } from "@/components/workspace-members-panel";
 import { getCurrentWorkspaceMembership, getCurrentWorkspaceState } from "@/lib/app-data";
 import { prisma } from "@/lib/prisma";
+import { workspaceHasCapability } from "@/lib/workspace-plan";
 import {
   canMembershipRoleManageWorkspaceInvites,
   getAssignableWorkspaceInviteRoles,
@@ -12,6 +14,37 @@ import {
 export default async function MemberSettingsPage() {
   const workspaceState = await getCurrentWorkspaceState();
   const currentWorkspaceMembership = await getCurrentWorkspaceMembership();
+
+  if (
+    !workspaceHasCapability(
+      currentWorkspaceMembership.workspace.enabledCapabilities,
+      WorkspaceCapability.ORG_MEMBERS,
+    )
+  ) {
+    return (
+      <main>
+        <PageHeader
+          eyebrow="Settings"
+          title="Members and workspace access"
+          description="Member management is reserved for workspaces with Org teammate controls enabled."
+        />
+
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-xl font-semibold">Org workspace required</div>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-muted)]">
+            This workspace is currently on the Personal package, so teammate invites and shared access controls are unavailable here.
+          </p>
+          <Link
+            className="mt-5 inline-flex rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+            href="/app/settings"
+          >
+            Back to settings
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   const workspaceMemberships = await prisma.membership.findMany({
     where: {
       workspaceId: currentWorkspaceMembership.workspaceId,

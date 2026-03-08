@@ -7,9 +7,11 @@ import {
 } from "@/generated/prisma/client";
 import {
   formatWorkspaceCapabilityLabel,
+  getLockedCapabilitiesForWorkspacePlan,
   formatWorkspacePlanLabel,
   formatWorkspacePlanStatusLabel,
   getDefaultCapabilitiesForWorkspacePlan,
+  workspaceHasCapability,
 } from "@/lib/workspace-plan";
 
 test("getDefaultCapabilitiesForWorkspacePlan returns the personal baseline", () => {
@@ -28,6 +30,11 @@ test("getDefaultCapabilitiesForWorkspacePlan includes org member tooling for org
     WorkspaceCapability.MESSAGING,
     WorkspaceCapability.INTEGRATIONS,
     WorkspaceCapability.ORG_MEMBERS,
+    WorkspaceCapability.ADVANCED_AUTOMATIONS,
+    WorkspaceCapability.ADVANCED_ANALYTICS,
+    WorkspaceCapability.AI_ASSIST,
+    WorkspaceCapability.SCREENING,
+    WorkspaceCapability.CALENDAR_SYNC,
   ]);
 });
 
@@ -35,4 +42,32 @@ test("workspace plan formatting helpers return operator-friendly labels", () => 
   assert.equal(formatWorkspacePlanLabel(WorkspacePlanType.ORG), "Org");
   assert.equal(formatWorkspacePlanStatusLabel(WorkspacePlanStatus.PAST_DUE), "Past due");
   assert.equal(formatWorkspaceCapabilityLabel(WorkspaceCapability.CALENDAR_SYNC), "Calendar sync");
+});
+
+test("getLockedCapabilitiesForWorkspacePlan exposes org-only capabilities on personal plans", () => {
+  assert.deepEqual(getLockedCapabilitiesForWorkspacePlan(WorkspacePlanType.PERSONAL), [
+    WorkspaceCapability.ORG_MEMBERS,
+    WorkspaceCapability.ADVANCED_AUTOMATIONS,
+    WorkspaceCapability.ADVANCED_ANALYTICS,
+    WorkspaceCapability.AI_ASSIST,
+    WorkspaceCapability.SCREENING,
+    WorkspaceCapability.CALENDAR_SYNC,
+  ]);
+});
+
+test("workspaceHasCapability checks enabled capability membership", () => {
+  assert.equal(
+    workspaceHasCapability(
+      getDefaultCapabilitiesForWorkspacePlan(WorkspacePlanType.PERSONAL),
+      WorkspaceCapability.ORG_MEMBERS,
+    ),
+    false,
+  );
+  assert.equal(
+    workspaceHasCapability(
+      getDefaultCapabilitiesForWorkspacePlan(WorkspacePlanType.ORG),
+      WorkspaceCapability.ORG_MEMBERS,
+    ),
+    true,
+  );
 });

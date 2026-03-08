@@ -1,7 +1,8 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
-import { MembershipRole } from "@/generated/prisma/client";
+import { MembershipRole, WorkspaceCapability } from "@/generated/prisma/client";
 import { getCurrentWorkspaceMembership } from "@/lib/app-data";
+import { workspaceHasCapability } from "@/lib/workspace-plan";
 import { getServerSession } from "@/lib/session";
 import { createWorkspaceInvite, WorkspaceInviteError } from "@/lib/workspace-invites";
 
@@ -34,6 +35,18 @@ export async function POST(request: Request) {
   }
 
   const currentWorkspaceMembership = await getCurrentWorkspaceMembership();
+
+  if (
+    !workspaceHasCapability(
+      currentWorkspaceMembership.workspace.enabledCapabilities,
+      WorkspaceCapability.ORG_MEMBERS,
+    )
+  ) {
+    return NextResponse.json(
+      { message: "Teammate invites require an Org workspace package." },
+      { status: 403 },
+    );
+  }
 
   try {
     await createWorkspaceInvite({

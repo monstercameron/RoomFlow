@@ -1,14 +1,17 @@
 import Link from "next/link";
+import { WorkspacePlanType } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { getCurrentWorkspaceState } from "@/lib/app-data";
 import {
   formatWorkspaceCapabilityLabel,
+  getLockedCapabilitiesForWorkspacePlan,
   formatWorkspacePlanLabel,
   formatWorkspacePlanStatusLabel,
 } from "@/lib/workspace-plan";
 
 export default async function SettingsPage() {
   const workspaceState = await getCurrentWorkspaceState();
+  const lockedCapabilities = getLockedCapabilitiesForWorkspacePlan(workspaceState.workspace.planType);
 
   return (
     <main>
@@ -91,6 +94,21 @@ export default async function SettingsPage() {
                 ))}
               </dd>
             </div>
+            {workspaceState.workspace.planType === WorkspacePlanType.PERSONAL ? (
+              <div>
+                <dt className="text-[var(--color-muted)]">Org-only capabilities</dt>
+                <dd className="mt-2 flex flex-wrap gap-2">
+                  {lockedCapabilities.map((workspaceCapability) => (
+                    <span
+                      className="rounded-full border border-dashed border-[var(--color-line)] px-3 py-1 text-xs font-medium text-[var(--color-muted)]"
+                      key={workspaceCapability}
+                    >
+                      {formatWorkspaceCapabilityLabel(workspaceCapability)}
+                    </span>
+                  ))}
+                </dd>
+              </div>
+            ) : null}
           </dl>
         </div>
 

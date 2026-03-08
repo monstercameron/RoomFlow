@@ -27,6 +27,11 @@ const defaultCapabilitiesByWorkspacePlanType: Record<
     WorkspaceCapability.MESSAGING,
     WorkspaceCapability.INTEGRATIONS,
     WorkspaceCapability.ORG_MEMBERS,
+    WorkspaceCapability.ADVANCED_AUTOMATIONS,
+    WorkspaceCapability.ADVANCED_ANALYTICS,
+    WorkspaceCapability.AI_ASSIST,
+    WorkspaceCapability.SCREENING,
+    WorkspaceCapability.CALENDAR_SYNC,
   ],
   [WorkspacePlanType.PERSONAL]: [
     WorkspaceCapability.CORE_CRM,
@@ -48,6 +53,8 @@ const workspacePlanStatusLabels: Record<WorkspacePlanStatus, string> = {
   [WorkspacePlanStatus.TRIAL]: "Trial",
 };
 
+const allWorkspaceCapabilities = Object.values(WorkspaceCapability);
+
 export function formatWorkspaceCapabilityLabel(workspaceCapability: WorkspaceCapability) {
   return workspaceCapabilityLabels[workspaceCapability];
 }
@@ -64,4 +71,19 @@ export function getDefaultCapabilitiesForWorkspacePlan(
   workspacePlanType: WorkspacePlanType,
 ) {
   return [...defaultCapabilitiesByWorkspacePlanType[workspacePlanType]];
+}
+
+export function getLockedCapabilitiesForWorkspacePlan(workspacePlanType: WorkspacePlanType) {
+  const includedCapabilities = new Set(getDefaultCapabilitiesForWorkspacePlan(workspacePlanType));
+
+  return allWorkspaceCapabilities.filter(
+    (workspaceCapability) => !includedCapabilities.has(workspaceCapability),
+  );
+}
+
+export function workspaceHasCapability(
+  enabledCapabilities: WorkspaceCapability[],
+  requiredCapability: WorkspaceCapability,
+) {
+  return enabledCapabilities.includes(requiredCapability);
 }
