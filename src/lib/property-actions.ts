@@ -79,6 +79,26 @@ function parseOptionalText(value: FormDataEntryValue | null) {
   return normalizedValue.length > 0 ? normalizedValue : null;
 }
 
+function parseOptionalInteger(value: FormDataEntryValue | null, fieldLabel: string) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const parsedValue = Number.parseInt(normalizedValue, 10);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+    throw new Error(`${fieldLabel} must be a non-negative whole number.`);
+  }
+
+  return parsedValue;
+}
+
 function parseBooleanFormValue(value: FormDataEntryValue | null) {
   return typeof value === "string" && value.toLowerCase() === "true";
 }
@@ -346,6 +366,70 @@ export async function updatePropertyCalendarTargetAction(
   });
 
   revalidatePath("/app/calendar");
+  revalidatePath("/app/properties");
+  revalidatePath(`/app/properties/${property.id}`);
+
+  const redirectTarget =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : `/app/properties/${property.id}`;
+
+  redirect(redirectTarget);
+}
+
+export async function updatePropertyOperationalDetailsAction(
+  propertyId: string,
+  formData: FormData,
+) {
+  const workspaceState = await getCurrentWorkspaceState();
+  const redirectTargetValue = formData.get("redirectTo");
+  const parkingAvailable = formData.get("parkingAvailable") === "on";
+  const rentableRoomCount = parseOptionalInteger(
+    formData.get("rentableRoomCount"),
+    "Rentable room count",
+  );
+  const sharedBathroomCount = parseOptionalInteger(
+    formData.get("sharedBathroomCount"),
+    "Shared bathroom count",
+  );
+
+  const property = await prisma.property.findFirst({
+    where: {
+      id: propertyId,
+      workspaceId: workspaceState.workspace.id,
+    },
+  });
+
+  if (!property) {
+    throw new Error("Property not found.");
+  }
+
+  await prisma.property.update({
+    where: {
+      id: property.id,
+    },
+    data: {
+      parkingAvailable,
+      rentableRoomCount,
+      sharedBathroomCount,
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: workspaceState.workspace.id,
+      propertyId: property.id,
+      actorUserId: workspaceState.user.id,
+      eventType: "property_operational_details_updated",
+      payload: {
+        parkingAvailable,
+        propertyName: property.name,
+        rentableRoomCount,
+        sharedBathroomCount,
+      },
+    },
+  });
+
   revalidatePath("/app/properties");
   revalidatePath(`/app/properties/${property.id}`);
 

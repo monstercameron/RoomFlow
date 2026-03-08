@@ -7,6 +7,7 @@ import {
   updatePropertyLifecycleStatusAction,
   updatePropertyListingSourceMetadataAction,
   updatePropertyListingSyncStatusAction,
+  updatePropertyOperationalDetailsAction,
   updatePropertySchedulingLinkAction,
 } from "@/lib/property-actions";
 import {
@@ -225,6 +226,55 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
                 <div className="mt-1 font-medium">{property.sharedBathroomCount}</div>
               </div>
             </div>
+          </section>
+
+          <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className="text-xl font-semibold">Operational details</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">
+              Update the operator-facing details that most directly affect qualification and listing clarity for this property.
+            </div>
+            <form
+              action={updatePropertyOperationalDetailsAction.bind(null, property.id)}
+              className="mt-5 grid gap-4 sm:grid-cols-2"
+            >
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Rentable rooms</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.activeRooms}
+                  min={0}
+                  name="rentableRoomCount"
+                  type="number"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Shared bathrooms</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.sharedBathroomCount}
+                  min={0}
+                  name="sharedBathroomCount"
+                  type="number"
+                />
+              </label>
+              <label className="flex items-center justify-between rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4 sm:col-span-2">
+                <span className="font-medium">Parking available</span>
+                <input
+                  defaultChecked={property.parkingAvailable}
+                  name="parkingAvailable"
+                  type="checkbox"
+                />
+              </label>
+              <input type="hidden" name="redirectTo" value={`/app/properties/${property.id}`} />
+              <div className="flex justify-end sm:col-span-2">
+                <button
+                  className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                  type="submit"
+                >
+                  Save operational details
+                </button>
+              </div>
+            </form>
           </section>
 
           <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
