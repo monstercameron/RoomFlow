@@ -87,3 +87,19 @@ export function workspaceHasCapability(
 ) {
   return enabledCapabilities.includes(requiredCapability);
 }
+
+export function getMinimumWorkspacePlanForCapability(
+  requiredCapability: WorkspaceCapability,
+) {
+  switch (requiredCapability) {
+    case WorkspaceCapability.ORG_MEMBERS:
+    case WorkspaceCapability.ADVANCED_AUTOMATIONS:
+    case WorkspaceCapability.ADVANCED_ANALYTICS:
+    case WorkspaceCapability.AI_ASSIST:
+    case WorkspaceCapability.SCREENING:
+    case WorkspaceCapability.CALENDAR_SYNC:
+      return WorkspacePlanType.ORG;
+    default:
+      return WorkspacePlanType.PERSONAL;
+  }
+}

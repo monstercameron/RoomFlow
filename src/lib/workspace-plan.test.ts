@@ -7,6 +7,7 @@ import {
 } from "@/generated/prisma/client";
 import {
   formatWorkspaceCapabilityLabel,
+  getMinimumWorkspacePlanForCapability,
   getLockedCapabilitiesForWorkspacePlan,
   formatWorkspacePlanLabel,
   formatWorkspacePlanStatusLabel,
@@ -69,5 +70,16 @@ test("workspaceHasCapability checks enabled capability membership", () => {
       WorkspaceCapability.ORG_MEMBERS,
     ),
     true,
+  );
+});
+
+test("getMinimumWorkspacePlanForCapability marks org-only features correctly", () => {
+  assert.equal(
+    getMinimumWorkspacePlanForCapability(WorkspaceCapability.ORG_MEMBERS),
+    WorkspacePlanType.ORG,
+  );
+  assert.equal(
+    getMinimumWorkspacePlanForCapability(WorkspaceCapability.MESSAGING),
+    WorkspacePlanType.PERSONAL,
   );
 });

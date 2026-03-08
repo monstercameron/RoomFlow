@@ -43,7 +43,11 @@ export async function POST(request: Request) {
     )
   ) {
     return NextResponse.json(
-      { message: "Teammate invites require an Org workspace package." },
+      {
+        message: "Teammate invites require an Org workspace package.",
+        requiredCapability: WorkspaceCapability.ORG_MEMBERS,
+        upgradePath: "/app/settings?upgrade=org-members",
+      },
       { status: 403 },
     );
   }

@@ -36,9 +36,9 @@ export default async function MemberSettingsPage() {
           </p>
           <Link
             className="mt-5 inline-flex rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
-            href="/app/settings"
+            href="/app/settings?upgrade=org-members"
           >
-            Back to settings
+            See Org upgrade details
           </Link>
         </div>
       </main>
