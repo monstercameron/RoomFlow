@@ -139,6 +139,13 @@ enum PropertyLifecycleStatus {
   ARCHIVED
 }
 
+enum PropertyListingSyncStatus {
+  HEALTHY
+  PENDING
+  FAILED
+  OUT_OF_DATE
+}
+
 enum NotificationType {
   NEW_LEAD
   CAUTION_REVIEW
@@ -280,6 +287,9 @@ model Property {
   listingSourceType   String?
   listingSourceExternalId String?
   listingSourceUrl    String?
+  listingSyncStatus   PropertyListingSyncStatus?
+  listingSyncMessage  String?
+  listingSyncUpdatedAt DateTime?
   propertyType        String?
   addressLine1        String?
   locality            String?

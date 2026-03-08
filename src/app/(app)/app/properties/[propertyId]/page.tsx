@@ -5,8 +5,13 @@ import { getPropertyDetailViewData } from "@/lib/app-data";
 import {
   updatePropertyLifecycleStatusAction,
   updatePropertyListingSourceMetadataAction,
+  updatePropertyListingSyncStatusAction,
   updatePropertySchedulingLinkAction,
 } from "@/lib/property-actions";
+import {
+  formatPropertyListingSyncStatus,
+  propertyListingSyncStatuses,
+} from "@/lib/property-listing-sync";
 import {
   formatPropertyLifecycleStatus,
   propertyLifecycleStatuses,
@@ -357,6 +362,61 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
                   type="submit"
                 >
                   Save listing metadata
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xl font-semibold">Listing sync status</div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  Track whether the external listing connection is healthy, pending, failed, or out of date before deeper sync automation exists.
+                </div>
+              </div>
+              <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-3 py-2 text-sm font-medium">
+                {property.listingSyncStatus}
+              </div>
+            </div>
+            <div className="mt-3 text-sm text-[var(--color-muted)]">
+              Last updated: {property.listingSyncUpdatedAtLabel}
+            </div>
+            <form
+              action={updatePropertyListingSyncStatusAction.bind(null, property.id)}
+              className="mt-5 grid gap-4"
+            >
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Sync status</span>
+                <select
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.listingSyncStatusValue ?? ""}
+                  name="listingSyncStatus"
+                >
+                  <option value="">Not tracked</option>
+                  {propertyListingSyncStatuses.map((propertyListingSyncStatus) => (
+                    <option key={propertyListingSyncStatus} value={propertyListingSyncStatus}>
+                      {formatPropertyListingSyncStatus(propertyListingSyncStatus)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Sync note</span>
+                <textarea
+                  className="min-h-28 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.listingSyncMessage ?? ""}
+                  name="listingSyncMessage"
+                  placeholder="Waiting for initial feed connection, authentication failed, or listing needs a manual refresh."
+                />
+              </label>
+              <input type="hidden" name="redirectTo" value={`/app/properties/${property.id}`} />
+              <div className="flex justify-end">
+                <button
+                  className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                  type="submit"
+                >
+                  Save sync status
                 </button>
               </div>
             </form>

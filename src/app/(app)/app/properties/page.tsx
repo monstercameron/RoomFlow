@@ -137,6 +137,9 @@ export default async function PropertiesPage(props: {
                 <div className="mt-2 text-sm text-[var(--color-muted)]">
                   Listing source: {property.listingSourceName ?? property.listingSourceType ?? "Not set"}
                 </div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  Sync status: {property.listingSyncStatus}
+                </div>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 {getPropertyStatusChips(property).map((propertyStatusChip) => (

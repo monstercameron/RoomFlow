@@ -34,6 +34,7 @@ import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
 import { getLeadActionPermissionsForMembershipRole } from "@/lib/membership-role-permissions";
 import { prisma } from "@/lib/prisma";
 import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
+import { formatPropertyListingSyncStatus } from "@/lib/property-listing-sync";
 import { formatPropertyLifecycleStatus } from "@/lib/property-lifecycle";
 import { getServerSession } from "@/lib/session";
 import { activeWorkspaceCookieName, ensureWorkspaceForUser } from "@/lib/workspaces";
@@ -1279,6 +1280,12 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
     listingSourceName: property.listingSourceName,
     listingSourceType: property.listingSourceType,
     listingSourceUrl: property.listingSourceUrl,
+    listingSyncMessage: property.listingSyncMessage,
+    listingSyncStatus: property.listingSyncStatus
+      ? formatPropertyListingSyncStatus(property.listingSyncStatus)
+      : "Not tracked",
+    listingSyncStatusValue: property.listingSyncStatus,
+    listingSyncUpdatedAtLabel: formatRelativeTime(property.listingSyncUpdatedAt),
     propertyType: property.propertyType,
     addressLine1: property.addressLine1,
     locality: property.locality,
@@ -1376,6 +1383,9 @@ export const getPropertiesViewData = cache(async () => {
       lifecycleStatusValue: property.lifecycleStatus,
       listingSourceName: property.listingSourceName,
       listingSourceType: property.listingSourceType,
+      listingSyncStatus: property.listingSyncStatus
+        ? formatPropertyListingSyncStatus(property.listingSyncStatus)
+        : "Not tracked",
       name: property.name,
       activeRooms: property.rentableRoomCount ?? 0,
       activeLeads,

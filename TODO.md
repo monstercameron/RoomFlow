@@ -466,7 +466,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [x] Build `/app/properties/[propertyId]` with full property summary, amenities, channel settings, and scheduling config.
 - [x] Add property active/inactive/archive lifecycle controls.
 - [x] Add listing source metadata fields per property.
-- [ ] Add listing sync status model and UI states: healthy, pending, failed, out of date.
+- [x] Add listing sync status model and UI states: healthy, pending, failed, out of date.
 - [ ] Add property-level calendar target selection.
 - [ ] Add listing performance summary cards per property.
 - [ ] Add operator workflow for editing parking, bathroom-sharing, and room-count details.
