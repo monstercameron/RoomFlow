@@ -294,6 +294,69 @@ export async function updatePropertyListingSyncStatusAction(
   );
 }
 
+export async function updatePropertyCalendarTargetAction(
+  propertyId: string,
+  formData: FormData,
+) {
+  const workspaceState = await getCurrentWorkspaceState();
+  const redirectTargetValue = formData.get("redirectTo");
+  const calendarTargetExternalId = parseOptionalText(
+    formData.get("calendarTargetExternalId"),
+  );
+  const calendarTargetName = parseOptionalText(formData.get("calendarTargetName"));
+  const calendarTargetProvider = parseOptionalText(
+    formData.get("calendarTargetProvider"),
+  );
+
+  const property = await prisma.property.findFirst({
+    where: {
+      id: propertyId,
+      workspaceId: workspaceState.workspace.id,
+    },
+  });
+
+  if (!property) {
+    throw new Error("Property not found.");
+  }
+
+  await prisma.property.update({
+    where: {
+      id: property.id,
+    },
+    data: {
+      calendarTargetExternalId,
+      calendarTargetName,
+      calendarTargetProvider,
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: workspaceState.workspace.id,
+      propertyId: property.id,
+      actorUserId: workspaceState.user.id,
+      eventType: "property_calendar_target_updated",
+      payload: {
+        calendarTargetExternalId,
+        calendarTargetName,
+        calendarTargetProvider,
+        propertyName: property.name,
+      },
+    },
+  });
+
+  revalidatePath("/app/calendar");
+  revalidatePath("/app/properties");
+  revalidatePath(`/app/properties/${property.id}`);
+
+  const redirectTarget =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : `/app/properties/${property.id}`;
+
+  redirect(redirectTarget);
+}
+
 export async function updatePropertyLifecycleStatusAction(
   propertyId: string,
   formData: FormData,

@@ -51,6 +51,9 @@ export default async function CalendarPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-xl font-semibold">{property.name}</div>
+                <div className="mt-1 text-sm text-[var(--color-muted)]">
+                  Calendar target: {property.calendarTargetName ?? property.calendarTargetProvider ?? "Not set"}
+                </div>
                 <a
                   className="mt-2 block text-sm text-[var(--color-accent-strong)] underline-offset-4 hover:underline"
                   href={property.schedulingUrl ?? "#"}

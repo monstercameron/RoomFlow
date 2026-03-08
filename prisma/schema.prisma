@@ -290,6 +290,9 @@ model Property {
   listingSyncStatus   PropertyListingSyncStatus?
   listingSyncMessage  String?
   listingSyncUpdatedAt DateTime?
+  calendarTargetName  String?
+  calendarTargetProvider String?
+  calendarTargetExternalId String?
   propertyType        String?
   addressLine1        String?
   locality            String?

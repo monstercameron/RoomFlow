@@ -140,6 +140,9 @@ export default async function PropertiesPage(props: {
                 <div className="mt-2 text-sm text-[var(--color-muted)]">
                   Sync status: {property.listingSyncStatus}
                 </div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  Calendar target: {property.calendarTargetName ?? property.calendarTargetProvider ?? "Not set"}
+                </div>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 {getPropertyStatusChips(property).map((propertyStatusChip) => (

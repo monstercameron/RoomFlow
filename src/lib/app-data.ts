@@ -1286,6 +1286,9 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
       : "Not tracked",
     listingSyncStatusValue: property.listingSyncStatus,
     listingSyncUpdatedAtLabel: formatRelativeTime(property.listingSyncUpdatedAt),
+    calendarTargetExternalId: property.calendarTargetExternalId,
+    calendarTargetName: property.calendarTargetName,
+    calendarTargetProvider: property.calendarTargetProvider,
     propertyType: property.propertyType,
     addressLine1: property.addressLine1,
     locality: property.locality,
@@ -1386,6 +1389,8 @@ export const getPropertiesViewData = cache(async () => {
       listingSyncStatus: property.listingSyncStatus
         ? formatPropertyListingSyncStatus(property.listingSyncStatus)
         : "Not tracked",
+      calendarTargetName: property.calendarTargetName,
+      calendarTargetProvider: property.calendarTargetProvider,
       name: property.name,
       activeRooms: property.rentableRoomCount ?? 0,
       activeLeads,
@@ -1498,6 +1503,8 @@ export const getCalendarViewData = cache(async () => {
 
   return {
     properties: properties.map((property) => ({
+      calendarTargetName: property.calendarTargetName,
+      calendarTargetProvider: property.calendarTargetProvider,
       id: property.id,
       name: property.name,
       schedulingUrl: property.schedulingUrl,

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { getPropertyDetailViewData } from "@/lib/app-data";
 import {
+  updatePropertyCalendarTargetAction,
   updatePropertyLifecycleStatusAction,
   updatePropertyListingSourceMetadataAction,
   updatePropertyListingSyncStatusAction,
@@ -417,6 +418,57 @@ export default async function PropertyDetailPage({ params }: PropertyDetailPageP
                   type="submit"
                 >
                   Save sync status
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className="text-xl font-semibold">Calendar target selection</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">
+              Choose the operator calendar target this property should hand off to, even before native calendar integrations are fully connected.
+            </div>
+            <form
+              action={updatePropertyCalendarTargetAction.bind(null, property.id)}
+              className="mt-5 grid gap-4 sm:grid-cols-2"
+            >
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Calendar target name</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.calendarTargetName ?? ""}
+                  name="calendarTargetName"
+                  placeholder="Maple House Tour Calendar"
+                  type="text"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium">Calendar provider</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.calendarTargetProvider ?? ""}
+                  name="calendarTargetProvider"
+                  placeholder="Google Calendar"
+                  type="text"
+                />
+              </label>
+              <label className="space-y-2 sm:col-span-2">
+                <span className="text-sm font-medium">External calendar ID</span>
+                <input
+                  className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  defaultValue={property.calendarTargetExternalId ?? ""}
+                  name="calendarTargetExternalId"
+                  placeholder="primary or calendar_123"
+                  type="text"
+                />
+              </label>
+              <input type="hidden" name="redirectTo" value={`/app/properties/${property.id}`} />
+              <div className="flex justify-end sm:col-span-2">
+                <button
+                  className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                  type="submit"
+                >
+                  Save calendar target
                 </button>
               </div>
             </form>
