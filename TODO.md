@@ -458,7 +458,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [x] Add soft upgrade prompts when users hit Org-only features.
 - [x] Implement safe downgrade behavior that disables unsupported features without deleting data.
 - [x] Add usage-counter display for plan-limited capabilities in settings.
-- [ ] Add billing-owner transfer flow for multi-admin workspaces.
+- [x] Add billing-owner transfer flow for multi-admin workspaces.
 
 ## Phase 14: property operations and listing management
 

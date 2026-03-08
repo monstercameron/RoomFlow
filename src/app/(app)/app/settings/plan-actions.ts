@@ -63,3 +63,46 @@ export async function updateWorkspacePlanAction(formData: FormData) {
         : "updated",
   );
 }
+
+export async function transferBillingOwnerAction(formData: FormData) {
+  const targetUserId = String(formData.get("targetUserId") ?? "").trim();
+
+  if (!targetUserId) {
+    redirectToSettings("billing-owner-unchanged");
+  }
+
+  const currentWorkspaceMembership = await getCurrentWorkspaceMembership();
+
+  if (
+    currentWorkspaceMembership.role !== MembershipRole.OWNER &&
+    currentWorkspaceMembership.workspace.billingOwnerUserId !== currentWorkspaceMembership.userId
+  ) {
+    redirectToSettings("billing-owner-unchanged");
+  }
+
+  const targetMembership = await prisma.membership.findFirst({
+    where: {
+      userId: targetUserId,
+      workspaceId: currentWorkspaceMembership.workspaceId,
+      role: {
+        in: [MembershipRole.OWNER, MembershipRole.ADMIN],
+      },
+    },
+  });
+
+  if (!targetMembership) {
+    redirectToSettings("billing-owner-unchanged");
+  }
+
+  await prisma.workspace.update({
+    where: {
+      id: currentWorkspaceMembership.workspaceId,
+    },
+    data: {
+      billingOwnerUserId: targetMembership.userId,
+    },
+  });
+
+  revalidatePath("/app/settings");
+  redirectToSettings("billing-owner-transferred");
+}

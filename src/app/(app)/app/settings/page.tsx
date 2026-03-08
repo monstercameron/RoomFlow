@@ -1,8 +1,15 @@
 import Link from "next/link";
 import { WorkspacePlanType } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
-import { updateWorkspacePlanAction } from "@/app/(app)/app/settings/plan-actions";
-import { getCurrentWorkspaceState, getWorkspacePlanUsageData } from "@/lib/app-data";
+import {
+  transferBillingOwnerAction,
+  updateWorkspacePlanAction,
+} from "@/app/(app)/app/settings/plan-actions";
+import {
+  getCurrentWorkspaceState,
+  getWorkspaceBillingOwnerTransferData,
+  getWorkspacePlanUsageData,
+} from "@/lib/app-data";
 import {
   formatWorkspaceCapabilityLabel,
   getLockedCapabilitiesForWorkspacePlan,
@@ -37,6 +44,14 @@ function getPlanChangeMessage(planChange?: string) {
     return "Workspace plan updated.";
   }
 
+  if (planChange === "billing-owner-transferred") {
+    return "Billing ownership transferred to another eligible workspace admin.";
+  }
+
+  if (planChange === "billing-owner-unchanged") {
+    return "Billing ownership could not be changed with the current selection.";
+  }
+
   return null;
 }
 
@@ -55,6 +70,7 @@ export default async function SettingsPage(props: {
   const lockedCapabilities = getLockedCapabilitiesForWorkspacePlan(workspaceState.workspace.planType);
   const upgradePromptCopy = getUpgradePromptCopy(searchParameters.upgrade);
   const planChangeMessage = getPlanChangeMessage(searchParameters.planChange);
+  const workspaceBillingOwnerTransferData = await getWorkspaceBillingOwnerTransferData();
   const workspacePlanUsageData = await getWorkspacePlanUsageData();
   const workspacePlanUsageLimits = getWorkspacePlanUsageLimits(workspaceState.workspace.planType);
 
@@ -228,6 +244,40 @@ export default async function SettingsPage(props: {
                 </div>
               </dd>
             </div>
+            {workspaceBillingOwnerTransferData.candidates.length > 1 ? (
+              <div className="pt-2">
+                <dt className="text-[var(--color-muted)]">Billing owner transfer</dt>
+                <dd className="mt-3 text-sm text-[var(--color-muted)]">
+                  Transfer billing responsibility to another owner or admin without changing their workspace membership.
+                </dd>
+                <dd className="mt-3">
+                  <form action={transferBillingOwnerAction} className="flex flex-wrap items-end gap-3">
+                    <label className="space-y-2">
+                      <span className="block text-sm font-medium text-[var(--color-ink)]">
+                        New billing owner
+                      </span>
+                      <select
+                        className="min-w-[16rem] rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm outline-none"
+                        defaultValue={workspaceBillingOwnerTransferData.billingOwnerUserId ?? workspaceBillingOwnerTransferData.candidates[0]?.userId}
+                        name="targetUserId"
+                      >
+                        {workspaceBillingOwnerTransferData.candidates.map((billingOwnerCandidate) => (
+                          <option key={billingOwnerCandidate.userId} value={billingOwnerCandidate.userId}>
+                            {billingOwnerCandidate.userName} ({billingOwnerCandidate.userEmailAddress}) - {billingOwnerCandidate.membershipRole}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      className="rounded-2xl border border-[var(--color-line)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)]"
+                      type="submit"
+                    >
+                      Transfer billing owner
+                    </button>
+                  </form>
+                </dd>
+              </div>
+            ) : null}
           </dl>
         </div>
 

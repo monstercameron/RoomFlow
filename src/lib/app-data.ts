@@ -627,6 +627,40 @@ export const getWorkspacePlanUsageData = cache(async () => {
   };
 });
 
+export const getWorkspaceBillingOwnerTransferData = cache(async () => {
+  const membership = await getCurrentWorkspaceMembership();
+
+  const eligibleMemberships = await prisma.membership.findMany({
+    where: {
+      workspaceId: membership.workspaceId,
+      role: {
+        in: ["OWNER", "ADMIN"],
+      },
+    },
+    include: {
+      user: {
+        select: {
+          email: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  return {
+    billingOwnerUserId: membership.workspace.billingOwnerUserId,
+    candidates: eligibleMemberships.map((eligibleMembership) => ({
+      membershipRole: eligibleMembership.role,
+      userEmailAddress: eligibleMembership.user.email,
+      userId: eligibleMembership.userId,
+      userName: eligibleMembership.user.name,
+    })),
+  };
+});
+
 export const getLeadListViewData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
   const leads = await prisma.lead.findMany({
