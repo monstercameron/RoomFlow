@@ -36,6 +36,11 @@ export const appNav: NavItem[] = [
     description: "Reusable messages",
   },
   {
+    href: "/app/workflows",
+    label: "Workflows",
+    description: "Automation builder",
+  },
+  {
     href: "/app/settings",
     label: "Settings",
     description: "Account and integrations",

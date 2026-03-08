@@ -505,16 +505,16 @@ These are not part of the original narrow launch slice, but they are now broken 
 
 ## Phase 17: workflow builder and automation templates
 
-- [ ] Build `/app/workflows` for workflow list, status, and template management.
-- [ ] Define workflow entities for triggers, conditions, actions, versions, and scope.
-- [ ] Build a node-based workflow builder UI.
-- [ ] Implement trigger catalog for lead created, message received, fit changed, tour scheduled, screening completed, application sent, and stale threshold reached.
-- [ ] Implement condition catalog for property, fit, channel availability, missing fields, inactivity window, and status.
-- [ ] Implement action catalog for send template, draft AI message, create task, assign lead, move status, notify operator, schedule reminder, and request approval.
-- [ ] Add approval-required steps for sensitive declines and screening-related actions.
-- [ ] Add starter workflow templates for follow-up, reminder, and stale-lead handling.
-- [ ] Add property-specific workflow overrides.
-- [ ] Add Org-wide automation library and sharing rules.
+- [x] Build `/app/workflows` for workflow list, status, and template management.
+- [x] Define workflow entities for triggers, conditions, actions, versions, and scope.
+- [x] Build a node-based workflow builder UI.
+- [x] Implement trigger catalog for lead created, message received, fit changed, tour scheduled, screening completed, application sent, and stale threshold reached.
+- [x] Implement condition catalog for property, fit, channel availability, missing fields, inactivity window, and status.
+- [x] Implement action catalog for send template, draft AI message, create task, assign lead, move status, notify operator, schedule reminder, and request approval.
+- [x] Add approval-required steps for sensitive declines and screening-related actions.
+- [x] Add starter workflow templates for follow-up, reminder, and stale-lead handling.
+- [x] Add property-specific workflow overrides.
+- [x] Add Org-wide automation library and sharing rules.
 
 ## Phase 18: scheduling and calendar depth
 

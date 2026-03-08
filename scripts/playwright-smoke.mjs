@@ -75,11 +75,25 @@ async function run() {
 
     await visitPath("/app/leads", "Qualification queue");
     await visitPath("/app/inbox?queue=review", "Conversation triage");
-    await visitPath("/app/properties", "Shared-house setup");
-    await visitPath("/app/calendar", "Calendar handoff queue");
+    await visitPath("/app/properties", "Property operations");
+    await visitPath("/app/calendar", "Scheduling handoff queue");
     await visitPath("/app/templates", "Reusable messaging");
+    await visitPath("/app/workflows", "Automation builder");
     await visitPath("/app/settings", "Operator and workspace settings");
-    await visitPath("/app/settings/integrations", "Integration setup");
+    await visitPath("/app/settings/integrations", "Integrations");
+
+    await visitPath("/app/workflows", "Automation builder");
+    await page.getByPlaceholder("New workflow name").fill("Playwright workflow smoke");
+    await page.getByRole("button", { name: "Create workflow" }).click();
+    await page.waitForURL(/\/app\/workflows\/.+/, {
+      timeout: 120_000,
+    });
+    await page.getByText("Builder canvas", { exact: false }).waitFor({
+      timeout: 60_000,
+    });
+    await page.getByRole("button", { name: "Create new version" }).waitFor({
+      timeout: 30_000,
+    });
 
     await visitPath("/app/leads", "Qualification queue");
     const firstLeadLink = page.locator('a[href^="/app/leads/"]').first();
@@ -102,15 +116,17 @@ async function run() {
       throw new Error(`Workflow error present after manual outbound action: ${page.url()}`);
     }
 
-    await visitPath("/app/properties", "Shared-house setup");
-    const firstPropertyRulesLink = page.locator('a[href$="/rules"]').first();
-    const firstPropertyRulesHref = await firstPropertyRulesLink.getAttribute("href");
+    await visitPath("/app/properties", "Property operations");
+    const firstPropertyLink = page.locator('a[href^="/app/properties/"]').first();
+    const firstPropertyHref = await firstPropertyLink.getAttribute("href");
 
-    if (!firstPropertyRulesHref) {
-      throw new Error("Could not find a property rules link on /app/properties.");
+    if (!firstPropertyHref) {
+      throw new Error("Could not find a property detail link on /app/properties.");
     }
 
-    await visitPath(firstPropertyRulesHref, "Scheduling handoff");
+    await visitPath(firstPropertyHref, "Property summary");
+    const propertyRulesHref = `${firstPropertyHref}/rules`;
+    await visitPath(propertyRulesHref, "Scheduling handoff");
   } finally {
     await browser.close();
   }

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { RuleCategory, RuleMode, RuleSeverity } from "@/generated/prisma/client";
+import {
+  PropertyLifecycleStatus,
+  RuleCategory,
+  RuleMode,
+  RuleSeverity,
+} from "@/generated/prisma/client";
 
 async function getLeadWorkflowModule() {
   process.env.DATABASE_URL ??=
@@ -36,6 +41,7 @@ type TestLeadContext = {
   property: {
     id: string;
     name: string;
+    lifecycleStatus: PropertyLifecycleStatus;
     smokingAllowed: boolean;
     petsAllowed: boolean;
     parkingAvailable: boolean;
@@ -82,6 +88,7 @@ function createBaseLeadContext(): TestLeadContext {
     property: {
       id: "property_1",
       name: "Maple House",
+      lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
       smokingAllowed: false,
       petsAllowed: false,
       parkingAvailable: false,

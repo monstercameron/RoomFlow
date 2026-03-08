@@ -9,11 +9,14 @@ import {
   QuestionType,
   RuleSeverity,
   TemplateType,
+  WorkspacePlanStatus,
+  WorkspacePlanType,
 } from "../src/generated/prisma/client";
 import { auth } from "../src/lib/auth";
 import { isDevelopmentModeVerificationBypassEnabled } from "../src/lib/dev-auth-bypass";
 import { serializeDeliveryStatus } from "../src/lib/delivery-status";
 import { prisma } from "../src/lib/prisma";
+import { getDefaultCapabilitiesForWorkspacePlan } from "../src/lib/workspace-plan";
 import { ensureWorkspaceForUser } from "../src/lib/workspaces";
 
 const TEST_EMAIL = "test@roomflow.local";
@@ -83,7 +86,11 @@ async function main() {
 
   const workspace = await prisma.workspace.create({
     data: {
+      billingOwnerUserId: user.id,
+      enabledCapabilities: getDefaultCapabilitiesForWorkspacePlan(WorkspacePlanType.ORG),
       name: "Roomflow Test Workspace",
+      planStatus: WorkspacePlanStatus.TRIAL,
+      planType: WorkspacePlanType.ORG,
       slug: existingWorkspace.slug,
       onboardingCompletedAt: new Date(),
     },

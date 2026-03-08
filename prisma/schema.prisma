@@ -205,6 +205,67 @@ enum TemplateType {
   REMINDER
 }
 
+enum WorkflowScope {
+  WORKSPACE
+  PROPERTY
+  ORG_LIBRARY
+}
+
+enum WorkflowStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum WorkflowVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
+enum WorkflowNodeType {
+  TRIGGER
+  CONDITION
+  ACTION
+}
+
+enum WorkflowTriggerType {
+  LEAD_CREATED
+  MESSAGE_RECEIVED
+  FIT_CHANGED
+  TOUR_SCHEDULED
+  SCREENING_COMPLETED
+  APPLICATION_SENT
+  STALE_THRESHOLD_REACHED
+}
+
+enum WorkflowConditionType {
+  PROPERTY
+  FIT
+  CHANNEL_AVAILABILITY
+  MISSING_FIELDS
+  INACTIVITY_WINDOW
+  STATUS
+}
+
+enum WorkflowActionType {
+  SEND_TEMPLATE
+  DRAFT_AI_MESSAGE
+  CREATE_TASK
+  ASSIGN_LEAD
+  MOVE_STATUS
+  NOTIFY_OPERATOR
+  SCHEDULE_REMINDER
+  REQUEST_APPROVAL
+}
+
+enum WorkflowSharingVisibility {
+  PRIVATE
+  WORKSPACE
+  ORG_LIBRARY
+}
+
 model User {
   id            String       @id @default(cuid())
   email         String       @unique
@@ -245,6 +306,7 @@ model Workspace {
   leadSources           LeadSource[]
   leads                 Lead[]
   messageTemplates      MessageTemplate[]
+  workflowDefinitions   WorkflowDefinition[]
   auditEvents           AuditEvent[]
   notifications         NotificationEvent[]
   usageSnapshots        WorkspaceUsageSnapshot[]
@@ -323,6 +385,7 @@ model Property {
   workspace           Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   rules               PropertyRule[]
   questionSets        QualificationQuestionSet[]
+  workflowDefinitions WorkflowDefinition[]
   leads               Lead[]
   auditEvents         AuditEvent[]
   tours               TourEvent[]
@@ -531,6 +594,81 @@ model MessageTemplate {
 
   @@unique([workspaceId, name])
   @@index([workspaceId, type])
+}
+
+model WorkflowDefinition {
+  id                String                    @id @default(cuid())
+  workspaceId       String
+  propertyId        String?
+  baseWorkflowId    String?
+  name              String
+  description       String?
+  scope             WorkflowScope             @default(WORKSPACE)
+  status            WorkflowStatus            @default(DRAFT)
+  sharingVisibility WorkflowSharingVisibility @default(PRIVATE)
+  isStarterTemplate Boolean                   @default(false)
+  workspace         Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  property          Property?                 @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  baseWorkflow      WorkflowDefinition?       @relation("WorkflowOverrides", fields: [baseWorkflowId], references: [id], onDelete: SetNull)
+  overrides         WorkflowDefinition[]      @relation("WorkflowOverrides")
+  versions          WorkflowVersion[]
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@index([workspaceId, scope, status])
+  @@index([propertyId, status])
+  @@index([baseWorkflowId])
+}
+
+model WorkflowVersion {
+  id          String                @id @default(cuid())
+  workflowId  String
+  versionNumber Int
+  status      WorkflowVersionStatus @default(DRAFT)
+  notes       String?
+  publishedAt DateTime?
+  workflow    WorkflowDefinition    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  nodes       WorkflowNode[]
+  edges       WorkflowEdge[]
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@unique([workflowId, versionNumber])
+  @@index([workflowId, status])
+}
+
+model WorkflowNode {
+  id               String              @id @default(cuid())
+  workflowVersionId String
+  nodeType         WorkflowNodeType
+  name             String
+  triggerType      WorkflowTriggerType?
+  conditionType    WorkflowConditionType?
+  actionType       WorkflowActionType?
+  config           Json?
+  positionX        Int                 @default(0)
+  positionY        Int                 @default(0)
+  approvalRequired Boolean             @default(false)
+  orderIndex       Int                 @default(0)
+  workflowVersion  WorkflowVersion     @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([workflowVersionId, orderIndex])
+}
+
+model WorkflowEdge {
+  id               String           @id @default(cuid())
+  workflowVersionId String
+  sourceNodeId     String
+  targetNodeId     String
+  label            String?
+  branchKey        String?
+  orderIndex       Int              @default(0)
+  workflowVersion  WorkflowVersion  @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  createdAt        DateTime         @default(now())
+
+  @@index([workflowVersionId, orderIndex])
 }
 
 model LeadStatusHistory {
