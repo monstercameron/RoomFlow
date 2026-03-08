@@ -463,7 +463,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 ## Phase 14: property operations and listing management
 
 - [x] Build `/app/properties` as a first-class property index with filters and status chips.
-- [ ] Build `/app/properties/[propertyId]` with full property summary, amenities, channel settings, and scheduling config.
+- [x] Build `/app/properties/[propertyId]` with full property summary, amenities, channel settings, and scheduling config.
 - [ ] Add property active/inactive/archive lifecycle controls.
 - [ ] Add listing source metadata fields per property.
 - [ ] Add listing sync status model and UI states: healthy, pending, failed, out of date.

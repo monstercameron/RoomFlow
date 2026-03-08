@@ -119,7 +119,7 @@ export default async function PropertiesPage(props: {
           {filteredProperties.map((property) => (
           <Link
             key={property.id}
-            href={`/app/properties/${property.id}/rules`}
+            href={`/app/properties/${property.id}`}
             prefetch={false}
             className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]"
           >
@@ -184,8 +184,8 @@ export default async function PropertiesPage(props: {
               </div>
             </div>
             <div className="mt-5 flex flex-wrap gap-4 text-sm text-[var(--color-muted)]">
-              <span>Open rules</span>
-              <span>Question setup available</span>
+              <span>Open property overview</span>
+              <span>Rules and question setup linked</span>
             </div>
           </Link>
           ))}

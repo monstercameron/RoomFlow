@@ -6,6 +6,7 @@ import {
   QualificationFit,
   RuleSeverity,
   TemplateType,
+  TourEventStatus,
 } from "@/generated/prisma/client";
 import {
   buildLeadTimeline,
@@ -112,6 +113,28 @@ function formatStatusLabel(value: LeadStatus) {
 
 function formatChannelLabel(value: MessageChannel) {
   return value === MessageChannel.INTERNAL_NOTE ? "Internal note" : value;
+}
+
+function resolveChannelPriorityOrder(channelPriorityValue: unknown) {
+  if (!Array.isArray(channelPriorityValue)) {
+    return [MessageChannel.SMS, MessageChannel.EMAIL];
+  }
+
+  const parsedChannelPriorityOrder = channelPriorityValue
+    .map((channelPriorityEntry) =>
+      typeof channelPriorityEntry === "string"
+        ? channelPriorityEntry.toUpperCase()
+        : "",
+    )
+    .filter(
+      (channelPriorityEntry) =>
+        channelPriorityEntry === MessageChannel.SMS ||
+        channelPriorityEntry === MessageChannel.EMAIL,
+    ) as MessageChannel[];
+
+  return parsedChannelPriorityOrder.length > 0
+    ? parsedChannelPriorityOrder
+    : [MessageChannel.SMS, MessageChannel.EMAIL];
 }
 
 function formatRuleMode(rule: {
@@ -1153,6 +1176,130 @@ export const getPropertyQuestionsViewData = cache(async (propertyId: string) => 
         required: question.required,
       })),
     })),
+  };
+});
+
+export const getPropertyDetailViewData = cache(async (propertyId: string) => {
+  const membership = await getCurrentWorkspaceMembership();
+  const qualifiedLeadStatuses = new Set<LeadStatus>([
+    LeadStatus.QUALIFIED,
+    LeadStatus.TOUR_SCHEDULED,
+    LeadStatus.APPLICATION_SENT,
+  ]);
+  const property = await prisma.property.findFirst({
+    where: {
+      id: propertyId,
+      workspaceId: membership.workspaceId,
+    },
+    include: {
+      workspace: {
+        select: {
+          channelPriority: true,
+        },
+      },
+      _count: {
+        select: {
+          leads: true,
+          questionSets: true,
+          rules: true,
+          tours: true,
+        },
+      },
+      questionSets: {
+        orderBy: {
+          createdAt: "asc",
+        },
+        include: {
+          questions: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      },
+      rules: {
+        select: {
+          active: true,
+        },
+      },
+    },
+  });
+
+  if (!property) {
+    return null;
+  }
+
+  // Keep the property detail metrics aligned with the list view chips and counts.
+  const leadCountsByStatus = await prisma.lead.groupBy({
+    by: ["status"],
+    where: {
+      workspaceId: membership.workspaceId,
+      propertyId: property.id,
+    },
+    _count: {
+      _all: true,
+    },
+  });
+
+  const activeLeadCount = leadCountsByStatus
+    .filter(
+      (leadCountEntry) =>
+        leadCountEntry.status !== LeadStatus.ARCHIVED &&
+        leadCountEntry.status !== LeadStatus.CLOSED,
+    )
+    .reduce((totalCount, leadCountEntry) => totalCount + leadCountEntry._count._all, 0);
+
+  const qualifiedLeadCount = leadCountsByStatus
+    .filter((leadCountEntry) => qualifiedLeadStatuses.has(leadCountEntry.status))
+    .reduce((totalCount, leadCountEntry) => totalCount + leadCountEntry._count._all, 0);
+
+  const scheduledTourCount = await prisma.tourEvent.count({
+    where: {
+      workspaceId: membership.workspaceId,
+      propertyId: property.id,
+      status: TourEventStatus.SCHEDULED,
+    },
+  });
+
+  const resolvedChannelPriorityOrder = resolveChannelPriorityOrder(
+    property.channelPriority ?? property.workspace.channelPriority,
+  );
+
+  return {
+    id: property.id,
+    name: property.name,
+    propertyType: property.propertyType,
+    addressLine1: property.addressLine1,
+    locality: property.locality,
+    activeRooms: property.rentableRoomCount ?? 0,
+    activeLeads: activeLeadCount,
+    qualifiedLeads: qualifiedLeadCount,
+    rulesCount: property._count.rules,
+    questionSetCount: property._count.questionSets,
+    schedulingEnabled: property.schedulingEnabled,
+    schedulingUrl: property.schedulingUrl,
+    sharedBathroomCount: property.sharedBathroomCount ?? 0,
+    parkingAvailable: property.parkingAvailable,
+    smokingAllowed: property.smokingAllowed,
+    petsAllowed: property.petsAllowed,
+    createdAtLabel: formatDate(property.createdAt),
+    updatedAtLabel: formatRelativeTime(property.updatedAt),
+    activeRuleCount: property.rules.filter((rule) => rule.active).length,
+    inactiveRuleCount: property.rules.filter((rule) => !rule.active).length,
+    questionCount: property.questionSets.reduce(
+      (totalCount, questionSet) => totalCount + questionSet.questions.length,
+      0,
+    ),
+    defaultQuestionSetCount: property.questionSets.filter(
+      (questionSet) => questionSet.isDefault,
+    ).length,
+    totalLeadCount: property._count.leads,
+    scheduledTourCount,
+    totalTourCount: property._count.tours,
+    channelPrioritySource: property.channelPriority
+      ? "Property override"
+      : "Workspace default",
+    channelPriorityOrder: resolvedChannelPriorityOrder.map(formatChannelLabel),
   };
 });
 
