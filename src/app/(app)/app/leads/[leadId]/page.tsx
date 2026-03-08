@@ -361,6 +361,11 @@ export default async function LeadDetailPage({
                 <p className="mt-1 text-xs text-[var(--color-muted)]">
                   Save private operator context directly on the lead thread without sending anything externally.
                 </p>
+                {lead.availableInternalNoteMentions.length > 0 ? (
+                  <p className="mt-2 text-xs text-[var(--color-muted)]">
+                    Mention teammates with {lead.availableInternalNoteMentions.map((mention) => `@${mention.canonicalHandle}`).join(", ")}.
+                  </p>
+                ) : null}
                 <input type="hidden" name="manualChannel" value="INTERNAL_NOTE" />
                 <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
                 <label className="mt-3 block space-y-2">
@@ -370,7 +375,7 @@ export default async function LeadDetailPage({
                   <textarea
                     className="min-h-28 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
                     name="manualBody"
-                    placeholder="Capture context, objections, follow-up plans, or team-only guidance."
+                    placeholder="Capture context, objections, follow-up plans, or team-only guidance. Use @teammate to tag someone."
                     required
                   />
                 </label>
@@ -548,6 +553,18 @@ export default async function LeadDetailPage({
                     {message.channel} | {message.direction} | {message.at}
                   </div>
                   <div className="mt-2 text-sm leading-7">{message.body}</div>
+                  {message.mentionedTeammates.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
+                      {message.mentionedTeammates.map((mention) => (
+                        <span
+                          key={`${message.at}-${mention.userId}`}
+                          className="rounded-full border border-[var(--color-line)] px-3 py-1"
+                        >
+                          @{mention.canonicalHandle} | {mention.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>

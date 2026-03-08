@@ -36,6 +36,7 @@ import {
   canMembershipRolePerformLeadAction,
   type LeadActionPermissionKey,
 } from "@/lib/membership-role-permissions";
+import { resolveInternalNoteMentions } from "@/lib/internal-note-mentions";
 import { propertyAcceptsNewLeads } from "@/lib/property-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { assertLeadStatusTransitionIsAllowed } from "@/lib/lead-status-machine";
@@ -732,6 +733,42 @@ export async function sendManualOutboundMessageAction(
 
     const isInternalNoteChannel =
       outboundMessageChannel === MessageChannel.INTERNAL_NOTE;
+    const normalizedManualBody = isInternalNoteChannel
+      ? (
+          await (async () => {
+            const workspaceMembers = await prisma.membership.findMany({
+              where: {
+                workspaceId: actionContext.workspaceId,
+                userId: {
+                  not: actionContext.actorUserId,
+                },
+              },
+              include: {
+                user: {
+                  select: {
+                    email: true,
+                    name: true,
+                  },
+                },
+              },
+              orderBy: {
+                createdAt: "asc",
+              },
+            });
+
+            // Only internal notes get mention normalization so outbound copy stays untouched.
+            return resolveInternalNoteMentions({
+              noteBody: outboundMessageBodyValue.trim(),
+              workspaceMembers: workspaceMembers.map((workspaceMember) => ({
+                userId: workspaceMember.userId,
+                name: workspaceMember.user.name,
+                emailAddress: workspaceMember.user.email,
+                membershipRole: workspaceMember.role,
+              })),
+            }).normalizedNoteBody;
+          })()
+        )
+      : outboundMessageBodyValue.trim();
     const messageRecord = await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -743,7 +780,7 @@ export async function sendManualOutboundMessageAction(
           outboundMessageSubjectValue.trim().length > 0
             ? outboundMessageSubjectValue.trim()
             : null,
-        body: outboundMessageBodyValue.trim(),
+        body: normalizedManualBody,
         deliveryStatus: serializeDeliveryStatus({
           state: isInternalNoteChannel ? "sent" : "queued",
           provider: outboundMessageChannel,

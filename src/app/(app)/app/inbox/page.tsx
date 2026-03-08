@@ -122,18 +122,35 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                     {thread.latestMessageDirection}
                   </div>
                   <div className="mt-2 text-sm leading-7">{thread.latestMessage}</div>
+                  {thread.latestMessageMentions.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
+                      {thread.latestMessageMentions.map((mention) => (
+                        <span
+                          key={`${thread.id}-${mention.userId}`}
+                          className="rounded-full border border-[var(--color-line)] px-3 py-1"
+                        >
+                          @{mention.canonicalHandle} | {mention.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <form
                   action={sendManualOutboundMessageAction.bind(null, thread.id)}
                   className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
                 >
                   <div className="text-sm font-medium">Internal note</div>
+                  {thread.availableInternalNoteMentions.length > 0 ? (
+                    <p className="mt-2 text-xs text-[var(--color-muted)]">
+                      Mention teammates with {thread.availableInternalNoteMentions.map((mention) => `@${mention.canonicalHandle}`).join(", ")}.
+                    </p>
+                  ) : null}
                   <input type="hidden" name="manualChannel" value="INTERNAL_NOTE" />
                   <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
                   <textarea
                     className="mt-3 min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
                     name="manualBody"
-                    placeholder="Add private context to this lead thread."
+                    placeholder="Add private context to this lead thread. Use @teammate to tag someone."
                     required
                   />
                   <button

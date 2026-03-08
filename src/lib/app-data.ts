@@ -32,6 +32,7 @@ import {
 } from "@/lib/lead-duplicate-review";
 import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
 import { getLeadActionPermissionsForMembershipRole } from "@/lib/membership-role-permissions";
+import { resolveInternalNoteMentions } from "@/lib/internal-note-mentions";
 import { prisma } from "@/lib/prisma";
 import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
 import { formatPropertyListingSyncStatus } from "@/lib/property-listing-sync";
@@ -117,6 +118,32 @@ function formatStatusLabel(value: LeadStatus) {
 function formatChannelLabel(value: MessageChannel) {
   return value === MessageChannel.INTERNAL_NOTE ? "Internal note" : value;
 }
+
+const getWorkspaceMentionMembers = cache(async (workspaceId: string) => {
+  const workspaceMembers = await prisma.membership.findMany({
+    where: {
+      workspaceId,
+    },
+    include: {
+      user: {
+        select: {
+          email: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  return workspaceMembers.map((workspaceMember) => ({
+    userId: workspaceMember.userId,
+    name: workspaceMember.user.name,
+    emailAddress: workspaceMember.user.email,
+    membershipRole: workspaceMember.role,
+  }));
+});
 
 function resolveChannelPriorityOrder(channelPriorityValue: unknown) {
   if (!Array.isArray(channelPriorityValue)) {
@@ -801,17 +828,43 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
 
   const timeline = buildLeadTimeline(lead);
   const normalizedFieldMetadataRows = buildLeadFieldMetadataRows(lead.fieldMetadata);
+  const workspaceMentionMembers = await getWorkspaceMentionMembers(
+    membership.workspaceId,
+  );
+  const availableInternalNoteMentions = resolveInternalNoteMentions({
+    noteBody: "",
+    workspaceMembers: workspaceMentionMembers.filter(
+      (workspaceMember) => workspaceMember.userId !== membership.userId,
+    ),
+  }).availableMentions;
 
   const messages =
-    lead.conversation?.messages.map((message) => ({
-      channel: formatChannelLabel(message.channel),
-      direction: formatEnumLabel(message.direction),
-      isInternalNote: message.channel === MessageChannel.INTERNAL_NOTE,
-      at: formatRelativeTime(
-        message.sentAt ?? message.receivedAt ?? message.createdAt,
-      ),
-      body: message.body,
-    })) ?? [];
+    lead.conversation?.messages.map((message) => {
+      const resolvedInternalNoteMentions =
+        message.channel === MessageChannel.INTERNAL_NOTE
+          ? resolveInternalNoteMentions({
+              noteBody: message.body,
+              workspaceMembers: workspaceMentionMembers,
+            })
+          : null;
+
+      return {
+        channel: formatChannelLabel(message.channel),
+        direction: formatEnumLabel(message.direction),
+        isInternalNote: message.channel === MessageChannel.INTERNAL_NOTE,
+        at: formatRelativeTime(
+          message.sentAt ?? message.receivedAt ?? message.createdAt,
+        ),
+        body: message.body,
+        mentionedTeammates:
+          resolvedInternalNoteMentions?.mentions.map((mention) => ({
+            userId: mention.userId,
+            name: mention.name,
+            canonicalHandle: mention.canonicalHandle,
+            membershipRole: mention.membershipRole,
+          })) ?? [],
+      };
+    }) ?? [];
 
   const preferredContact =
     lead.preferredContactChannel ??
@@ -844,6 +897,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     moveInDate: formatDate(lead.moveInDate),
     budget: formatCurrency(lead.monthlyBudget),
     stayLength: formatStayLength(lead.stayLengthMonths),
+    availableInternalNoteMentions,
     workStatus: lead.workStatus ?? "Not provided",
     notes: lead.notes ?? "No operator notes yet.",
     schedulingUrl: lead.property?.schedulingUrl ?? null,
@@ -885,6 +939,15 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
 
 export const getInboxViewData = cache(async (queueFilter?: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const workspaceMentionMembers = await getWorkspaceMentionMembers(
+    membership.workspaceId,
+  );
+  const availableInternalNoteMentions = resolveInternalNoteMentions({
+    noteBody: "",
+    workspaceMembers: workspaceMentionMembers.filter(
+      (workspaceMember) => workspaceMember.userId !== membership.userId,
+    ),
+  }).availableMentions;
   const threads = await prisma.lead.findMany({
     where: {
       workspaceId: membership.workspaceId,
@@ -1107,6 +1170,18 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
     lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt),
     latestMessage:
       lead.conversation?.messages[0]?.body ?? "No messages yet on this lead.",
+    latestMessageMentions:
+      lead.conversation?.messages[0]?.channel === MessageChannel.INTERNAL_NOTE
+        ? resolveInternalNoteMentions({
+            noteBody: lead.conversation.messages[0].body,
+            workspaceMembers: workspaceMentionMembers,
+          }).mentions.map((mention) => ({
+            userId: mention.userId,
+            name: mention.name,
+            canonicalHandle: mention.canonicalHandle,
+            membershipRole: mention.membershipRole,
+          }))
+        : [],
     latestMessageDirection: lead.conversation?.messages[0]
       ? lead.conversation.messages[0].channel === MessageChannel.INTERNAL_NOTE
         ? "Internal note"
@@ -1114,6 +1189,7 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
       : "No thread",
     latestMessageIsInternalNote:
       lead.conversation?.messages[0]?.channel === MessageChannel.INTERNAL_NOTE,
+    availableInternalNoteMentions,
     needsAssignment: !lead.propertyId && roleActionPermissions.assignProperty,
     availableProperties: properties,
   }));
