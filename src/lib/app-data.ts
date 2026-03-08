@@ -32,6 +32,7 @@ import {
 } from "@/lib/lead-duplicate-review";
 import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
 import { getLeadActionPermissionsForMembershipRole } from "@/lib/membership-role-permissions";
+import { parseDeliveryStatus } from "@/lib/delivery-status";
 import { resolveInternalNoteMentions } from "@/lib/internal-note-mentions";
 import { prisma } from "@/lib/prisma";
 import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
@@ -117,6 +118,49 @@ function formatStatusLabel(value: LeadStatus) {
 
 function formatChannelLabel(value: MessageChannel) {
   return value === MessageChannel.INTERNAL_NOTE ? "Internal note" : value;
+}
+
+function formatDeliveryProviderLabel(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  return value
+    .split(/[_-]/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildDeliveryStatusDisplay(deliveryStatusValue: string | null | undefined) {
+  const parsedDeliveryStatus = parseDeliveryStatus(deliveryStatusValue);
+
+  if (!parsedDeliveryStatus) {
+    return null;
+  }
+
+  const detailParts = [
+    parsedDeliveryStatus.provider
+      ? `via ${formatDeliveryProviderLabel(parsedDeliveryStatus.provider)}`
+      : null,
+    parsedDeliveryStatus.scheduledFor
+      ? `scheduled ${formatRelativeTime(new Date(parsedDeliveryStatus.scheduledFor))}`
+      : null,
+    parsedDeliveryStatus.deliveredAt
+      ? `delivered ${formatRelativeTime(new Date(parsedDeliveryStatus.deliveredAt))}`
+      : null,
+    parsedDeliveryStatus.readAt
+      ? `read ${formatRelativeTime(new Date(parsedDeliveryStatus.readAt))}`
+      : null,
+    parsedDeliveryStatus.retryCount && parsedDeliveryStatus.retryCount > 0
+      ? `${parsedDeliveryStatus.retryCount} retr${parsedDeliveryStatus.retryCount === 1 ? "y" : "ies"}`
+      : null,
+  ].filter((detailPart): detailPart is string => Boolean(detailPart));
+
+  return {
+    label: formatEnumLabel(parsedDeliveryStatus.state),
+    detail: detailParts.join(" | "),
+    error: parsedDeliveryStatus.error ?? null,
+  };
 }
 
 const getWorkspaceMentionMembers = cache(async (workspaceId: string) => {
@@ -850,6 +894,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
 
   const messages =
     lead.conversation?.messages.map((message) => {
+      const deliveryStatusDisplay = buildDeliveryStatusDisplay(message.deliveryStatus);
       const resolvedInternalNoteMentions =
         message.channel === MessageChannel.INTERNAL_NOTE
           ? resolveInternalNoteMentions({
@@ -866,6 +911,9 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
           message.sentAt ?? message.receivedAt ?? message.createdAt,
         ),
         body: message.body,
+        deliveryStatusLabel: deliveryStatusDisplay?.label ?? null,
+        deliveryStatusDetail: deliveryStatusDisplay?.detail ?? null,
+        deliveryStatusError: deliveryStatusDisplay?.error ?? null,
         mentionedTeammates:
           resolvedInternalNoteMentions?.mentions.map((mention) => ({
             userId: mention.userId,
@@ -1180,6 +1228,10 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
     lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt),
     latestMessage:
       lead.conversation?.messages[0]?.body ?? "No messages yet on this lead.",
+    latestMessageDeliveryStatus:
+      lead.conversation?.messages[0]
+        ? buildDeliveryStatusDisplay(lead.conversation.messages[0].deliveryStatus)
+        : null,
     latestMessageMentions:
       lead.conversation?.messages[0]?.channel === MessageChannel.INTERNAL_NOTE
         ? resolveInternalNoteMentions({

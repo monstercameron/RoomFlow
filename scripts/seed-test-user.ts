@@ -11,6 +11,7 @@ import {
   TemplateType,
 } from "../src/generated/prisma/client";
 import { auth } from "../src/lib/auth";
+import { serializeDeliveryStatus } from "../src/lib/delivery-status";
 import { prisma } from "../src/lib/prisma";
 import { ensureWorkspaceForUser } from "../src/lib/workspaces";
 
@@ -572,6 +573,13 @@ async function main() {
         channel: MessageChannel.EMAIL,
         subject: "Tour scheduling link",
         body: "Thanks. You look like a solid fit, here is the tour scheduling link.",
+        deliveryStatus: serializeDeliveryStatus({
+          state: "sent",
+          provider: "resend",
+          retryCount: 0,
+          deliveredAt: hoursAgo(0.95).toISOString(),
+          readAt: hoursAgo(0.4).toISOString(),
+        }),
         sentAt: hoursAgo(1),
         createdAt: hoursAgo(1),
       },
@@ -611,6 +619,12 @@ async function main() {
         channel: MessageChannel.EMAIL,
         subject: "Application for Maple House",
         body: "You are ready for the next step. Reply here after you complete the application for Maple House.",
+        deliveryStatus: serializeDeliveryStatus({
+          state: "sent",
+          provider: "resend",
+          retryCount: 0,
+          deliveredAt: hoursAgo(0.45).toISOString(),
+        }),
         sentAt: hoursAgo(0.5),
         createdAt: hoursAgo(0.5),
       },

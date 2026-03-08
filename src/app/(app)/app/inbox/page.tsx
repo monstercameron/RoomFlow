@@ -121,7 +121,22 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                   <div className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
                     {thread.latestMessageDirection}
                   </div>
+                  {thread.latestMessageDeliveryStatus ? (
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
+                      <span className="rounded-full border border-[var(--color-line)] px-3 py-1">
+                        {thread.latestMessageDeliveryStatus.label}
+                      </span>
+                      {thread.latestMessageDeliveryStatus.detail ? (
+                        <span>{thread.latestMessageDeliveryStatus.detail}</span>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="mt-2 text-sm leading-7">{thread.latestMessage}</div>
+                  {thread.latestMessageDeliveryStatus?.error ? (
+                    <div className="mt-3 text-xs text-[var(--color-accent-strong)]">
+                      Delivery issue: {thread.latestMessageDeliveryStatus.error}
+                    </div>
+                  ) : null}
                   {thread.latestMessageMentions.length > 0 ? (
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
                       {thread.latestMessageMentions.map((mention) => (

@@ -8,6 +8,8 @@ describe("delivery-status utilities", () => {
       state: "received" as const,
       provider: "twilio",
       retryCount: 0,
+      deliveredAt: "2026-03-07T12:02:00Z",
+      readAt: "2026-03-07T12:04:00Z",
       updatedAt: "2026-03-07T12:00:00Z"
     };
 
@@ -17,6 +19,8 @@ describe("delivery-status utilities", () => {
     assert.equal(parsed?.state, "received");
     assert.equal(parsed?.provider, "twilio");
     assert.equal(parsed?.retryCount, 0);
+    assert.equal(parsed?.deliveredAt, "2026-03-07T12:02:00Z");
+    assert.equal(parsed?.readAt, "2026-03-07T12:04:00Z");
     assert.equal(parsed?.updatedAt, "2026-03-07T12:00:00Z");
   });
 

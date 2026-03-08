@@ -552,7 +552,20 @@ export default async function LeadDetailPage({
                   <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
                     {message.channel} | {message.direction} | {message.at}
                   </div>
+                  {message.deliveryStatusLabel ? (
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
+                      <span className="rounded-full border border-[var(--color-line)] px-3 py-1">
+                        {message.deliveryStatusLabel}
+                      </span>
+                      {message.deliveryStatusDetail ? <span>{message.deliveryStatusDetail}</span> : null}
+                    </div>
+                  ) : null}
                   <div className="mt-2 text-sm leading-7">{message.body}</div>
+                  {message.deliveryStatusError ? (
+                    <div className="mt-3 text-xs text-[var(--color-accent-strong)]">
+                      Delivery issue: {message.deliveryStatusError}
+                    </div>
+                  ) : null}
                   {message.mentionedTeammates.length > 0 ? (
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
                       {message.mentionedTeammates.map((mention) => (

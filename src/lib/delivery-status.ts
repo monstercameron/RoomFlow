@@ -12,6 +12,9 @@ export type DeliveryStatusPayload = {
   provider?: string | null;
   retryCount?: number;
   error?: string | null;
+  scheduledFor?: string | null;
+  deliveredAt?: string | null;
+  readAt?: string | null;
   updatedAt: string;
 };
 
@@ -37,6 +40,9 @@ export function parseDeliveryStatus(value: string | null | undefined) {
       provider: null,
       retryCount: 0,
       error: null,
+      scheduledFor: null,
+      deliveredAt: null,
+      readAt: null,
       updatedAt: new Date(0).toISOString(),
     } satisfies DeliveryStatusPayload;
   }

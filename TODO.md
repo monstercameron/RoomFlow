@@ -477,7 +477,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [x] Add teammate @mentions in private notes.
 - [x] Add formal message types for screening invite, tour invite, application invite, house-rules acknowledgment, onboarding, decline, and waitlist notice.
 - [x] Add branded message formatting for structured invitations and notices.
-- [ ] Add delivery/read-state UI where provider data is available.
+- [x] Add delivery/read-state UI where provider data is available.
 - [ ] Add quiet-hours configuration per workspace or property.
 - [ ] Add throttling configuration UI and operator-visible suppression reasons.
 - [ ] Add opt-out event visibility and channel-specific opt-out controls.
