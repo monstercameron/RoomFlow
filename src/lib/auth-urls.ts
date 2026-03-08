@@ -156,12 +156,21 @@ export function getSocialAuthErrorMessage(params: {
   providerId?: string | null;
 }) {
   const providerLabel = getSocialAuthProviderLabel(params.providerId);
+  const isAppleProvider = params.providerId === "apple";
 
   switch (params.errorCode) {
     case "unable_to_link_account":
     case "account_not_linked":
+      if (isAppleProvider) {
+        return "Apple found an existing Roomflow account, but the Apple identity is not linked yet. If you used Hide My Email, sign in with your Roomflow email first and then link Apple from Security settings.";
+      }
+
       return `${providerLabel} found an existing Roomflow account for this email. Sign in with email first, then link ${providerLabel} from Security settings.`;
     case "email_doesn't_match":
+      if (isAppleProvider) {
+        return "Apple returned a private-relay email that does not match the email already attached to this Roomflow account. Sign in with your existing email first, then link Apple from Security settings.";
+      }
+
       return `${providerLabel} returned a different email address than the one already attached to this Roomflow account.`;
     case "provider_not_configured":
       return `${providerLabel} sign-in is not configured in this environment yet.`;

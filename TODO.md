@@ -444,7 +444,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [x] Add Google login with safe account-linking behavior for existing verified emails.
 - [x] Add Facebook / Meta login for channel-heavy operators.
 - [x] Add Microsoft login for Org workspaces.
-- [ ] Add Apple login with private-relay email handling.
+- [x] Add Apple login with private-relay email handling.
 - [ ] Add optional passkey registration and sign-in.
 - [x] Add account-linking UI and server actions for multiple auth methods on one identity.
 - [x] Add session and device management UI for revoking active sessions.

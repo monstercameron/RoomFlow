@@ -109,3 +109,10 @@ test("getSocialAuthErrorMessage explains explicit linking fallback", () => {
     "Google found an existing Roomflow account for this email. Sign in with email first, then link Google from Security settings.",
   );
 });
+
+test("getSocialAuthErrorMessage explains Apple private relay fallback", () => {
+  assert.equal(
+    getSocialAuthErrorMessage({ errorCode: "email_doesn't_match", providerId: "apple" }),
+    "Apple returned a private-relay email that does not match the email already attached to this Roomflow account. Sign in with your existing email first, then link Apple from Security settings.",
+  );
+});
