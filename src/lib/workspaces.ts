@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { MembershipRole } from "@/generated/prisma/client";
 
+export const activeWorkspaceCookieName = "roomflow_active_workspace_id";
+
 type WorkspaceUser = {
   id: string;
   email: string;

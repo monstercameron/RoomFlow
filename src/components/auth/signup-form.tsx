@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
 import { authClient } from "@/lib/auth-client";
 
 export function SignupForm() {
@@ -27,14 +28,20 @@ export function SignupForm() {
             name,
             email,
             password,
+            callbackURL: "/onboarding",
           },
           {
             onError(context) {
               setError(context.error.message);
             },
             onSuccess() {
-              setMessage("Account created. Log in with the credentials you just set.");
-              router.push("/login");
+              setMessage("Account created. Check your verification email before continuing into the workspace.");
+              router.push(
+                buildEmailVerificationPagePath({
+                  emailAddress: email,
+                  nextPath: "/onboarding",
+                }),
+              );
               router.refresh();
             },
           },

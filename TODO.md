@@ -431,3 +431,200 @@ Do not pull these into the first implementation pass:
 * `/app/messages`
 * `/app/channels`
 * `/app/rooms`
+
+## Post-v1 feature backlog (derived from `reference/FEATURES.md`)
+
+These are not part of the original narrow launch slice, but they are now broken down so future planning can happen without re-reading the full feature spec.
+
+## Phase 12: auth expansion and identity hardening
+
+- [x] Build `/forgot-password` request flow and `/reset-password` completion flow.
+- [x] Build `/verify-email` and enforce verification gates for non-trusted providers.
+- [x] Add magic-link login and recovery flow with single-use token expiry.
+- [ ] Add Google login with safe account-linking behavior for existing verified emails.
+- [ ] Add Facebook / Meta login for channel-heavy operators.
+- [ ] Add Microsoft login for Org workspaces.
+- [ ] Add Apple login with private-relay email handling.
+- [ ] Add optional passkey registration and sign-in.
+- [ ] Add account-linking UI and server actions for multiple auth methods on one identity.
+- [x] Add session and device management UI for revoking active sessions.
+- [ ] Add workspace invite acceptance flow for existing and new users.
+- [x] Add workspace switching UI for users with access to multiple workspaces.
+
+## Phase 13: workspace, plans, and account packaging
+
+- [ ] Add workspace subscription model fields for plan type, status, billing owner, and enabled capabilities.
+- [ ] Distinguish Personal vs Org capabilities in settings and route guards.
+- [ ] Add soft upgrade prompts when users hit Org-only features.
+- [ ] Implement safe downgrade behavior that disables unsupported features without deleting data.
+- [ ] Add usage-counter display for plan-limited capabilities in settings.
+- [ ] Add billing-owner transfer flow for multi-admin workspaces.
+
+## Phase 14: property operations and listing management
+
+- [ ] Build `/app/properties` as a first-class property index with filters and status chips.
+- [ ] Build `/app/properties/[propertyId]` with full property summary, amenities, channel settings, and scheduling config.
+- [ ] Add property active/inactive/archive lifecycle controls.
+- [ ] Add listing source metadata fields per property.
+- [ ] Add listing sync status model and UI states: healthy, pending, failed, out of date.
+- [ ] Add property-level calendar target selection.
+- [ ] Add listing performance summary cards per property.
+- [ ] Add operator workflow for editing parking, bathroom-sharing, and room-count details.
+
+## Phase 15: communications hub depth
+
+- [ ] Add internal notes to leads and message threads.
+- [ ] Add teammate @mentions in private notes.
+- [ ] Add formal message types for screening invite, tour invite, application invite, house-rules acknowledgment, onboarding, decline, and waitlist notice.
+- [ ] Add branded message formatting for structured invitations and notices.
+- [ ] Add delivery/read-state UI where provider data is available.
+- [ ] Add quiet-hours configuration per workspace or property.
+- [ ] Add throttling configuration UI and operator-visible suppression reasons.
+- [ ] Add opt-out event visibility and channel-specific opt-out controls.
+- [ ] Add WhatsApp conversation support behind integration capability flags.
+- [ ] Add Instagram business messaging support behind integration capability flags.
+- [ ] Add shared-thread timeline that cleanly mixes email, SMS, WhatsApp, Instagram, notes, and system events.
+
+## Phase 16: AI-assisted workflow tools
+
+- [ ] Add extracted-field evidence display for inquiry-to-profile AI output.
+- [ ] Add operator accept/edit/reject flow for AI-suggested field values.
+- [ ] Add AI-generated lead summaries on lead detail and inbox surfaces.
+- [ ] Add AI reply drafting for common operator actions.
+- [ ] Add AI follow-up drafting tied to missing-info state and property context.
+- [ ] Add AI conflict explanations for caution and mismatch outcomes.
+- [ ] Add AI next-best-action recommendations on the lead detail page.
+- [ ] Add AI duplicate suggestions without auto-merge.
+- [ ] Add inbound/outbound translation tools while preserving original text.
+- [ ] Add AI listing analyzer UI for clarity and expectation-mismatch recommendations.
+- [ ] Add AI house-rules generator during onboarding and property setup.
+- [ ] Add AI intake-form generator for property-specific questionnaires.
+- [ ] Add reusable AI workflow-template generator.
+- [ ] Add Org-only portfolio AI insight summaries.
+- [ ] Add stale-lead AI recommendations for archive, reminder, review, or re-engagement.
+
+## Phase 17: workflow builder and automation templates
+
+- [ ] Build `/app/workflows` for workflow list, status, and template management.
+- [ ] Define workflow entities for triggers, conditions, actions, versions, and scope.
+- [ ] Build a node-based workflow builder UI.
+- [ ] Implement trigger catalog for lead created, message received, fit changed, tour scheduled, screening completed, application sent, and stale threshold reached.
+- [ ] Implement condition catalog for property, fit, channel availability, missing fields, inactivity window, and status.
+- [ ] Implement action catalog for send template, draft AI message, create task, assign lead, move status, notify operator, schedule reminder, and request approval.
+- [ ] Add approval-required steps for sensitive declines and screening-related actions.
+- [ ] Add starter workflow templates for follow-up, reminder, and stale-lead handling.
+- [ ] Add property-specific workflow overrides.
+- [ ] Add Org-wide automation library and sharing rules.
+
+## Phase 18: scheduling and calendar depth
+
+- [ ] Add manual tour creation UI separate from automated scheduling handoff.
+- [ ] Add availability-window configuration by user and property.
+- [ ] Add Google Calendar integration for event sync.
+- [ ] Add Outlook calendar integration for event sync.
+- [ ] Add reschedule and cancel flows with operator-facing reasons and prospect notifications.
+- [ ] Add team scheduling support for Org workspaces.
+- [ ] Add round-robin scheduling option for shared lead coverage.
+- [ ] Add no-show tracking as a structured tour outcome.
+- [ ] Add reminder-message sequencing tied to scheduled tours.
+
+## Phase 19: screening and verification orchestration
+
+- [ ] Build screening provider connection model with package selection and auth state.
+- [ ] Build screening launch flow from qualified leads.
+- [ ] Add screening status tracker with requested, invite sent, consent completed, in progress, completed, reviewed, and adverse-action recorded states.
+- [ ] Store screening report references and provider timestamps.
+- [ ] Add consent and authorization tracking to the lead timeline.
+- [ ] Add pass-through screening charge model hooks for future billing.
+- [ ] Add operator review workflow for completed screening results.
+- [ ] Add adverse-action workflow tracking without automating the decision itself.
+
+## Phase 20: integrations expansion
+
+- [ ] Build a unified integration connection model with provider type, auth state, mapping config, health state, and sync history.
+- [ ] Expand `/app/settings/integrations` into a real integrations hub with setup wizards and health monitoring.
+- [ ] Add generic inbound webhook ingestion configuration UI.
+- [ ] Add CSV import flow with field mapping and validation preview.
+- [ ] Add CSV export for leads, messages, and activity.
+- [ ] Add Meta Lead Ads ingestion.
+- [ ] Add WhatsApp provider integrations.
+- [ ] Add Instagram messaging integration.
+- [ ] Add Zillow feed or listing sync path.
+- [ ] Add Apartments.com feed or listing sync path.
+- [ ] Add Slack notification integration.
+- [ ] Add outbound automation webhooks for Zapier, Make, and n8n-style consumers.
+- [ ] Add S3-compatible file storage integration for future attachments.
+
+## Phase 21: external portals and public acquisition flows
+
+- [ ] Build `/features` with detailed product capability sections.
+- [ ] Build `/how-it-works` with the lead funnel walkthrough.
+- [ ] Expand `/pricing` to reflect Personal vs Org packaging.
+- [ ] Build branded scheduling page for external prospect self-booking.
+- [ ] Build branded house-rules acknowledgment page.
+- [ ] Build prospect status page with lightweight next-step visibility.
+- [ ] Build waitlist signup page for unavailable inventory.
+- [ ] Build public lead capture form with secure workspace routing.
+- [ ] Build embedded qualification form for use on external sites.
+- [ ] Build public AI-tool landing pages as acquisition funnels.
+- [ ] Build prospect portal shell for invites, appointments, and acknowledgments.
+
+## Phase 22: Org and team collaboration
+
+- [ ] Build multi-user invite and membership-management flows.
+- [ ] Expand role and permission system from current v1 checks into Org-grade management tooling.
+- [ ] Add lead, review-item, and task assignment to specific teammates.
+- [ ] Add shared inbox ownership and triage controls.
+- [ ] Add internal comments on leads and messages distinct from external communications.
+- [ ] Add first-class task model with due dates and assignees.
+- [ ] Add SLA timer model and overdue highlighting for lead response and review.
+- [ ] Build `/app/settings/team` for memberships, roles, and invite status.
+- [ ] Add property-level permission scoping for larger teams.
+- [ ] Build `/app/audit` for sensitive-action history and filters.
+- [ ] Add activity log views by user.
+
+## Phase 23: analytics and reporting expansion
+
+- [ ] Build `/app/analytics` with funnel, source, property, and stale-lead views.
+- [ ] Add inquiry-to-qualified, inquiry-to-tour, and inquiry-to-application funnel charts.
+- [ ] Add source-quality comparison views across listing channels and campaigns.
+- [ ] Add rule-friction analytics showing which rules or questions most often block progression.
+- [ ] Add property-performance comparisons across lead volume, fit rate, and conversion.
+- [ ] Add team-performance metrics for Org workspaces.
+- [ ] Add AI-usage analytics showing suggestion volume and acceptance rate.
+- [ ] Add integration-health analytics for connected systems.
+- [ ] Add saved report filters and time windows.
+
+## Phase 24: billing and monetization
+
+- [ ] Build `/app/settings/billing` once pricing and payment requirements are finalized.
+- [ ] Add subscription record management for Personal and Org plans.
+- [ ] Add seat-based and workspace-based billing primitives.
+- [ ] Add SMS overage metering or cap visibility.
+- [ ] Add screening pass-through billing hooks.
+- [ ] Add invoice and billing-history views for workspace owners.
+- [ ] Add plan-change flow with confirmation and proration rules.
+- [ ] Add premium integration packaging flags for future upsells.
+- [ ] Add premium onboarding/package placeholders without blocking core flows.
+
+## Phase 25: trust, safety, and compliance
+
+- [ ] Add consent evidence storage and review UI for screening and verification steps.
+- [ ] Add admin security controls for revoking sessions and reviewing login activity.
+- [ ] Add manual-review checkpoints for sensitive automated workflows.
+- [ ] Add secure attachment upload model with access controls and audit events.
+- [ ] Add risky integration-state warnings and remediation prompts.
+- [ ] Add operator-visible compliance warnings for opt-out and consent-sensitive actions.
+
+## Phase 26: later-stage nice-to-haves
+
+- [ ] Add voice and call tracking.
+- [ ] Add voicemail transcription.
+- [ ] Add missed-call-to-text fallback.
+- [ ] Add e-sign acknowledgment flow.
+- [ ] Add move-in onboarding pack generation.
+- [ ] Add roommate etiquette pack generation.
+- [ ] Add utility setup referral flows.
+- [ ] Add insurance referral flows.
+- [ ] Add lockbox or showing-tool integrations.
+- [ ] Add resident onboarding workflows after lead-to-move-in handoff is mature.

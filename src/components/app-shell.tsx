@@ -4,12 +4,21 @@ import { LogoutButton } from "@/components/logout-button";
 
 export function AppShell({
   children,
+  activeWorkspaceId,
   userLabel,
+  workspaceOptions,
   workspaceName,
   workspaceSummary,
 }: {
   children: ReactNode;
+  activeWorkspaceId: string;
   userLabel: string;
+  workspaceOptions: Array<{
+    membershipRole: string;
+    workspaceId: string;
+    workspaceName: string;
+    workspaceSlug: string;
+  }>;
   workspaceName: string;
   workspaceSummary: string;
 }) {
@@ -17,6 +26,8 @@ export function AppShell({
     <div className="min-h-screen bg-transparent text-[var(--color-ink)] md:grid md:grid-cols-[280px_1fr]">
       <div className="hidden md:block md:sticky md:top-0 md:h-screen">
         <AppSidebar
+          activeWorkspaceId={activeWorkspaceId}
+          workspaceOptions={workspaceOptions}
           workspaceName={workspaceName}
           workspaceSummary={workspaceSummary}
         />

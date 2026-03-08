@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
-import { getAppShellData, getCurrentWorkspaceState } from "@/lib/app-data";
+import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
+import {
+  getAppShellData,
+  getCurrentWorkspaceState,
+  getWorkspaceSwitcherData,
+} from "@/lib/app-data";
 import { getServerSession } from "@/lib/session";
 
 export default async function OperatorAppLayout({
@@ -17,15 +22,27 @@ export default async function OperatorAppLayout({
 
   const workspaceState = await getCurrentWorkspaceState();
 
+  if (!workspaceState.user.emailVerified) {
+    redirect(
+      buildEmailVerificationPagePath({
+        emailAddress: workspaceState.user.email,
+        nextPath: "/app",
+      }),
+    );
+  }
+
   if (!workspaceState.onboardingComplete) {
     redirect("/onboarding");
   }
 
   const shellData = await getAppShellData();
+  const workspaceSwitcherData = await getWorkspaceSwitcherData();
 
   return (
     <AppShell
+      activeWorkspaceId={workspaceSwitcherData.activeWorkspaceId}
       userLabel={session.user.email}
+      workspaceOptions={workspaceSwitcherData.workspaces}
       workspaceName={shellData.workspaceName}
       workspaceSummary={shellData.workspaceSummary}
     >

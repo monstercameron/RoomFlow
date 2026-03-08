@@ -65,6 +65,20 @@ export default async function SettingsPage() {
             Open integrations
           </Link>
         </div>
+
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-xl font-semibold">Security</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
+            Review active devices, revoke stale sessions, and close the current
+            operator session from one place.
+          </p>
+          <Link
+            className="mt-5 inline-flex rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+            href="/app/settings/security"
+          >
+            Open security
+          </Link>
+        </div>
       </div>
     </main>
   );

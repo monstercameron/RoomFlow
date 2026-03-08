@@ -41,6 +41,18 @@ export default async function LoginPage() {
               Start here
             </Link>
           </div>
+          <div className="mt-2 text-sm text-[var(--color-muted)]">
+            Forgot your password?{" "}
+            <Link className="font-medium text-[var(--color-accent-strong)]" href="/forgot-password">
+              Reset it here
+            </Link>
+          </div>
+          <div className="mt-2 text-sm text-[var(--color-muted)]">
+            Prefer passwordless recovery?{" "}
+            <Link className="font-medium text-[var(--color-accent-strong)]" href="/magic-link">
+              Email a magic link
+            </Link>
+          </div>
         </div>
       </div>
     </main>

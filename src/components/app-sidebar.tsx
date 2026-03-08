@@ -3,11 +3,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { appNav } from "@/lib/navigation";
+import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 
 export function AppSidebar({
+  activeWorkspaceId,
+  workspaceOptions,
   workspaceName,
   workspaceSummary,
 }: {
+  activeWorkspaceId: string;
+  workspaceOptions: Array<{
+    membershipRole: string;
+    workspaceId: string;
+    workspaceName: string;
+    workspaceSlug: string;
+  }>;
   workspaceName: string;
   workspaceSummary: string;
 }) {
@@ -59,6 +69,12 @@ export function AppSidebar({
         <div className="mt-2 text-lg font-semibold">{workspaceName}</div>
         <div className="mt-1 text-sm text-[rgba(248,243,235,0.7)]">
           {workspaceSummary}
+        </div>
+        <div className="mt-4">
+          <WorkspaceSwitcher
+            activeWorkspaceId={activeWorkspaceId}
+            workspaceOptions={workspaceOptions}
+          />
         </div>
       </div>
     </aside>

@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { cookies } from "next/headers";
 import {
   LeadStatus,
   MessageChannel,
@@ -27,11 +28,12 @@ import {
   extractDuplicateCandidateLeadIdFromAuditPayload,
   shouldShowDuplicateReviewPrompt,
 } from "@/lib/lead-duplicate-review";
+import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
 import { getLeadActionPermissionsForMembershipRole } from "@/lib/membership-role-permissions";
 import { prisma } from "@/lib/prisma";
 import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
 import { getServerSession } from "@/lib/session";
-import { ensureWorkspaceForUser } from "@/lib/workspaces";
+import { activeWorkspaceCookieName, ensureWorkspaceForUser } from "@/lib/workspaces";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -223,8 +225,24 @@ function resolveSourceSummaryLabel(leadSourceName: string | null | undefined) {
 type SessionUser = {
   id: string;
   email: string;
+  emailVerified?: boolean | null;
   name?: string | null;
 };
+
+function resolveAuthenticatedRedirectPath(params: {
+  emailAddress: string;
+  emailVerified?: boolean | null;
+  onboardingComplete: boolean;
+}) {
+  if (!params.emailVerified) {
+    return buildEmailVerificationPagePath({
+      emailAddress: params.emailAddress,
+      nextPath: params.onboardingComplete ? "/app" : "/onboarding",
+    });
+  }
+
+  return params.onboardingComplete ? "/app" : "/onboarding";
+}
 
 async function getCurrentUser() {
   const session = await getServerSession();
@@ -251,15 +269,21 @@ export const getCurrentWorkspaceState = cache(async () => {
 export const getAuthenticatedRedirectPath = cache(async () => {
   const workspaceState = await getCurrentWorkspaceState();
 
-  return workspaceState.onboardingComplete ? "/app" : "/onboarding";
+  return resolveAuthenticatedRedirectPath({
+    emailAddress: workspaceState.user.email,
+    emailVerified: workspaceState.user.emailVerified,
+    onboardingComplete: workspaceState.onboardingComplete,
+  });
 });
 
 export const getCurrentWorkspaceMembership = cache(async () => {
   const user = await getCurrentUser();
+  const cookieStore = await cookies();
+  const preferredWorkspaceId = cookieStore.get(activeWorkspaceCookieName)?.value;
 
   await ensureWorkspaceForUser(user);
 
-  return prisma.membership.findFirstOrThrow({
+  const workspaceMemberships = await prisma.membership.findMany({
     where: {
       userId: user.id,
     },
@@ -270,6 +294,44 @@ export const getCurrentWorkspaceMembership = cache(async () => {
       createdAt: "asc",
     },
   });
+
+  const selectedWorkspaceMembership =
+    workspaceMemberships.find(
+      (workspaceMembership) => workspaceMembership.workspaceId === preferredWorkspaceId,
+    ) ?? workspaceMemberships[0];
+
+  if (!selectedWorkspaceMembership) {
+    throw new Error("Authenticated workspace membership is required.");
+  }
+
+  return selectedWorkspaceMembership;
+});
+
+export const getWorkspaceSwitcherData = cache(async () => {
+  const user = await getCurrentUser();
+  const activeWorkspaceMembership = await getCurrentWorkspaceMembership();
+
+  const workspaceMemberships = await prisma.membership.findMany({
+    where: {
+      userId: user.id,
+    },
+    include: {
+      workspace: true,
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  return {
+    activeWorkspaceId: activeWorkspaceMembership.workspaceId,
+    workspaces: workspaceMemberships.map((workspaceMembership) => ({
+      membershipRole: workspaceMembership.role,
+      workspaceId: workspaceMembership.workspaceId,
+      workspaceName: workspaceMembership.workspace.name,
+      workspaceSlug: workspaceMembership.workspace.slug,
+    })),
+  };
 });
 
 export const getAppShellData = cache(async () => {
