@@ -30,6 +30,15 @@ function redirectToSecuritySettings(searchParameters?: Record<string, string>): 
   redirect(`${securitySettingsUrl.pathname}${securitySettingsUrl.search}`);
 }
 
+function redirectToSecuritySettingsWithDependency(
+  redirectDependency: typeof redirect,
+  searchParameters?: Record<string, string>,
+): never {
+  const securitySettingsUrl = buildSecuritySettingsUrl(searchParameters);
+
+  redirectDependency(`${securitySettingsUrl.pathname}${securitySettingsUrl.search}`);
+}
+
 function getActionErrorMessage(error: unknown, fallbackMessage: string) {
   if (
     typeof error === "object" &&
@@ -50,98 +59,194 @@ function getActionErrorMessage(error: unknown, fallbackMessage: string) {
   return fallbackMessage;
 }
 
-export async function linkSocialAccountAction(formData: FormData) {
+export type LinkSocialAccountActionDependencies = {
+  getConfiguredSocialAuthProviderIds: typeof getConfiguredSocialAuthProviderIds;
+  getHeaders: () => Promise<Headers>;
+  isSocialAuthProviderId: typeof isSocialAuthProviderId;
+  linkSocialAccount: (input: {
+    body: {
+      callbackURL: string;
+      disableRedirect: true;
+      provider: string;
+    };
+    headers: Headers;
+  }) => Promise<{ url?: string }>;
+  redirect: typeof redirect;
+};
+
+const defaultLinkSocialAccountActionDependencies: LinkSocialAccountActionDependencies = {
+  getConfiguredSocialAuthProviderIds,
+  getHeaders: async () => (await headers()) as unknown as Headers,
+  isSocialAuthProviderId,
+  linkSocialAccount: (input) =>
+    auth.api.linkSocialAccount(input) as Promise<{
+      url?: string;
+    }>,
+  redirect,
+};
+
+export async function handleLinkSocialAccountAction(
+  formData: FormData,
+  dependencies: LinkSocialAccountActionDependencies = defaultLinkSocialAccountActionDependencies,
+) {
   const providerId = String(formData.get("providerId") ?? "").trim();
 
-  if (!isSocialAuthProviderId(providerId)) {
-    redirectToSecuritySettings({ accountError: "Unsupported account provider." });
+  if (!dependencies.isSocialAuthProviderId(providerId)) {
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+      accountError: "Unsupported account provider.",
+    });
   }
 
-  if (!getConfiguredSocialAuthProviderIds().includes(providerId)) {
-    redirectToSecuritySettings({
+  if (!dependencies.getConfiguredSocialAuthProviderIds().includes(providerId)) {
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
       accountError: `${providerId} sign-in is not configured in this environment yet.`,
     });
   }
 
+  let linkResult: { url?: string };
+
   try {
-    const linkResult = (await auth.api.linkSocialAccount({
+    linkResult = await dependencies.linkSocialAccount({
       body: {
         callbackURL: buildSecuritySettingsUrl({ accountStatus: `${providerId}-linked` }).toString(),
         disableRedirect: true,
         provider: providerId,
       },
-      headers: await headers(),
-    })) as {
-      url?: string;
-    };
-
-    if (!linkResult.url) {
-      redirectToSecuritySettings({
-        accountError: `Unable to start ${providerId} account linking right now.`,
-      });
-    }
-
-    redirect(linkResult.url);
+      headers: await dependencies.getHeaders(),
+    });
   } catch (error) {
-    redirectToSecuritySettings({
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
       accountError: getActionErrorMessage(error, `Unable to start ${providerId} account linking.`),
     });
   }
+
+  if (!linkResult.url) {
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+      accountError: `Unable to start ${providerId} account linking right now.`,
+    });
+  }
+
+  dependencies.redirect(linkResult.url);
 }
 
-export async function unlinkAccountAction(formData: FormData) {
+export async function linkSocialAccountAction(formData: FormData) {
+  return handleLinkSocialAccountAction(formData);
+}
+
+export type UnlinkAccountActionDependencies = {
+  getHeaders: () => Promise<Headers>;
+  redirect: typeof redirect;
+  revalidatePath: typeof revalidatePath;
+  unlinkAccount: (input: {
+    body: {
+      accountId: string;
+      providerId: string;
+    };
+    headers: Headers;
+  }) => Promise<unknown>;
+};
+
+const defaultUnlinkAccountActionDependencies: UnlinkAccountActionDependencies = {
+  getHeaders: async () => (await headers()) as unknown as Headers,
+  redirect,
+  revalidatePath,
+  unlinkAccount: (input) => auth.api.unlinkAccount(input),
+};
+
+export async function handleUnlinkAccountAction(
+  formData: FormData,
+  dependencies: UnlinkAccountActionDependencies = defaultUnlinkAccountActionDependencies,
+) {
   const providerId = String(formData.get("providerId") ?? "").trim();
   const accountId = String(formData.get("accountId") ?? "").trim();
 
   if (!providerId || !accountId) {
-    redirectToSecuritySettings({ accountError: "Missing linked account details." });
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+      accountError: "Missing linked account details.",
+    });
   }
 
   try {
-    await auth.api.unlinkAccount({
+    await dependencies.unlinkAccount({
       body: {
         accountId,
         providerId,
       },
-      headers: await headers(),
+      headers: await dependencies.getHeaders(),
     });
-
-    revalidatePath(securitySettingsPath);
-    redirectToSecuritySettings({ accountStatus: `${providerId}-unlinked` });
   } catch (error) {
-    redirectToSecuritySettings({
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
       accountError: getActionErrorMessage(error, `Unable to unlink ${providerId}.`),
     });
   }
+
+  dependencies.revalidatePath(securitySettingsPath);
+  redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+    accountStatus: `${providerId}-unlinked`,
+  });
 }
 
-export async function setPasswordAction(formData: FormData) {
+export async function unlinkAccountAction(formData: FormData) {
+  return handleUnlinkAccountAction(formData);
+}
+
+export type SetPasswordActionDependencies = {
+  getHeaders: () => Promise<Headers>;
+  redirect: typeof redirect;
+  revalidatePath: typeof revalidatePath;
+  setPassword: (input: {
+    body: {
+      newPassword: string;
+    };
+    headers: Headers;
+  }) => Promise<unknown>;
+};
+
+const defaultSetPasswordActionDependencies: SetPasswordActionDependencies = {
+  getHeaders: async () => (await headers()) as unknown as Headers,
+  redirect,
+  revalidatePath,
+  setPassword: (input) => auth.api.setPassword(input),
+};
+
+export async function handleSetPasswordAction(
+  formData: FormData,
+  dependencies: SetPasswordActionDependencies = defaultSetPasswordActionDependencies,
+) {
   const newPassword = String(formData.get("newPassword") ?? "");
   const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
   if (newPassword.length < 8) {
-    redirectToSecuritySettings({
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
       accountError: "Choose a password with at least 8 characters.",
     });
   }
 
   if (newPassword !== confirmPassword) {
-    redirectToSecuritySettings({ accountError: "Password confirmation does not match." });
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+      accountError: "Password confirmation does not match.",
+    });
   }
 
   try {
-    await auth.api.setPassword({
+    await dependencies.setPassword({
       body: {
         newPassword,
       },
-      headers: await headers(),
+      headers: await dependencies.getHeaders(),
     });
-
-    revalidatePath(securitySettingsPath);
-    redirectToSecuritySettings({ accountStatus: "password-set" });
   } catch (error) {
-    redirectToSecuritySettings({
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
       accountError: getActionErrorMessage(error, "Unable to add a password right now."),
     });
   }
+
+  dependencies.revalidatePath(securitySettingsPath);
+  redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+    accountStatus: "password-set",
+  });
+}
+
+export async function setPasswordAction(formData: FormData) {
+  return handleSetPasswordAction(formData);
 }

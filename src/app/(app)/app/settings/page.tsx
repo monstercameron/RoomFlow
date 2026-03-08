@@ -326,21 +326,21 @@ export default async function SettingsPage(props: {
         </div>
 
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
-          <div className="text-xl font-semibold">Members</div>
+          <div className="text-xl font-semibold">Team</div>
           <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
-            Invite teammates, review pending workspace access, and confirm who can work this queue.
+            Invite teammates, review pending workspace access, update Org roles, and confirm who can work this queue.
           </p>
           <Link
             className="mt-5 inline-flex rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
             href={
               workspaceState.workspace.planType === WorkspacePlanType.PERSONAL
                 ? "/app/settings?upgrade=org-members"
-                : "/app/settings/members"
+                : "/app/settings/team"
             }
           >
             {workspaceState.workspace.planType === WorkspacePlanType.PERSONAL
               ? "View Org upgrade details"
-              : "Open members"}
+              : "Open team"}
           </Link>
         </div>
       </div>

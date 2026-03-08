@@ -1,5 +1,7 @@
 import { createHmac } from "node:crypto";
 import {
+  IntegrationProvider,
+  IntegrationSyncStatus,
   AuditActorType,
   ContactChannel,
   LeadStatus,
@@ -16,6 +18,10 @@ import {
   WebhookDeliveryStatus,
 } from "@/generated/prisma/client";
 import { serializeDeliveryStatus } from "@/lib/delivery-status";
+import {
+  parseOutboundWebhookIntegrationConfig,
+  resolveOutboundWebhookDestinationsForEvent,
+} from "@/lib/integrations";
 import {
   enqueueOutboundMessageSend,
   enqueueOutboundWebhookDelivery,
@@ -58,7 +64,7 @@ import {
   formatMessageChannelLabel,
   isLeadChannelOptedOut,
 } from "@/lib/lead-channel-opt-outs";
-import { sendOwnerAdminNotificationEmail } from "@/lib/notification-delivery";
+import { sendOwnerAdminNotificationEmail, sendSlackNotification } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
 import {
   dedupeNearSimultaneousTimelineEvents,
@@ -174,6 +180,45 @@ export type WorkflowActionName =
   | "schedule_tour"
   | "send_application";
 
+export type AppendNotificationEventDependencies = {
+  createNotificationEvent: (input: {
+    workspaceId: string;
+    leadId: string | null;
+    type: NotificationType;
+    title: string;
+    body: string;
+    payload?: Prisma.InputJsonValue;
+  }) => Promise<unknown>;
+  sendOwnerAdminNotificationEmail: typeof sendOwnerAdminNotificationEmail;
+  sendSlackNotification: typeof sendSlackNotification;
+};
+
+export type QueueOutboundWorkflowWebhookDependencies = {
+  createOutboundWebhookDelivery: (input: {
+    workspaceId: string;
+    leadId: string;
+    eventType: string;
+    destinationUrl: string;
+    signature: string | null;
+    payload: Prisma.InputJsonValue;
+    status: WebhookDeliveryStatus;
+    nextAttemptAt: Date;
+  }) => Promise<{ id: string }>;
+  enqueueOutboundWebhookDelivery: typeof enqueueOutboundWebhookDelivery;
+  findOutboundWebhookIntegrationConnection: (input: {
+    workspaceId: string;
+  }) => Promise<{
+    config: unknown;
+    enabled: boolean;
+  } | null>;
+  findWorkspaceWebhookSecret: (input: { workspaceId: string }) => Promise<string | null>;
+  updateOutboundWebhookIntegrationConnection: (input: {
+    workspaceId: string;
+    lastSyncMessage: string;
+    syncStatus: IntegrationSyncStatus;
+  }) => Promise<unknown>;
+};
+
 const schedulableLeadStatuses = new Set<LeadStatus>([
   LeadStatus.QUALIFIED,
   LeadStatus.TOUR_SCHEDULED,
@@ -183,6 +228,90 @@ const defaultChannelPriorityOrder: MessageChannel[] = [
   MessageChannel.SMS,
   MessageChannel.EMAIL,
 ];
+
+const defaultAppendNotificationEventDependencies: AppendNotificationEventDependencies = {
+  createNotificationEvent: ({ body, leadId, payload, title, type, workspaceId }) =>
+    prisma.notificationEvent.create({
+      data: {
+        workspaceId,
+        leadId,
+        type,
+        title,
+        body,
+        payload,
+      },
+    }),
+  sendOwnerAdminNotificationEmail,
+  sendSlackNotification,
+};
+
+const defaultQueueOutboundWorkflowWebhookDependencies: QueueOutboundWorkflowWebhookDependencies = {
+  createOutboundWebhookDelivery: ({
+    destinationUrl,
+    eventType,
+    leadId,
+    nextAttemptAt,
+    payload,
+    signature,
+    status,
+    workspaceId,
+  }) =>
+    prisma.outboundWebhookDelivery.create({
+      data: {
+        workspaceId,
+        leadId,
+        eventType,
+        destinationUrl,
+        signature,
+        payload,
+        status,
+        nextAttemptAt,
+      },
+      select: {
+        id: true,
+      },
+    }),
+  enqueueOutboundWebhookDelivery,
+  findOutboundWebhookIntegrationConnection: ({ workspaceId }) =>
+    prisma.integrationConnection.findUnique({
+      where: {
+        workspaceId_provider: {
+          workspaceId,
+          provider: IntegrationProvider.OUTBOUND_WEBHOOK,
+        },
+      },
+      select: {
+        config: true,
+        enabled: true,
+      },
+    }),
+  findWorkspaceWebhookSecret: async ({ workspaceId }) => {
+    const workspace = await prisma.workspace.findUnique({
+      where: {
+        id: workspaceId,
+      },
+      select: {
+        webhookSigningSecret: true,
+      },
+    });
+
+    return workspace?.webhookSigningSecret ?? null;
+  },
+  updateOutboundWebhookIntegrationConnection: ({ lastSyncMessage, syncStatus, workspaceId }) =>
+    prisma.integrationConnection.update({
+      where: {
+        workspaceId_provider: {
+          workspaceId,
+          provider: IntegrationProvider.OUTBOUND_WEBHOOK,
+        },
+      },
+      data: {
+        lastSyncAt: new Date(),
+        lastSyncMessage,
+        syncStatus,
+      },
+    }),
+};
 
 function resolveWorkflowErrorCodeForQualificationAutomationBlockingReason(
   qualificationAutomationBlockingReason: QualificationAutomationBlockingReason,
@@ -197,7 +326,7 @@ function resolveWorkflowErrorCodeForQualificationAutomationBlockingReason(
   }
 }
 
-function resolveOutboundMessageChannelForAction(params: {
+export function resolveOutboundMessageChannelForAction(params: {
   action: Exclude<WorkflowActionName, "evaluate_fit">;
   templateChannel: MessageChannel | null | undefined;
   lead: OutboundRoutingLeadContext;
@@ -249,7 +378,7 @@ function resolveOutboundMessageChannelForAction(params: {
     : MessageChannel.EMAIL;
 }
 
-function resolveChannelPriorityOrder(channelPriorityValue: unknown) {
+export function resolveChannelPriorityOrder(channelPriorityValue: unknown) {
   if (!Array.isArray(channelPriorityValue)) {
     return defaultChannelPriorityOrder;
   }
@@ -271,7 +400,7 @@ function resolveChannelPriorityOrder(channelPriorityValue: unknown) {
     : defaultChannelPriorityOrder;
 }
 
-function isLeadActiveForAutomation(leadStatus: LeadStatus) {
+export function isLeadActiveForAutomation(leadStatus: LeadStatus) {
   return (
     leadStatus !== LeadStatus.DECLINED &&
     leadStatus !== LeadStatus.ARCHIVED &&
@@ -279,7 +408,7 @@ function isLeadActiveForAutomation(leadStatus: LeadStatus) {
   );
 }
 
-function isChannelDeliverableForLead(params: {
+export function isChannelDeliverableForLead(params: {
   outboundMessageChannel: MessageChannel;
   lead: OutboundRoutingLeadContext;
 }) {
@@ -297,7 +426,7 @@ function isChannelDeliverableForLead(params: {
   return true;
 }
 
-function isSameUtcDay(leftDate: Date, rightDate: Date) {
+export function isSameUtcDay(leftDate: Date, rightDate: Date) {
   return (
     leftDate.getUTCFullYear() === rightDate.getUTCFullYear() &&
     leftDate.getUTCMonth() === rightDate.getUTCMonth() &&
@@ -305,11 +434,11 @@ function isSameUtcDay(leftDate: Date, rightDate: Date) {
   );
 }
 
-function normalizeText(value: string | null | undefined) {
+export function normalizeText(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? "";
 }
 
-function stringifyAnswerValue(value: unknown): string {
+export function stringifyAnswerValue(value: unknown): string {
   if (typeof value === "string") {
     return value;
   }
@@ -333,7 +462,7 @@ function stringifyAnswerValue(value: unknown): string {
   return "";
 }
 
-function formatDisplayDate(value: Date | null) {
+export function formatDisplayDate(value: Date | null) {
   if (!value) {
     return "not set";
   }
@@ -345,7 +474,7 @@ function formatDisplayDate(value: Date | null) {
   }).format(value);
 }
 
-function formatDisplayCurrency(value: number | null) {
+export function formatDisplayCurrency(value: number | null) {
   if (value === null) {
     return "not set";
   }
@@ -437,7 +566,7 @@ function resolveMissingRequiredQuestionsForLead(lead: QualificationLeadContext) 
 }
 
 export async function getLeadWorkflowContext(workspaceId: string, leadId: string) {
-  return prisma.lead.findFirst({
+  const lead = await prisma.lead.findFirst({
     where: {
       id: leadId,
       workspaceId,
@@ -544,36 +673,50 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
           },
         ],
       },
-      screeningRequests: {
-        include: {
-          screeningProviderConnection: true,
-          statusEvents: {
-            orderBy: {
-              createdAt: "asc",
-            },
-          },
-          consentRecords: {
-            orderBy: {
-              createdAt: "asc",
-            },
-          },
-          attachmentReferences: {
-            orderBy: {
-              createdAt: "asc",
-            },
-          },
-        },
-        orderBy: [
-          {
-            requestedAt: "desc",
-          },
-          {
-            createdAt: "desc",
-          },
-        ],
-      },
     },
   });
+
+  if (!lead) {
+    return null;
+  }
+
+  const screeningRequests = await prisma.screeningRequest.findMany({
+    where: {
+      leadId: lead.id,
+      workspaceId,
+    },
+    include: {
+      screeningProviderConnection: true,
+      statusEvents: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+      consentRecords: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+      attachmentReferences: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+    },
+    orderBy: [
+      {
+        requestedAt: "desc",
+      },
+      {
+        createdAt: "desc",
+      },
+    ],
+  });
+
+  return {
+    ...lead,
+    screeningRequests,
+  };
 }
 
 export function evaluateLeadQualification(lead: QualificationLeadContext): EvaluationResult {
@@ -888,6 +1031,38 @@ async function appendAuditEvent(params: {
   });
 }
 
+export async function handleAppendNotificationEvent(params: {
+  workspaceId: string;
+  leadId: string | null;
+  type: NotificationType;
+  title: string;
+  body: string;
+  payload?: Prisma.InputJsonValue;
+}, dependencies: AppendNotificationEventDependencies = defaultAppendNotificationEventDependencies) {
+  await dependencies.createNotificationEvent(params);
+
+  try {
+    await dependencies.sendOwnerAdminNotificationEmail({
+      workspaceId: params.workspaceId,
+      subject: `[Roomflow] ${params.title}`,
+      body: params.body,
+    });
+  } catch {
+    // Email notifications are best-effort and should not block workflow actions.
+  }
+
+  try {
+    await dependencies.sendSlackNotification({
+      workspaceId: params.workspaceId,
+      type: params.type,
+      title: params.title,
+      body: params.body,
+    });
+  } catch {
+    // Slack notifications are best-effort and should not block workflow actions.
+  }
+}
+
 export async function appendNotificationEvent(params: {
   workspaceId: string;
   leadId: string | null;
@@ -896,48 +1071,49 @@ export async function appendNotificationEvent(params: {
   body: string;
   payload?: Prisma.InputJsonValue;
 }) {
-  await prisma.notificationEvent.create({
-    data: {
-      workspaceId: params.workspaceId,
-      leadId: params.leadId,
-      type: params.type,
-      title: params.title,
-      body: params.body,
-      payload: params.payload,
-    },
-  });
-
-  try {
-    await sendOwnerAdminNotificationEmail({
-      workspaceId: params.workspaceId,
-      subject: `[Roomflow] ${params.title}`,
-      body: params.body,
-    });
-  } catch {
-    // Email notifications are best-effort and should not block workflow actions.
-  }
+  return handleAppendNotificationEvent(params);
 }
 
-export async function queueOutboundWorkflowWebhook(params: {
+export async function handleQueueOutboundWorkflowWebhook(params: {
   workspaceId: string;
   leadId: string;
   eventType: string;
   payload: Prisma.InputJsonValue;
-  signingSecret: string | null | undefined;
-}) {
-  const destinationUrl = process.env.ROOMFLOW_OUTBOUND_WEBHOOK_URL;
+  signingSecret?: string | null;
+}, dependencies: QueueOutboundWorkflowWebhookDependencies = defaultQueueOutboundWorkflowWebhookDependencies) {
+  const [workspaceWebhookSigningSecret, outboundWebhookIntegrationConnection] = await Promise.all([
+    dependencies.findWorkspaceWebhookSecret({ workspaceId: params.workspaceId }),
+    dependencies.findOutboundWebhookIntegrationConnection({ workspaceId: params.workspaceId }),
+  ]);
+  const outboundWebhookConfig = parseOutboundWebhookIntegrationConfig(
+    outboundWebhookIntegrationConnection?.config,
+  );
+  const configuredDestinations =
+    outboundWebhookIntegrationConnection?.enabled
+      ? resolveOutboundWebhookDestinationsForEvent({
+          config: outboundWebhookConfig,
+          eventType: params.eventType,
+        }).map((destination) => destination.url)
+      : [];
+  const destinationUrls =
+    configuredDestinations.length > 0
+      ? configuredDestinations
+      : process.env.ROOMFLOW_OUTBOUND_WEBHOOK_URL
+        ? [process.env.ROOMFLOW_OUTBOUND_WEBHOOK_URL]
+        : [];
 
-  if (!destinationUrl) {
+  if (destinationUrls.length === 0) {
     return;
   }
 
   const payloadString = JSON.stringify(params.payload);
-  const signature = params.signingSecret
-    ? createHmac("sha256", params.signingSecret).update(payloadString).digest("hex")
+  const signingSecret = params.signingSecret ?? workspaceWebhookSigningSecret ?? null;
+  const signature = signingSecret
+    ? createHmac("sha256", signingSecret).update(payloadString).digest("hex")
     : null;
 
-  await prisma.outboundWebhookDelivery.create({
-    data: {
+  for (const destinationUrl of destinationUrls) {
+    await dependencies.createOutboundWebhookDelivery({
       workspaceId: params.workspaceId,
       leadId: params.leadId,
       eventType: params.eventType,
@@ -946,19 +1122,36 @@ export async function queueOutboundWorkflowWebhook(params: {
       payload: params.payload,
       status: WebhookDeliveryStatus.PENDING,
       nextAttemptAt: new Date(),
-    },
-    select: {
-      id: true,
-    },
-  }).then(async (createdWebhookDelivery) => {
-    try {
-      await enqueueOutboundWebhookDelivery({
-        outboundWebhookDeliveryId: createdWebhookDelivery.id,
-      });
-    } catch {
-      // Worker enqueue is best effort; the row is still persisted for retry jobs.
-    }
-  });
+    }).then(async (createdWebhookDelivery) => {
+      try {
+        await dependencies.enqueueOutboundWebhookDelivery({
+          outboundWebhookDeliveryId: createdWebhookDelivery.id,
+        });
+      } catch {
+        // Worker enqueue is best effort; the row is still persisted for retry jobs.
+      }
+    });
+  }
+
+  try {
+    await dependencies.updateOutboundWebhookIntegrationConnection({
+      workspaceId: params.workspaceId,
+      lastSyncMessage: `${destinationUrls.length} outbound webhook deliver${destinationUrls.length === 1 ? "y" : "ies"} queued for ${params.eventType}.`,
+      syncStatus: IntegrationSyncStatus.PENDING,
+    });
+  } catch {
+    // The queue should still work even if the integration row has not been configured yet.
+  }
+}
+
+export async function queueOutboundWorkflowWebhook(params: {
+  workspaceId: string;
+  leadId: string;
+  eventType: string;
+  payload: Prisma.InputJsonValue;
+  signingSecret?: string | null;
+}) {
+  return handleQueueOutboundWorkflowWebhook(params);
 }
 
 async function transitionLeadStatus(params: {

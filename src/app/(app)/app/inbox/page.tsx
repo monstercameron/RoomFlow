@@ -18,6 +18,7 @@ import {
   sendManualOutboundMessageAction,
   sendApplicationAction,
 } from "@/lib/lead-actions";
+import { assignLeadOwnerAction } from "@/lib/collaboration-actions";
 
 type InboxPageProps = {
   searchParams: Promise<{
@@ -53,7 +54,10 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
       <div className="mb-5 flex flex-wrap gap-2 text-sm">
         {[
           { key: "all", label: "All threads" },
+          { key: "mine", label: "My queue" },
+          { key: "unassigned", label: "Unassigned" },
           { key: "review", label: "Review queue" },
+          { key: "overdue", label: "Overdue" },
           { key: "duplicate", label: "Duplicate" },
           { key: "caution", label: "Caution" },
           { key: "mismatch", label: "Mismatch" },
@@ -97,6 +101,16 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                 </div>
                 <div className="mt-2 text-sm text-[var(--color-muted)]">
                   {thread.source} | {thread.property} | {thread.lastActivity}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
+                  <span className="rounded-full border border-[var(--color-line)] px-2 py-1">
+                    Owner: {thread.assignedTo}
+                  </span>
+                  {thread.slaSummary ? (
+                    <span className={`rounded-full border px-2 py-1 ${thread.slaSummary.isOverdue ? "border-[rgba(184,88,51,0.28)] text-[var(--color-accent-strong)]" : "border-[var(--color-line)]"}`}>
+                      {thread.slaSummary.label} · {thread.slaSummary.dueAt}
+                    </span>
+                  ) : null}
                 </div>
                 {thread.isReviewQueueItem ? (
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
@@ -327,6 +341,33 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                     type="submit"
                   >
                     Decline
+                  </button>
+                </form>
+
+                <form
+                  action={assignLeadOwnerAction.bind(null, thread.id)}
+                  className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+                >
+                  <div className="text-sm font-medium">Lead owner</div>
+                  <select
+                    className="mt-3 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={thread.assignedMembershipId ?? "unassigned"}
+                    disabled={!thread.canAssignOwner}
+                    name="assignedMembershipId"
+                  >
+                    {thread.assignmentOptions.map((assignmentOption) => (
+                      <option key={`${thread.id}-${assignmentOption.value}`} value={assignmentOption.value}>
+                        {assignmentOption.label} | {assignmentOption.summary}
+                      </option>
+                    ))}
+                  </select>
+                  <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
+                  <button
+                    className="mt-3 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!thread.canAssignOwner}
+                    type="submit"
+                  >
+                    Save owner
                   </button>
                 </form>
 

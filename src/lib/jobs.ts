@@ -53,7 +53,7 @@ type OutboundWebhookDeliveryJob = {
   outboundWebhookDeliveryId: string;
 };
 
-function getBossConnectionString() {
+export function getBossConnectionString() {
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
@@ -62,6 +62,32 @@ function getBossConnectionString() {
 
   return connectionString;
 }
+
+type JobProcessingDependencies = {
+  isProviderConfigurationError: typeof isProviderConfigurationError;
+  markMessageDeliveryFailure: typeof markMessageDeliveryFailure;
+  markMessageProviderUnresolved: typeof markMessageProviderUnresolved;
+  processNormalizedInboundLead: typeof processNormalizedInboundLead;
+  sendQueuedMessage: typeof sendQueuedMessage;
+};
+
+const defaultJobProcessingDependencies: JobProcessingDependencies = {
+  isProviderConfigurationError,
+  markMessageDeliveryFailure,
+  markMessageProviderUnresolved,
+  processNormalizedInboundLead,
+  sendQueuedMessage,
+};
+
+type RegisteredBoss = Pick<PgBoss, "work" | "stop">;
+
+export type RegisterWorkerHandlersDependencies = {
+  getBoss: () => Promise<RegisteredBoss>;
+};
+
+const defaultRegisterWorkerHandlersDependencies: RegisterWorkerHandlersDependencies = {
+  getBoss,
+};
 
 async function createBoss() {
   const boss = new PgBoss({
@@ -138,31 +164,35 @@ export async function enqueueOutboundWebhookDelivery(
   return enqueueJob(jobNames.outboundWebhookDelivery, payload, options);
 }
 
-async function processWebhookJob(jobs: JobWithMetadata<NormalizedLeadPayload>[]) {
+export async function processWebhookJob(
+  jobs: JobWithMetadata<NormalizedLeadPayload>[],
+  dependencies: JobProcessingDependencies = defaultJobProcessingDependencies,
+) {
   for (const job of jobs) {
-    await processNormalizedInboundLead(job.data);
+    await dependencies.processNormalizedInboundLead(job.data);
   }
 }
 
-async function processOutboundMessageJobs(
+export async function processOutboundMessageJobs(
   jobs: JobWithMetadata<OutboundMessageJob>[],
+  dependencies: JobProcessingDependencies = defaultJobProcessingDependencies,
 ) {
   for (const job of jobs) {
     try {
-      await sendQueuedMessage(job.data.messageId, job.retryCount);
+      await dependencies.sendQueuedMessage(job.data.messageId, job.retryCount);
     } catch (error) {
       const deliveryErrorMessage =
         error instanceof Error ? error.message : "Unknown delivery error";
 
-      if (isProviderConfigurationError(deliveryErrorMessage)) {
-        await markMessageProviderUnresolved({
+      if (dependencies.isProviderConfigurationError(deliveryErrorMessage)) {
+        await dependencies.markMessageProviderUnresolved({
           messageId: job.data.messageId,
           error: deliveryErrorMessage,
         });
         continue;
       }
 
-      await markMessageDeliveryFailure({
+      await dependencies.markMessageDeliveryFailure({
         messageId: job.data.messageId,
         retryCount: job.retryCount,
         error: deliveryErrorMessage,
@@ -667,8 +697,10 @@ async function processDelayedFollowUpJobs(
   }
 }
 
-export async function registerWorkerHandlers() {
-  const boss = await getBoss();
+export async function registerWorkerHandlers(
+  dependencies: RegisterWorkerHandlersDependencies = defaultRegisterWorkerHandlersDependencies,
+) {
+  const boss = await dependencies.getBoss();
 
   await boss.work(
     jobNames.webhookProcessing,

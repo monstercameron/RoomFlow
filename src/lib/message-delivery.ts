@@ -1,7 +1,8 @@
 import { Resend } from "resend";
 import twilio from "twilio";
-import { MessageChannel } from "@/generated/prisma/client";
+import { IntegrationProvider, MessageChannel } from "@/generated/prisma/client";
 import { serializeDeliveryStatus } from "@/lib/delivery-status";
+import { parseMessagingChannelIntegrationConfig } from "@/lib/integrations";
 import { prisma } from "@/lib/prisma";
 
 function getResendClient() {
@@ -37,6 +38,10 @@ export function isProviderConfigurationError(deliveryErrorMessage: string) {
     normalizedDeliveryErrorMessage.includes("not configured") ||
     normalizedDeliveryErrorMessage.includes("replace-me")
   );
+}
+
+function normalizeWhatsAppAddress(value: string) {
+  return value.startsWith("whatsapp:") ? value : `whatsapp:${value}`;
 }
 
 export async function sendQueuedMessage(messageId: string, retryCount = 0) {
@@ -154,7 +159,52 @@ export async function sendQueuedMessage(messageId: string, retryCount = 0) {
       throw new Error("Lead is missing a phone number.");
     }
 
-    throw new Error("WhatsApp delivery is not configured.");
+    const integrationConnection = await prisma.integrationConnection.findUnique({
+      where: {
+        workspaceId_provider: {
+          workspaceId: lead.workspaceId,
+          provider: IntegrationProvider.WHATSAPP,
+        },
+      },
+      select: {
+        config: true,
+        enabled: true,
+      },
+    });
+
+    if (!integrationConnection?.enabled) {
+      throw new Error("WhatsApp delivery is not configured.");
+    }
+
+    const messagingConfig = parseMessagingChannelIntegrationConfig(integrationConnection.config);
+
+    if (!messagingConfig.allowOutboundSend || !messagingConfig.senderIdentifier) {
+      throw new Error("WhatsApp delivery sender is not configured.");
+    }
+
+    const client = getTwilioClient();
+
+    await client.messages.create({
+      from: normalizeWhatsAppAddress(messagingConfig.senderIdentifier),
+      to: normalizeWhatsAppAddress(recipientPhone),
+      body: message.body,
+    });
+
+    await prisma.message.update({
+      where: {
+        id: message.id,
+      },
+      data: {
+        sentAt: new Date(),
+        deliveryStatus: serializeDeliveryStatus({
+          state: "sent",
+          provider: "twilio-whatsapp",
+          retryCount,
+        }),
+      },
+    });
+
+    return;
   }
 
   if (message.channel === MessageChannel.INSTAGRAM) {

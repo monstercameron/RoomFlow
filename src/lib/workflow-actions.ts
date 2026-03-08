@@ -52,6 +52,228 @@ async function getWorkflowActionContext() {
   return membership;
 }
 
+type WorkflowActionContext = {
+  workspaceId: string;
+  workspace: {
+    enabledCapabilities: WorkspaceCapability[];
+  };
+};
+
+export type CreateWorkflowActionDependencies = {
+  createWorkflowDefinitionWithGraph: typeof createWorkflowDefinitionWithGraph;
+  getWorkflowActionContext: () => Promise<WorkflowActionContext>;
+  redirect: typeof redirect;
+  revalidateWorkflowPaths: (workflowId?: string) => void;
+  workspaceHasCapability: typeof workspaceHasCapability;
+};
+
+const defaultCreateWorkflowActionDependencies: CreateWorkflowActionDependencies = {
+  createWorkflowDefinitionWithGraph,
+  getWorkflowActionContext,
+  redirect,
+  revalidateWorkflowPaths,
+  workspaceHasCapability,
+};
+
+export type PublishWorkflowVersionActionDependencies = {
+  getWorkflowActionContext: () => Promise<WorkflowActionContext>;
+  publishWorkflowVersion: (input: { workflowId: string; versionId: string }) => Promise<void>;
+  redirect: typeof redirect;
+  revalidateWorkflowPaths: (workflowId?: string) => void;
+};
+
+export type UpdateWorkflowStatusActionDependencies = {
+  getWorkflowActionContext: () => Promise<WorkflowActionContext>;
+  redirect: typeof redirect;
+  revalidateWorkflowPaths: (workflowId?: string) => void;
+  updateWorkflowStatus: (input: { workflowId: string; status: WorkflowStatus }) => Promise<unknown>;
+};
+
+export type UpdateWorkflowSharingActionDependencies = {
+  getWorkflowActionContext: () => Promise<WorkflowActionContext>;
+  redirect: typeof redirect;
+  revalidateWorkflowPaths: (workflowId?: string) => void;
+  updateWorkflowSharing: (input: {
+    workflowId: string;
+    sharingVisibility: WorkflowSharingVisibility;
+  }) => Promise<unknown>;
+  workspaceHasCapability: typeof workspaceHasCapability;
+};
+
+export type CreateWorkflowVersionActionDependencies = {
+  cloneWorkflowVersion: (input: {
+    workflowId: string;
+    sourceVersionId: string;
+  }) => Promise<{ id: string }>;
+  getWorkflowActionContext: () => Promise<WorkflowActionContext>;
+  redirect: typeof redirect;
+  revalidateWorkflowPaths: (workflowId?: string) => void;
+};
+
+export type AddWorkflowNodeActionDependencies = {
+  countWorkflowNodes: (input: { workflowVersionId: string }) => Promise<number>;
+  createWorkflowNode: (input: {
+    actionType: WorkflowActionType | null;
+    approvalRequired: boolean;
+    conditionType: WorkflowConditionType | null;
+    config: Record<string, unknown> | null;
+    name: string;
+    nodeType: WorkflowNodeType;
+    orderIndex: number;
+    positionX: number;
+    positionY: number;
+    triggerType: WorkflowTriggerType | null;
+    workflowVersionId: string;
+  }) => Promise<unknown>;
+  doesWorkflowNodeRequireApproval: typeof doesWorkflowNodeRequireApproval;
+  getWorkflowActionContext: () => Promise<WorkflowActionContext>;
+  redirect: typeof redirect;
+  revalidateWorkflowPaths: (workflowId?: string) => void;
+};
+
+export type AddWorkflowEdgeActionDependencies = {
+  countWorkflowEdges: (input: { workflowVersionId: string }) => Promise<number>;
+  createWorkflowEdge: (input: {
+    branchKey: string | null;
+    label: string | null;
+    orderIndex: number;
+    sourceNodeId: string;
+    targetNodeId: string;
+    workflowVersionId: string;
+  }) => Promise<unknown>;
+  getWorkflowActionContext: () => Promise<WorkflowActionContext>;
+  redirect: typeof redirect;
+  revalidateWorkflowPaths: (workflowId?: string) => void;
+};
+
+const defaultPublishWorkflowVersionActionDependencies: PublishWorkflowVersionActionDependencies = {
+  getWorkflowActionContext,
+  publishWorkflowVersion: async ({ workflowId, versionId }) => {
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.workflowVersion.updateMany({
+        where: {
+          workflowId,
+          status: WorkflowVersionStatus.PUBLISHED,
+        },
+        data: {
+          status: WorkflowVersionStatus.SUPERSEDED,
+        },
+      });
+
+      await transactionClient.workflowVersion.update({
+        where: {
+          id: versionId,
+        },
+        data: {
+          publishedAt: new Date(),
+          status: WorkflowVersionStatus.PUBLISHED,
+        },
+      });
+
+      await transactionClient.workflowDefinition.update({
+        where: {
+          id: workflowId,
+        },
+        data: {
+          status: WorkflowStatus.ACTIVE,
+        },
+      });
+    });
+  },
+  redirect,
+  revalidateWorkflowPaths,
+};
+
+const defaultUpdateWorkflowStatusActionDependencies: UpdateWorkflowStatusActionDependencies = {
+  getWorkflowActionContext,
+  redirect,
+  revalidateWorkflowPaths,
+  updateWorkflowStatus: ({ workflowId, status }) =>
+    prisma.workflowDefinition.update({
+      where: {
+        id: workflowId,
+      },
+      data: {
+        status,
+      },
+    }),
+};
+
+const defaultUpdateWorkflowSharingActionDependencies: UpdateWorkflowSharingActionDependencies = {
+  getWorkflowActionContext,
+  redirect,
+  revalidateWorkflowPaths,
+  updateWorkflowSharing: ({ workflowId, sharingVisibility }) =>
+    prisma.workflowDefinition.update({
+      where: {
+        id: workflowId,
+      },
+      data: {
+        sharingVisibility,
+      },
+    }),
+  workspaceHasCapability,
+};
+
+const defaultCreateWorkflowVersionActionDependencies: CreateWorkflowVersionActionDependencies = {
+  cloneWorkflowVersion,
+  getWorkflowActionContext,
+  redirect,
+  revalidateWorkflowPaths,
+};
+
+const defaultAddWorkflowNodeActionDependencies: AddWorkflowNodeActionDependencies = {
+  countWorkflowNodes: ({ workflowVersionId }) =>
+    prisma.workflowNode.count({
+      where: {
+        workflowVersionId,
+      },
+    }),
+  createWorkflowNode: (input) =>
+    prisma.workflowNode.create({
+      data: {
+        actionType: input.actionType,
+        approvalRequired: input.approvalRequired,
+        conditionType: input.conditionType,
+        config: (input.config ?? null) as never,
+        name: input.name,
+        nodeType: input.nodeType,
+        orderIndex: input.orderIndex,
+        positionX: input.positionX,
+        positionY: input.positionY,
+        triggerType: input.triggerType,
+        workflowVersionId: input.workflowVersionId,
+      },
+    }),
+  doesWorkflowNodeRequireApproval,
+  getWorkflowActionContext,
+  redirect,
+  revalidateWorkflowPaths,
+};
+
+const defaultAddWorkflowEdgeActionDependencies: AddWorkflowEdgeActionDependencies = {
+  countWorkflowEdges: ({ workflowVersionId }) =>
+    prisma.workflowEdge.count({
+      where: {
+        workflowVersionId,
+      },
+    }),
+  createWorkflowEdge: (input) =>
+    prisma.workflowEdge.create({
+      data: {
+        branchKey: input.branchKey,
+        label: input.label,
+        orderIndex: input.orderIndex,
+        sourceNodeId: input.sourceNodeId,
+        targetNodeId: input.targetNodeId,
+        workflowVersionId: input.workflowVersionId,
+      },
+    }),
+  getWorkflowActionContext,
+  redirect,
+  revalidateWorkflowPaths,
+};
+
 function parseWorkflowScope(value: FormDataEntryValue | null) {
   if (value === WorkflowScope.WORKSPACE) {
     return WorkflowScope.WORKSPACE;
@@ -356,8 +578,11 @@ async function cloneWorkflowVersion(params: {
   });
 }
 
-export async function createWorkflowAction(formData: FormData) {
-  const membership = await getWorkflowActionContext();
+export async function handleCreateWorkflowAction(
+  formData: FormData,
+  dependencies: CreateWorkflowActionDependencies = defaultCreateWorkflowActionDependencies,
+) {
+  const membership = await dependencies.getWorkflowActionContext();
   const redirectPath = getRedirectPath(formData, "/app/workflows");
   const nameValue = formData.get("name");
   const descriptionValue = formData.get("description");
@@ -375,7 +600,7 @@ export async function createWorkflowAction(formData: FormData) {
 
   if (
     sharingVisibility === WorkflowSharingVisibility.ORG_LIBRARY &&
-    !workspaceHasCapability(
+    !dependencies.workspaceHasCapability(
       membership.workspace.enabledCapabilities,
       WorkspaceCapability.ORG_MEMBERS,
     )
@@ -383,7 +608,7 @@ export async function createWorkflowAction(formData: FormData) {
     throw new Error("Org library sharing requires an Org workspace.");
   }
 
-  const workflowDefinition = await createWorkflowDefinitionWithGraph({
+  const workflowDefinition = await dependencies.createWorkflowDefinitionWithGraph({
     description: typeof descriptionValue === "string" ? descriptionValue.trim() : null,
     graph: {
       edges: [],
@@ -405,8 +630,14 @@ export async function createWorkflowAction(formData: FormData) {
     workspaceId: membership.workspaceId,
   });
 
-  revalidateWorkflowPaths(workflowDefinition.id);
-  redirect(redirectPath === "/app/workflows" ? `/app/workflows/${workflowDefinition.id}` : redirectPath);
+  dependencies.revalidateWorkflowPaths(workflowDefinition.id);
+  dependencies.redirect(
+    redirectPath === "/app/workflows" ? `/app/workflows/${workflowDefinition.id}` : redirectPath,
+  );
+}
+
+export async function createWorkflowAction(formData: FormData) {
+  return handleCreateWorkflowAction(formData);
 }
 
 export async function createStarterWorkflowAction(formData: FormData) {
@@ -442,8 +673,12 @@ export async function createStarterWorkflowAction(formData: FormData) {
   redirect(redirectPath === "/app/workflows" ? `/app/workflows/${workflowDefinition.id}` : redirectPath);
 }
 
-export async function updateWorkflowStatusAction(workflowId: string, formData: FormData) {
-  await getWorkflowActionContext();
+export async function handleUpdateWorkflowStatusAction(
+  workflowId: string,
+  formData: FormData,
+  dependencies: UpdateWorkflowStatusActionDependencies = defaultUpdateWorkflowStatusActionDependencies,
+) {
+  await dependencies.getWorkflowActionContext();
   const redirectPath = getRedirectPath(formData, `/app/workflows/${workflowId}`);
   const status = parseWorkflowStatus(formData.get("status"));
 
@@ -451,21 +686,25 @@ export async function updateWorkflowStatusAction(workflowId: string, formData: F
     throw new Error("Workflow status is required.");
   }
 
-  await prisma.workflowDefinition.update({
-    where: {
-      id: workflowId,
-    },
-    data: {
-      status,
-    },
+  await dependencies.updateWorkflowStatus({
+    workflowId,
+    status,
   });
 
-  revalidateWorkflowPaths(workflowId);
-  redirect(redirectPath);
+  dependencies.revalidateWorkflowPaths(workflowId);
+  dependencies.redirect(redirectPath);
 }
 
-export async function updateWorkflowSharingAction(workflowId: string, formData: FormData) {
-  const membership = await getWorkflowActionContext();
+export async function updateWorkflowStatusAction(workflowId: string, formData: FormData) {
+  return handleUpdateWorkflowStatusAction(workflowId, formData);
+}
+
+export async function handleUpdateWorkflowSharingAction(
+  workflowId: string,
+  formData: FormData,
+  dependencies: UpdateWorkflowSharingActionDependencies = defaultUpdateWorkflowSharingActionDependencies,
+) {
+  const membership = await dependencies.getWorkflowActionContext();
   const redirectPath = getRedirectPath(formData, `/app/workflows/${workflowId}`);
   const sharingVisibility = parseWorkflowSharingVisibility(formData.get("sharingVisibility"));
 
@@ -475,7 +714,7 @@ export async function updateWorkflowSharingAction(workflowId: string, formData: 
 
   if (
     sharingVisibility === WorkflowSharingVisibility.ORG_LIBRARY &&
-    !workspaceHasCapability(
+    !dependencies.workspaceHasCapability(
       membership.workspace.enabledCapabilities,
       WorkspaceCapability.ORG_MEMBERS,
     )
@@ -483,21 +722,25 @@ export async function updateWorkflowSharingAction(workflowId: string, formData: 
     throw new Error("Org library sharing requires an Org workspace.");
   }
 
-  await prisma.workflowDefinition.update({
-    where: {
-      id: workflowId,
-    },
-    data: {
-      sharingVisibility,
-    },
+  await dependencies.updateWorkflowSharing({
+    workflowId,
+    sharingVisibility,
   });
 
-  revalidateWorkflowPaths(workflowId);
-  redirect(redirectPath);
+  dependencies.revalidateWorkflowPaths(workflowId);
+  dependencies.redirect(redirectPath);
 }
 
-export async function createWorkflowVersionAction(workflowId: string, formData: FormData) {
-  await getWorkflowActionContext();
+export async function updateWorkflowSharingAction(workflowId: string, formData: FormData) {
+  return handleUpdateWorkflowSharingAction(workflowId, formData);
+}
+
+export async function handleCreateWorkflowVersionAction(
+  workflowId: string,
+  formData: FormData,
+  dependencies: CreateWorkflowVersionActionDependencies = defaultCreateWorkflowVersionActionDependencies,
+) {
+  await dependencies.getWorkflowActionContext();
   const redirectPath = getRedirectPath(formData, `/app/workflows/${workflowId}`);
   const sourceVersionIdValue = formData.get("sourceVersionId");
 
@@ -505,17 +748,25 @@ export async function createWorkflowVersionAction(workflowId: string, formData: 
     throw new Error("A source version is required to create a new draft version.");
   }
 
-  const newVersion = await cloneWorkflowVersion({
+  const newVersion = await dependencies.cloneWorkflowVersion({
     sourceVersionId: sourceVersionIdValue,
     workflowId,
   });
 
-  revalidateWorkflowPaths(workflowId);
-  redirect(`${redirectPath.split("?")[0]}?versionId=${newVersion.id}`);
+  dependencies.revalidateWorkflowPaths(workflowId);
+  dependencies.redirect(`${redirectPath.split("?")[0]}?versionId=${newVersion.id}`);
 }
 
-export async function publishWorkflowVersionAction(workflowId: string, formData: FormData) {
-  await getWorkflowActionContext();
+export async function createWorkflowVersionAction(workflowId: string, formData: FormData) {
+  return handleCreateWorkflowVersionAction(workflowId, formData);
+}
+
+export async function handlePublishWorkflowVersionAction(
+  workflowId: string,
+  formData: FormData,
+  dependencies: PublishWorkflowVersionActionDependencies = defaultPublishWorkflowVersionActionDependencies,
+) {
+  await dependencies.getWorkflowActionContext();
   const redirectPath = getRedirectPath(formData, `/app/workflows/${workflowId}`);
   const versionIdValue = formData.get("versionId");
 
@@ -523,43 +774,22 @@ export async function publishWorkflowVersionAction(workflowId: string, formData:
     throw new Error("A workflow version is required to publish.");
   }
 
-  await prisma.$transaction(async (transactionClient) => {
-    await transactionClient.workflowVersion.updateMany({
-      where: {
-        workflowId,
-        status: WorkflowVersionStatus.PUBLISHED,
-      },
-      data: {
-        status: WorkflowVersionStatus.SUPERSEDED,
-      },
-    });
+  await dependencies.publishWorkflowVersion({ workflowId, versionId: versionIdValue });
 
-    await transactionClient.workflowVersion.update({
-      where: {
-        id: versionIdValue,
-      },
-      data: {
-        publishedAt: new Date(),
-        status: WorkflowVersionStatus.PUBLISHED,
-      },
-    });
-
-    await transactionClient.workflowDefinition.update({
-      where: {
-        id: workflowId,
-      },
-      data: {
-        status: WorkflowStatus.ACTIVE,
-      },
-    });
-  });
-
-  revalidateWorkflowPaths(workflowId);
-  redirect(redirectPath);
+  dependencies.revalidateWorkflowPaths(workflowId);
+  dependencies.redirect(redirectPath);
 }
 
-export async function addWorkflowNodeAction(workflowId: string, formData: FormData) {
-  await getWorkflowActionContext();
+export async function publishWorkflowVersionAction(workflowId: string, formData: FormData) {
+  return handlePublishWorkflowVersionAction(workflowId, formData);
+}
+
+export async function handleAddWorkflowNodeAction(
+  workflowId: string,
+  formData: FormData,
+  dependencies: AddWorkflowNodeActionDependencies = defaultAddWorkflowNodeActionDependencies,
+) {
+  await dependencies.getWorkflowActionContext();
   const redirectPath = getRedirectPath(formData, `/app/workflows/${workflowId}`);
   const workflowVersionIdValue = formData.get("workflowVersionId");
   const nameValue = formData.get("name");
@@ -573,41 +803,45 @@ export async function addWorkflowNodeAction(workflowId: string, formData: FormDa
     throw new Error("Workflow version, node type, and node name are required.");
   }
 
-  const existingNodeCount = await prisma.workflowNode.count({
-    where: {
-      workflowVersionId: workflowVersionIdValue,
-    },
+  const existingNodeCount = await dependencies.countWorkflowNodes({
+    workflowVersionId: workflowVersionIdValue,
   });
 
   const columnIndex = existingNodeCount % 4;
   const rowIndex = Math.floor(existingNodeCount / 4);
 
-  await prisma.workflowNode.create({
-    data: {
-      actionType: actionType ?? null,
-      approvalRequired: doesWorkflowNodeRequireApproval({
-        actionType,
-        config,
-        triggerType,
-      }),
-      conditionType: conditionType ?? null,
-      config: (config ?? null) as never,
-      name: nameValue.trim(),
-      nodeType,
-      orderIndex: existingNodeCount,
-      positionX: 40 + columnIndex * 232,
-      positionY: 48 + rowIndex * 144,
-      triggerType: triggerType ?? null,
-      workflowVersionId: workflowVersionIdValue,
-    },
+  await dependencies.createWorkflowNode({
+    actionType: actionType ?? null,
+    approvalRequired: dependencies.doesWorkflowNodeRequireApproval({
+      actionType,
+      config,
+      triggerType,
+    }),
+    conditionType: conditionType ?? null,
+    config,
+    name: nameValue.trim(),
+    nodeType,
+    orderIndex: existingNodeCount,
+    positionX: 40 + columnIndex * 232,
+    positionY: 48 + rowIndex * 144,
+    triggerType: triggerType ?? null,
+    workflowVersionId: workflowVersionIdValue,
   });
 
-  revalidateWorkflowPaths(workflowId);
-  redirect(redirectPath);
+  dependencies.revalidateWorkflowPaths(workflowId);
+  dependencies.redirect(redirectPath);
 }
 
-export async function addWorkflowEdgeAction(workflowId: string, formData: FormData) {
-  await getWorkflowActionContext();
+export async function addWorkflowNodeAction(workflowId: string, formData: FormData) {
+  return handleAddWorkflowNodeAction(workflowId, formData);
+}
+
+export async function handleAddWorkflowEdgeAction(
+  workflowId: string,
+  formData: FormData,
+  dependencies: AddWorkflowEdgeActionDependencies = defaultAddWorkflowEdgeActionDependencies,
+) {
+  await dependencies.getWorkflowActionContext();
   const redirectPath = getRedirectPath(formData, `/app/workflows/${workflowId}`);
   const workflowVersionIdValue = formData.get("workflowVersionId");
   const sourceNodeIdValue = formData.get("sourceNodeId");
@@ -623,25 +857,25 @@ export async function addWorkflowEdgeAction(workflowId: string, formData: FormDa
     throw new Error("Workflow version, source node, and target node are required.");
   }
 
-  const existingEdgeCount = await prisma.workflowEdge.count({
-    where: {
-      workflowVersionId: workflowVersionIdValue,
-    },
+  const existingEdgeCount = await dependencies.countWorkflowEdges({
+    workflowVersionId: workflowVersionIdValue,
   });
 
-  await prisma.workflowEdge.create({
-    data: {
-      branchKey: typeof branchKeyValue === "string" && branchKeyValue.trim().length > 0 ? branchKeyValue.trim() : null,
-      label: typeof labelValue === "string" && labelValue.trim().length > 0 ? labelValue.trim() : null,
-      orderIndex: existingEdgeCount,
-      sourceNodeId: sourceNodeIdValue,
-      targetNodeId: targetNodeIdValue,
-      workflowVersionId: workflowVersionIdValue,
-    },
+  await dependencies.createWorkflowEdge({
+    branchKey: typeof branchKeyValue === "string" && branchKeyValue.trim().length > 0 ? branchKeyValue.trim() : null,
+    label: typeof labelValue === "string" && labelValue.trim().length > 0 ? labelValue.trim() : null,
+    orderIndex: existingEdgeCount,
+    sourceNodeId: sourceNodeIdValue,
+    targetNodeId: targetNodeIdValue,
+    workflowVersionId: workflowVersionIdValue,
   });
 
-  revalidateWorkflowPaths(workflowId);
-  redirect(redirectPath);
+  dependencies.revalidateWorkflowPaths(workflowId);
+  dependencies.redirect(redirectPath);
+}
+
+export async function addWorkflowEdgeAction(workflowId: string, formData: FormData) {
+  return handleAddWorkflowEdgeAction(workflowId, formData);
 }
 
 export async function createPropertyWorkflowOverrideAction(

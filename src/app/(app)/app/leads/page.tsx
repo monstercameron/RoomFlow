@@ -20,10 +20,12 @@ export default async function LeadsPage() {
               <th className="px-5 py-4 font-medium">Name</th>
               <th className="px-5 py-4 font-medium">Source</th>
               <th className="px-5 py-4 font-medium">Property</th>
+              <th className="px-5 py-4 font-medium">Owner</th>
               <th className="px-5 py-4 font-medium">Move-in</th>
               <th className="px-5 py-4 font-medium">Budget</th>
               <th className="px-5 py-4 font-medium">Status</th>
               <th className="px-5 py-4 font-medium">Fit</th>
+              <th className="px-5 py-4 font-medium">SLA</th>
               <th className="px-5 py-4 font-medium">Last activity</th>
             </tr>
           </thead>
@@ -44,10 +46,20 @@ export default async function LeadsPage() {
                 </td>
                 <td className="px-5 py-4">{lead.source}</td>
                 <td className="px-5 py-4">{lead.property}</td>
+                <td className="px-5 py-4">{lead.assignedTo}</td>
                 <td className="px-5 py-4">{lead.moveInDate}</td>
                 <td className="px-5 py-4">{lead.budget}</td>
                 <td className="px-5 py-4">{lead.status}</td>
                 <td className="px-5 py-4">{lead.fit}</td>
+                <td className="px-5 py-4">
+                  {lead.slaSummary ? (
+                    <span className={lead.slaSummary.isOverdue ? "text-[var(--color-accent-strong)]" : "text-[var(--color-muted)]"}>
+                      {lead.slaSummary.label} · {lead.slaSummary.dueAt}
+                    </span>
+                  ) : (
+                    <span className="text-[var(--color-muted)]">-</span>
+                  )}
+                </td>
                 <td className="px-5 py-4 text-[var(--color-muted)]">
                   {lead.lastActivity}
                 </td>

@@ -8,9 +8,35 @@ type WorkspaceSelectionRequestBody = {
   workspaceId?: string;
 };
 
-export async function POST(request: Request) {
-  const session = await auth.api.getSession({
-    headers: await headers(),
+type CookieStoreLike = {
+  set: (name: string, value: string, options: { httpOnly: boolean; path: string; sameSite: "lax" }) => void;
+};
+
+type ActiveWorkspaceRouteDependencies = {
+  cookies: typeof cookies;
+  getSession: (params: { headers: Awaited<ReturnType<typeof headers>> }) => ReturnType<typeof auth.api.getSession>;
+  headers: typeof headers;
+  membershipFindFirst: (args: {
+    where: {
+      userId: string;
+      workspaceId: string;
+    };
+  }) => Promise<{ id: string } | null>;
+};
+
+const defaultActiveWorkspaceRouteDependencies: ActiveWorkspaceRouteDependencies = {
+  cookies,
+  getSession: auth.api.getSession,
+  headers,
+  membershipFindFirst: prisma.membership.findFirst.bind(prisma.membership),
+};
+
+export async function handleActiveWorkspacePost(
+  request: Request,
+  dependencies: ActiveWorkspaceRouteDependencies = defaultActiveWorkspaceRouteDependencies,
+) {
+  const session = await dependencies.getSession({
+    headers: await dependencies.headers(),
   });
 
   if (!session?.user.id) {
@@ -24,7 +50,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Workspace selection is required." }, { status: 400 });
   }
 
-  const membership = await prisma.membership.findFirst({
+  const membership = await dependencies.membershipFindFirst({
     where: {
       userId: session.user.id,
       workspaceId,
@@ -35,7 +61,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Workspace access not found." }, { status: 403 });
   }
 
-  const cookieStore = await cookies();
+  const cookieStore = (await dependencies.cookies()) as CookieStoreLike;
 
   cookieStore.set(activeWorkspaceCookieName, workspaceId, {
     httpOnly: true,
@@ -44,4 +70,8 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ status: true });
+}
+
+export async function POST(request: Request) {
+  return handleActiveWorkspacePost(request);
 }

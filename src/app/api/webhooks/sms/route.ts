@@ -21,12 +21,29 @@ function parseSmsWebhookPayload(
   }
 }
 
-export async function POST(request: Request) {
+type SmsWebhookDependencies = {
+  enqueueWebhookProcessing: typeof enqueueWebhookProcessing;
+  normalizeInboundSmsPayload: typeof normalizeInboundSmsPayload;
+  processNormalizedInboundLead: typeof processNormalizedInboundLead;
+  verifyIncomingWebhookSignature: typeof verifyIncomingWebhookSignature;
+};
+
+const defaultSmsWebhookDependencies: SmsWebhookDependencies = {
+  enqueueWebhookProcessing,
+  normalizeInboundSmsPayload,
+  processNormalizedInboundLead,
+  verifyIncomingWebhookSignature,
+};
+
+export async function handleSmsWebhookPost(
+  request: Request,
+  dependencies: SmsWebhookDependencies = defaultSmsWebhookDependencies,
+) {
   const url = new URL(request.url);
   const contentType = request.headers.get("content-type") ?? "";
   const rawBody = await request.text();
   const body = parseSmsWebhookPayload(contentType, rawBody);
-  const isSignatureValid = verifyIncomingWebhookSignature({
+  const isSignatureValid = dependencies.verifyIncomingWebhookSignature({
     rawBody,
     providedSignature: request.headers.get("x-roomflow-signature"),
     signingSecret: process.env.INBOUND_WEBHOOK_SIGNING_SECRET,
@@ -50,7 +67,7 @@ export async function POST(request: Request) {
     (typeof body.propertyId === "string" ? body.propertyId : null);
 
   try {
-    const normalized = normalizeInboundSmsPayload({
+    const normalized = dependencies.normalizeInboundSmsPayload({
       workspaceId,
       propertyId,
       sourceName:
@@ -89,7 +106,7 @@ export async function POST(request: Request) {
     });
 
     try {
-      const jobId = await enqueueWebhookProcessing(normalized);
+      const jobId = await dependencies.enqueueWebhookProcessing(normalized);
 
       return NextResponse.json({
         ok: true,
@@ -97,7 +114,7 @@ export async function POST(request: Request) {
         jobId,
       });
     } catch {
-      const result = await processNormalizedInboundLead(normalized);
+      const result = await dependencies.processNormalizedInboundLead(normalized);
 
       return NextResponse.json({
         ok: true,
@@ -114,4 +131,8 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+}
+
+export async function POST(request: Request) {
+  return handleSmsWebhookPost(request);
 }

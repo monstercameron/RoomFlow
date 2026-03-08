@@ -6,7 +6,24 @@ import {
 } from "@/lib/lead-normalization";
 import { verifyIncomingWebhookSignature } from "@/lib/webhook-signature";
 
-export async function POST(request: Request) {
+type EmailWebhookDependencies = {
+  enqueueWebhookProcessing: typeof enqueueWebhookProcessing;
+  normalizeInboundEmailPayload: typeof normalizeInboundEmailPayload;
+  processNormalizedInboundLead: typeof processNormalizedInboundLead;
+  verifyIncomingWebhookSignature: typeof verifyIncomingWebhookSignature;
+};
+
+const defaultEmailWebhookDependencies: EmailWebhookDependencies = {
+  enqueueWebhookProcessing,
+  normalizeInboundEmailPayload,
+  processNormalizedInboundLead,
+  verifyIncomingWebhookSignature,
+};
+
+export async function handleEmailWebhookPost(
+  request: Request,
+  dependencies: EmailWebhookDependencies = defaultEmailWebhookDependencies,
+) {
   const url = new URL(request.url);
   const rawBody = await request.text();
   const body = (() => {
@@ -16,7 +33,7 @@ export async function POST(request: Request) {
       return {};
     }
   })();
-  const isSignatureValid = verifyIncomingWebhookSignature({
+  const isSignatureValid = dependencies.verifyIncomingWebhookSignature({
     rawBody,
     providedSignature: request.headers.get("x-roomflow-signature"),
     signingSecret: process.env.INBOUND_WEBHOOK_SIGNING_SECRET,
@@ -38,14 +55,14 @@ export async function POST(request: Request) {
     url.searchParams.get("propertyId") ?? body.propertyId ?? null;
 
   try {
-    const normalized = normalizeInboundEmailPayload({
+    const normalized = dependencies.normalizeInboundEmailPayload({
       ...body,
       workspaceId,
       propertyId,
     });
 
     try {
-      const jobId = await enqueueWebhookProcessing(normalized);
+      const jobId = await dependencies.enqueueWebhookProcessing(normalized);
 
       return NextResponse.json({
         ok: true,
@@ -53,7 +70,7 @@ export async function POST(request: Request) {
         jobId,
       });
     } catch {
-      const result = await processNormalizedInboundLead(normalized);
+      const result = await dependencies.processNormalizedInboundLead(normalized);
 
       return NextResponse.json({
         ok: true,
@@ -70,4 +87,8 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+}
+
+export async function POST(request: Request) {
+  return handleEmailWebhookPost(request);
 }

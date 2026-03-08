@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { PublicHeader } from "@/components/public-site";
+
 const valueProps = [
   "Fewer repeated qualification messages",
   "Cleaner lead status visibility",
@@ -17,20 +19,7 @@ const workflow = [
 export default function HomePage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col px-5 py-6 md:px-8 md:py-8">
-      <header className="flex items-center justify-between rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-5 py-4 shadow-[var(--shadow-panel)] backdrop-blur">
-        <div className="text-lg font-semibold">Roomflow</div>
-        <div className="flex items-center gap-3 text-sm">
-          <Link className="text-[var(--color-muted)]" href="/login">
-            Log in
-          </Link>
-          <Link
-            className="rounded-full bg-[var(--color-accent)] px-4 py-2 font-medium text-white"
-            href="/signup"
-          >
-            Start free
-          </Link>
-        </div>
-      </header>
+      <PublicHeader />
 
       <section className="grid flex-1 items-center gap-8 py-12 md:grid-cols-[1.15fr_0.85fr] md:py-18">
         <div>
@@ -53,10 +42,16 @@ export default function HomePage() {
               Start free
             </Link>
             <Link
-              href="/onboarding"
+              href="/how-it-works"
               className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-6 py-3 font-medium"
             >
-              See the first workflow
+              See the funnel
+            </Link>
+            <Link
+              href="/features"
+              className="rounded-full border border-[var(--color-line)] bg-[rgba(255,255,255,0.72)] px-6 py-3 font-medium"
+            >
+              Explore features
             </Link>
           </div>
         </div>
@@ -97,6 +92,24 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="grid gap-4 pb-8 md:grid-cols-3">
+        <Link className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] backdrop-blur" href="/pricing">
+          <div className="text-sm uppercase tracking-[0.22em] text-[var(--color-muted)]">Pricing</div>
+          <div className="mt-3 text-2xl font-semibold tracking-tight">Personal and Org packaging</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">Public packaging now mirrors the in-app plan model instead of leaving pricing implied.</p>
+        </Link>
+        <Link className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] backdrop-blur" href="/ai-tools">
+          <div className="text-sm uppercase tracking-[0.22em] text-[var(--color-muted)]">AI funnels</div>
+          <div className="mt-3 text-2xl font-semibold tracking-tight">Outcome-specific landing pages</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">Acquisition surfaces now include dedicated tool pages for reply drafting, rule explanations, and follow-up planning.</p>
+        </Link>
+        <Link className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] backdrop-blur" href="/capture/demo-workspace">
+          <div className="text-sm uppercase tracking-[0.22em] text-[var(--color-muted)]">Public intake</div>
+          <div className="mt-3 text-2xl font-semibold tracking-tight">Branded external forms</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">Lead capture, embedded qualification, waitlist, status, and portal shells are now part of the public route map.</p>
+        </Link>
       </section>
     </main>
   );

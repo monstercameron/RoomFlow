@@ -153,6 +153,13 @@ enum TourSchedulingMode {
   ROUND_ROBIN
 }
 
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
 enum ScreeningProvider {
   CHECKR
   TRANSUNION
@@ -180,6 +187,57 @@ enum ScreeningRequestStatus {
   COMPLETED
   REVIEWED
   ADVERSE_ACTION_RECORDED
+}
+
+enum IntegrationCategory {
+  LEAD_SOURCE
+  MESSAGING
+  CALENDAR
+  SCREENING
+  CRM_WORKFLOW
+  FILE_STORAGE
+}
+
+enum IntegrationProvider {
+  RESEND
+  TWILIO
+  GOOGLE_CALENDAR
+  OUTLOOK_CALENDAR
+  CHECKR
+  TRANSUNION
+  ZUMPER
+  GENERIC_INBOUND_WEBHOOK
+  CSV_IMPORT
+  CSV_EXPORT
+  META_LEAD_ADS
+  WHATSAPP
+  INSTAGRAM
+  ZILLOW
+  APARTMENTS_COM
+  SLACK
+  OUTBOUND_WEBHOOK
+  S3_COMPATIBLE
+}
+
+enum IntegrationAuthState {
+  NOT_CONNECTED
+  CONFIGURED
+  ACTIVE
+  ERROR
+}
+
+enum IntegrationHealthState {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  ERROR
+}
+
+enum IntegrationSyncStatus {
+  IDLE
+  PENDING
+  SUCCESS
+  FAILED
 }
 
 enum PropertyLifecycleStatus {
@@ -326,6 +384,7 @@ model User {
   auditEvents   AuditEvent[] @relation("AuditActor")
   sentWorkspaceInvites     WorkspaceInvite[] @relation("WorkspaceInviteCreatedBy")
   acceptedWorkspaceInvites WorkspaceInvite[] @relation("WorkspaceInviteAcceptedBy")
+  createdTasks  Task[]       @relation("TaskCreatedByUser")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 }
@@ -342,6 +401,8 @@ model Workspace {
   channelPriority       Json?
   dailyAutomatedSendCap Int               @default(3)
   missingInfoPromptThrottleMinutes Int    @default(60)
+  leadResponseSlaMinutes Int              @default(30)
+  leadReviewSlaMinutes Int                @default(240)
   calendarConnections   Json?
   tourSchedulingMode    TourSchedulingMode @default(DIRECT)
   tourReminderSequence  Json?
@@ -355,6 +416,7 @@ model Workspace {
   properties            Property[]
   leadSources           LeadSource[]
   leads                 Lead[]
+  tasks                 Task[]
   messageTemplates      MessageTemplate[]
   workflowDefinitions   WorkflowDefinition[]
   auditEvents           AuditEvent[]
@@ -364,6 +426,7 @@ model Workspace {
   tours                 TourEvent[]
   screeningProviderConnections ScreeningProviderConnection[]
   screeningRequests     ScreeningRequest[]
+  integrationConnections IntegrationConnection[]
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 
@@ -380,7 +443,10 @@ model Membership {
   lastTourAssignedAt DateTime?
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  propertyScopes MembershipPropertyScope[]
+  assignedLeads Lead[]       @relation("AssignedLeadMembership")
   assignedTours TourEvent[]  @relation("AssignedTourMembership")
+  assignedTasks Task[]       @relation("AssignedTaskMembership")
   createdAt   DateTime       @default(now())
 
   @@unique([userId, workspaceId])
@@ -444,6 +510,8 @@ model Property {
   questionSets        QualificationQuestionSet[]
   workflowDefinitions WorkflowDefinition[]
   leads               Lead[]
+  membershipScopes    MembershipPropertyScope[]
+  tasks               Task[]
   auditEvents         AuditEvent[]
   tours               TourEvent[]
   screeningRequests   ScreeningRequest[]
@@ -472,6 +540,7 @@ model Lead {
   workspaceId             String
   propertyId              String?
   leadSourceId            String?
+  assignedMembershipId    String?
   fullName                String
   email                   String?
   phone                   String?
@@ -508,12 +577,14 @@ model Lead {
   workspace               Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   property                Property?             @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   leadSource              LeadSource?           @relation(fields: [leadSourceId], references: [id], onDelete: SetNull)
+  assignedMembership      Membership?           @relation("AssignedLeadMembership", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
   contact                 Contact?
   conversation            Conversation?
   answers                 QualificationAnswer[]
   statusHistory           LeadStatusHistory[]
   auditEvents             AuditEvent[]          @relation("LeadAuditEvents")
   tours                   TourEvent[]
+  tasks                   Task[]
   screeningRequests       ScreeningRequest[]
   notifications           NotificationEvent[]
   webhookDeliveries       OutboundWebhookDelivery[]
@@ -523,6 +594,45 @@ model Lead {
 
   @@index([workspaceId, status])
   @@index([propertyId, status])
+  @@index([assignedMembershipId, status])
+}
+
+model MembershipPropertyScope {
+  id           String     @id @default(cuid())
+  membershipId String
+  propertyId   String
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  property     Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([membershipId, propertyId])
+  @@index([propertyId, membershipId])
+}
+
+model Task {
+  id                   String      @id @default(cuid())
+  workspaceId          String
+  leadId               String?
+  propertyId           String?
+  assignedMembershipId String?
+  createdByUserId      String
+  title                String
+  description          String?
+  dueAt                DateTime?
+  status               TaskStatus  @default(OPEN)
+  completedAt          DateTime?
+  workspace            Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lead                 Lead?       @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  property             Property?   @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  assignedMembership   Membership? @relation("AssignedTaskMembership", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+  createdByUser        User        @relation("TaskCreatedByUser", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  @@index([workspaceId, status, createdAt])
+  @@index([assignedMembershipId, status, dueAt])
+  @@index([leadId, createdAt])
+  @@index([propertyId, createdAt])
 }
 
 model Contact {
@@ -902,6 +1012,48 @@ model ScreeningAttachmentReference {
   createdAt          DateTime         @default(now())
 
   @@index([screeningRequestId, createdAt])
+}
+
+model IntegrationConnection {
+  id                 String                 @id @default(cuid())
+  workspaceId        String
+  category           IntegrationCategory
+  provider           IntegrationProvider
+  displayName        String
+  authState          IntegrationAuthState   @default(NOT_CONNECTED)
+  healthState        IntegrationHealthState @default(UNKNOWN)
+  syncStatus         IntegrationSyncStatus  @default(IDLE)
+  enabled            Boolean                @default(false)
+  config             Json?
+  mappingConfig      Json?
+  healthMessage      String?
+  lastAuthorizedAt   DateTime?
+  lastSyncAt         DateTime?
+  lastSyncMessage    String?
+  lastHealthCheckAt  DateTime?
+  metadata           Json?
+  workspace          Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  syncHistory        IntegrationSyncEvent[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  @@unique([workspaceId, provider])
+  @@index([workspaceId, category, healthState])
+  @@index([workspaceId, syncStatus, lastSyncAt])
+}
+
+model IntegrationSyncEvent {
+  id                    String                @id @default(cuid())
+  integrationConnectionId String
+  status                IntegrationSyncStatus
+  direction             String?
+  summary               String
+  detail                String?
+  payload               Json?
+  integrationConnection IntegrationConnection @relation(fields: [integrationConnectionId], references: [id], onDelete: Cascade)
+  createdAt             DateTime              @default(now())
+
+  @@index([integrationConnectionId, createdAt])
 }
 
 model NotificationEvent {

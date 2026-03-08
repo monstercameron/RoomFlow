@@ -37,12 +37,26 @@ export type AvailableSocialAuthProvider = {
   providerId: SocialAuthProviderId;
 };
 
-export const getAccountMethodSettings = cache(async () => {
+export type AccountMethodSettingsDependencies = {
+  getConfiguredProviderIds: () => SocialAuthProviderId[];
+  getRequestHeaders: typeof headers;
+  listUserAccounts: (options: { headers: Awaited<ReturnType<typeof headers>> }) => Promise<unknown>;
+};
+
+const defaultAccountMethodSettingsDependencies: AccountMethodSettingsDependencies = {
+  getConfiguredProviderIds: getConfiguredSocialAuthProviderIds,
+  getRequestHeaders: headers,
+  listUserAccounts: (options) => auth.api.listUserAccounts(options),
+};
+
+export async function loadAccountMethodSettings(
+  dependencies: AccountMethodSettingsDependencies = defaultAccountMethodSettingsDependencies,
+) {
   let rawUserAccounts: RawUserAccountRecord[] = [];
 
   try {
-    rawUserAccounts = (await auth.api.listUserAccounts({
-      headers: await headers(),
+    rawUserAccounts = (await dependencies.listUserAccounts({
+      headers: await dependencies.getRequestHeaders(),
     })) as RawUserAccountRecord[];
   } catch (error) {
     console.error("Failed to load linked auth accounts:", error);
@@ -68,7 +82,7 @@ export const getAccountMethodSettings = cache(async () => {
       .map((linkedAccount) => linkedAccount.providerId)
       .filter((providerId): providerId is SocialAuthProviderId => isSocialAuthProviderId(providerId)),
   );
-  const configuredSocialProviderIds = new Set(getConfiguredSocialAuthProviderIds());
+  const configuredSocialProviderIds = new Set(dependencies.getConfiguredProviderIds());
   const linkedSocialAccounts = linkedAccounts.filter((linkedAccount) =>
     isSocialAuthProviderId(linkedAccount.providerId),
   );
@@ -99,4 +113,6 @@ export const getAccountMethodSettings = cache(async () => {
     linkedAccounts,
     linkedSocialAccounts,
   };
-});
+}
+
+export const getAccountMethodSettings = cache(async () => loadAccountMethodSettings());

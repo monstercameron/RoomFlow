@@ -4,11 +4,20 @@ import { updateWorkspaceQuietHoursAction } from "@/app/(app)/app/settings/integr
 import { updateWorkspaceMessagingThrottleSettingsAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateOperatorSchedulingAvailabilityAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateWorkspaceCalendarConnectionAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateCsvImportIntegrationAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateInboundWebhookIntegrationAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateListingFeedIntegrationAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateMessagingChannelIntegrationAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateMetaLeadAdsIntegrationAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateOutboundWebhookIntegrationAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateS3IntegrationAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateSlackIntegrationAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateWorkspaceScreeningConnectionAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateWorkspaceTourSchedulingSettingsAction } from "@/app/(app)/app/settings/integrations/actions";
 import { getMessagingSettingsViewData } from "@/lib/app-data";
 import { availabilityDayOptions } from "@/lib/availability-windows";
 import { validateInboundIntegrationConfiguration } from "@/lib/integration-config-validation";
+import { csvExportDatasetDefinitions, outboundWebhookEventDefinitions } from "@/lib/integrations";
 import { onboardingChannelOptions } from "@/lib/onboarding";
 import {
   screeningChargeModeOptions,
@@ -51,10 +60,72 @@ export default async function IntegrationsSettingsPage() {
       <PageHeader
         eyebrow="Settings"
         title="Integrations"
-        description="These are still v1 placeholders, but they now reflect the actual channel strategy in the README and todo list."
+        description="Use the integrations hub to track setup state, health, and mapping for inbound, outbound, calendar, and screening connections."
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-xl font-semibold">Integrations hub</div>
+              <p className="mt-2 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
+                Track setup progress, health state, and recent sync posture across the providers Roomflow depends on.
+              </p>
+            </div>
+            <div className="grid min-w-[18rem] gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3">
+                <div className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Connected</div>
+                <div className="mt-2 text-2xl font-semibold">{messagingSettings.integrationHealthOverview.connected}</div>
+              </div>
+              <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3">
+                <div className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Degraded</div>
+                <div className="mt-2 text-2xl font-semibold">{messagingSettings.integrationHealthOverview.degraded}</div>
+              </div>
+              <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3">
+                <div className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Errors</div>
+                <div className="mt-2 text-2xl font-semibold">{messagingSettings.integrationHealthOverview.errors}</div>
+              </div>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-4 xl:grid-cols-3">
+            {messagingSettings.integrationHubConnections.map((integrationConnection) => (
+              <div
+                key={integrationConnection.id}
+                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">{integrationConnection.label}</div>
+                    <div className="mt-1 text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                      {integrationConnection.category}
+                    </div>
+                  </div>
+                  <div className="rounded-full border border-[var(--color-line)] px-3 py-1 text-xs text-[var(--color-muted)]">
+                    {integrationConnection.healthState}
+                  </div>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-[var(--color-muted)]">
+                  {integrationConnection.description}
+                </p>
+                <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]">
+                  <div className="font-medium text-[color:var(--color-ink)]">{integrationConnection.summary}</div>
+                  <div className="mt-2">Auth: {integrationConnection.authState}</div>
+                  <div className="mt-2">Sync: {integrationConnection.syncStatus}</div>
+                  <div className="mt-2">Last sync: {integrationConnection.lastSyncAt}</div>
+                  {integrationConnection.latestSyncSummary ? (
+                    <div className="mt-2">Latest event: {integrationConnection.latestSyncSummary}</div>
+                  ) : null}
+                  {integrationConnection.healthMessage ? (
+                    <div className="mt-2">Health note: {integrationConnection.healthMessage}</div>
+                  ) : null}
+                </div>
+                <div className="mt-4 text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                  Setup step {integrationConnection.currentSetupStep} of {integrationConnection.totalSetupSteps}: {integrationConnection.currentSetupLabel}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
           <div className="text-xl font-semibold">Integration config validation</div>
           <div className="mt-4 space-y-3">
@@ -77,6 +148,145 @@ export default async function IntegrationsSettingsPage() {
             )}
           </div>
         </div>
+        <form
+          action={updateInboundWebhookIntegrationAction}
+          className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2"
+        >
+          <div className="text-xl font-semibold">Generic inbound webhook</div>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
+            Save default lead mapping, signature header expectations, and field routing for generic inbound webhook ingestion.
+          </p>
+          <label className="mt-4 flex items-center gap-2">
+            <input
+              defaultChecked={messagingSettings.inboundWebhookIntegration.webhookEnabled}
+              name="webhookEnabled"
+              type="checkbox"
+            />
+            <span className="text-sm font-medium">Enable generic inbound webhook ingestion</span>
+          </label>
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Source label</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.inboundWebhookIntegration.sourceLabel}
+                name="sourceLabel"
+                placeholder="Generic webhook source"
+                type="text"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Signature header</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.inboundWebhookIntegration.signingHeader}
+                name="signingHeader"
+                placeholder="x-roomflow-signature"
+                type="text"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Secret hint</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.inboundWebhookIntegration.secretHint ?? ""}
+                name="secretHint"
+                placeholder="Stored in provider vault"
+                type="text"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Default lead source</span>
+              <select
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.inboundWebhookIntegration.defaultLeadSourceId ?? ""}
+                name="defaultLeadSourceId"
+              >
+                <option value="">Create or route without a saved lead source</option>
+                {messagingSettings.leadSources.map((leadSource) => (
+                  <option key={leadSource.id} value={leadSource.id}>
+                    {leadSource.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Fallback source type</span>
+              <select
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.inboundWebhookIntegration.defaultLeadSourceType}
+                name="defaultLeadSourceType"
+              >
+                <option value="WEB_FORM">Web form</option>
+                <option value="CSV_IMPORT">CSV import</option>
+                <option value="FACEBOOK">Facebook / Meta</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Default message channel</span>
+              <select
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.inboundWebhookIntegration.defaultMessageChannel}
+                name="defaultMessageChannel"
+              >
+                {directChannels.map((channel) => (
+                  <option key={channel.type} value={channel.type}>
+                    {channel.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mt-6 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+            <div className="text-sm font-medium">Field mapping preview</div>
+            <p className="mt-2 text-sm text-[var(--color-muted)]">
+              Store the most important source-to-target mappings now; provider adapters can expand on these later.
+            </p>
+            <div className="mt-4 space-y-3">
+              {[1, 2, 3].map((mappingIndex) => {
+                const existingMapping =
+                  messagingSettings.inboundWebhookIntegration.fieldMappings[mappingIndex - 1];
+
+                return (
+                  <div key={mappingIndex} className="grid gap-3 md:grid-cols-[1.1fr_1.1fr_auto]">
+                    <input
+                      className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      defaultValue={existingMapping?.sourceField ?? ""}
+                      name={`fieldMapping${mappingIndex}Source`}
+                      placeholder="payload.email"
+                      type="text"
+                    />
+                    <input
+                      className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      defaultValue={existingMapping?.targetField ?? ""}
+                      name={`fieldMapping${mappingIndex}Target`}
+                      placeholder="email"
+                      type="text"
+                    />
+                    <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm">
+                      <input
+                        defaultChecked={existingMapping?.required ?? false}
+                        name={`fieldMapping${mappingIndex}Required`}
+                        type="checkbox"
+                      />
+                      Required
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+          <div className="mt-5 flex justify-end">
+            <button
+              className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+              type="submit"
+            >
+              Save inbound webhook config
+            </button>
+          </div>
+        </form>
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
           <div className="text-xl font-semibold">Screening provider connections</div>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
@@ -669,33 +879,137 @@ export default async function IntegrationsSettingsPage() {
           </div>
         </div>
 
-        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+        <form
+          action={updateMetaLeadAdsIntegrationAction}
+          className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2"
+        >
+          <div className="text-xl font-semibold">Meta Lead Ads</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
+            Ingest paid acquisition leads from Facebook and Instagram campaigns through a dedicated Meta webhook adapter.
+          </p>
+          <label className="mt-4 flex items-center gap-2">
+            <input
+              defaultChecked={messagingSettings.metaLeadAdsIntegration.webhookEnabled}
+              name="webhookEnabled"
+              type="checkbox"
+            />
+            <span className="text-sm font-medium">Enable Meta Lead Ads ingestion</span>
+          </label>
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Source label</span>
+              <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.metaLeadAdsIntegration.sourceLabel} name="sourceLabel" placeholder="Meta Lead Ads" type="text" />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Meta page ID</span>
+              <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.metaLeadAdsIntegration.pageId ?? ""} name="pageId" placeholder="123456789" type="text" />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Lead form ID</span>
+              <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.metaLeadAdsIntegration.formId ?? ""} name="formId" placeholder="987654321" type="text" />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Verify token</span>
+              <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.metaLeadAdsIntegration.verifyToken ?? ""} name="verifyToken" placeholder="meta-verify-token" type="text" />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">App secret</span>
+              <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.metaLeadAdsIntegration.appSecret ?? ""} name="appSecret" placeholder="Used for x-hub-signature-256 validation" type="text" />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Campaign tag</span>
+              <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.metaLeadAdsIntegration.campaignTag ?? ""} name="campaignTag" placeholder="spring-move-in" type="text" />
+            </label>
+            <label className="space-y-2 md:col-span-2">
+              <span className="text-sm font-medium">Default lead source</span>
+              <select className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.metaLeadAdsIntegration.defaultLeadSourceId ?? ""} name="defaultLeadSourceId">
+                <option value="">Use source label only</option>
+                {messagingSettings.leadSources.map((leadSource) => (
+                  <option key={leadSource.id} value={leadSource.id}>{leadSource.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mt-6 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+            <div className="text-sm font-medium">Lead form mapping</div>
+            <div className="mt-4 space-y-3">
+              {[
+                { target: "fullName", placeholder: "full_name" },
+                { target: "email", placeholder: "email" },
+                { target: "phone", placeholder: "phone_number" },
+                { target: "notes", placeholder: "move_in_timeline" },
+              ].map((mappingDefinition, index) => {
+                const existingMapping = messagingSettings.metaLeadAdsIntegration.fieldMappings.find((fieldMapping) => fieldMapping.targetField === mappingDefinition.target);
+                return (
+                  <div key={mappingDefinition.target} className="grid gap-3 md:grid-cols-[1.1fr_auto_1.1fr]">
+                    <input className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={existingMapping?.sourceField ?? mappingDefinition.placeholder} name={`fieldMapping${index + 1}Source`} placeholder={mappingDefinition.placeholder} type="text" />
+                    <input name={`fieldMapping${index + 1}Target`} type="hidden" value={mappingDefinition.target} />
+                    <div className="flex items-center rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]">{mappingDefinition.target}</div>
+                    <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm">
+                      <input defaultChecked={existingMapping?.required ?? mappingDefinition.target === "fullName"} name={`fieldMapping${index + 1}Required`} type="checkbox" />
+                      Required
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+            {messagingSettings.metaLeadAdsIntegration.summary}
+            <div className="mt-2">Webhook base: {appUrl}/api/webhooks/meta/lead-ads?workspaceId=YOUR_WORKSPACE_ID</div>
+          </div>
+          <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+          <div className="mt-5 flex justify-end">
+            <button className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white" type="submit">Save Meta Lead Ads config</button>
+          </div>
+        </form>
+
+        <form action={updateMessagingChannelIntegrationAction} className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
           <div className="text-xl font-semibold">WhatsApp business messaging</div>
           <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
             {messagingSettings.hasWhatsAppMessagingCapability
-              ? "Org workspaces can now stage WhatsApp conversations on the lead thread. Provider wiring still needs production credentials before delivery can succeed."
+              ? "Configure Twilio-backed WhatsApp inbound sync and outbound sender identity for prospect conversations."
               : "WhatsApp messaging is reserved for Org workspaces and stays hidden from Personal plans."}
           </p>
-          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm">
-            {messagingSettings.hasWhatsAppMessagingCapability
-              ? "Conversation support is enabled for this workspace."
-              : "Upgrade to Org to enable WhatsApp messaging controls."}
+          <label className="mt-4 flex items-center gap-2">
+            <input defaultChecked={messagingSettings.whatsappIntegration.webhookEnabled && messagingSettings.hasWhatsAppMessagingCapability} disabled={!messagingSettings.hasWhatsAppMessagingCapability} name="webhookEnabled" type="checkbox" />
+            <span className="text-sm font-medium">Enable WhatsApp provider</span>
+          </label>
+          <div className="mt-4 grid gap-4">
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.whatsappIntegration.accountLabel} disabled={!messagingSettings.hasWhatsAppMessagingCapability} name="accountLabel" placeholder="Twilio WhatsApp sender" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.whatsappIntegration.senderIdentifier ?? ""} disabled={!messagingSettings.hasWhatsAppMessagingCapability} name="senderIdentifier" placeholder="+15551234567" type="text" />
+            <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"><input defaultChecked={messagingSettings.whatsappIntegration.allowInboundSync} disabled={!messagingSettings.hasWhatsAppMessagingCapability} name="allowInboundSync" type="checkbox" />Inbound sync</label>
+            <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"><input defaultChecked={messagingSettings.whatsappIntegration.allowOutboundSend} disabled={!messagingSettings.hasWhatsAppMessagingCapability} name="allowOutboundSend" type="checkbox" />Outbound delivery</label>
           </div>
-        </div>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">{messagingSettings.whatsappIntegration.summary}<div className="mt-2">Webhook base: {appUrl}/api/webhooks/whatsapp</div></div>
+          <input name="provider" type="hidden" value="WHATSAPP" />
+          <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+          <div className="mt-4 flex justify-end"><button className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white" disabled={!messagingSettings.hasWhatsAppMessagingCapability} type="submit">Save WhatsApp config</button></div>
+        </form>
 
-        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+        <form action={updateMessagingChannelIntegrationAction} className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
           <div className="text-xl font-semibold">Instagram business messaging</div>
           <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
             {messagingSettings.hasInstagramMessagingCapability
-              ? "Org workspaces can now keep Instagram conversation context on the lead thread. Delivery remains provider-unresolved until a business messaging adapter is configured."
+              ? "Configure Meta business inbox sync for Instagram conversations and lead-thread association."
               : "Instagram messaging is reserved for Org workspaces and stays hidden from Personal plans."}
           </p>
-          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm">
-            {messagingSettings.hasInstagramMessagingCapability
-              ? "Conversation support is enabled for this workspace."
-              : "Upgrade to Org to enable Instagram messaging controls."}
+          <label className="mt-4 flex items-center gap-2">
+            <input defaultChecked={messagingSettings.instagramIntegration.webhookEnabled && messagingSettings.hasInstagramMessagingCapability} disabled={!messagingSettings.hasInstagramMessagingCapability} name="webhookEnabled" type="checkbox" />
+            <span className="text-sm font-medium">Enable Instagram provider</span>
+          </label>
+          <div className="mt-4 grid gap-4">
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.instagramIntegration.accountLabel} disabled={!messagingSettings.hasInstagramMessagingCapability} name="accountLabel" placeholder="Meta business inbox" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.instagramIntegration.senderIdentifier ?? ""} disabled={!messagingSettings.hasInstagramMessagingCapability} name="senderIdentifier" placeholder="instagram_business_account_id" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.instagramIntegration.verifyToken ?? ""} disabled={!messagingSettings.hasInstagramMessagingCapability} name="verifyToken" placeholder="meta-instagram-verify-token" type="text" />
+            <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"><input defaultChecked={messagingSettings.instagramIntegration.allowInboundSync} disabled={!messagingSettings.hasInstagramMessagingCapability} name="allowInboundSync" type="checkbox" />Inbound sync</label>
+            <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"><input defaultChecked={messagingSettings.instagramIntegration.allowOutboundSend} disabled={!messagingSettings.hasInstagramMessagingCapability} name="allowOutboundSend" type="checkbox" />Stage outbound sends</label>
           </div>
-        </div>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">{messagingSettings.instagramIntegration.summary}<div className="mt-2">Webhook base: {appUrl}/api/webhooks/meta/instagram</div></div>
+          <input name="provider" type="hidden" value="INSTAGRAM" />
+          <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+          <div className="mt-4 flex justify-end"><button className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white" disabled={!messagingSettings.hasInstagramMessagingCapability} type="submit">Save Instagram config</button></div>
+        </form>
 
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
           <div className="text-xl font-semibold">Supported v1 channels</div>
@@ -731,6 +1045,78 @@ export default async function IntegrationsSettingsPage() {
           </div>
         </div>
 
+        <form action={updateListingFeedIntegrationAction} className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-xl font-semibold">Zillow listing feed</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">Publish active property metadata as a provider-shaped listing feed export path for Zillow onboarding and sync reviews.</p>
+          <label className="mt-4 flex items-center gap-2"><input defaultChecked={messagingSettings.zillowListingFeedIntegration.webhookEnabled} name="feedEnabled" type="checkbox" /><span className="text-sm font-medium">Enable Zillow feed</span></label>
+          <div className="mt-4 grid gap-4">
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.zillowListingFeedIntegration.feedLabel} name="feedLabel" placeholder="Zillow syndication" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.zillowListingFeedIntegration.destinationName ?? ""} name="destinationName" placeholder="Zillow Rentals" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.zillowListingFeedIntegration.destinationPath ?? ""} name="destinationPath" placeholder="https://partner.example.com/zillow-feed" type="url" />
+            <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"><input defaultChecked={messagingSettings.zillowListingFeedIntegration.includeOnlyActiveProperties} name="includeOnlyActiveProperties" type="checkbox" />Only active properties</label>
+          </div>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">{messagingSettings.zillowListingFeedIntegration.summary}<div className="mt-2">{messagingSettings.zillowListingFeedIntegration.propertyCount} properties available · <a className="underline" href="/api/integrations/listing-feed?provider=zillow">Download feed</a></div></div>
+          <input name="provider" type="hidden" value="ZILLOW" />
+          <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+          <div className="mt-4 flex justify-end"><button className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white" type="submit">Save Zillow feed</button></div>
+        </form>
+
+        <form action={updateListingFeedIntegrationAction} className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-xl font-semibold">Apartments.com feed</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">Maintain a provider feed path for Apartments.com listing updates, availability reviews, and partner setup handoff.</p>
+          <label className="mt-4 flex items-center gap-2"><input defaultChecked={messagingSettings.apartmentsListingFeedIntegration.webhookEnabled} name="feedEnabled" type="checkbox" /><span className="text-sm font-medium">Enable Apartments.com feed</span></label>
+          <div className="mt-4 grid gap-4">
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.apartmentsListingFeedIntegration.feedLabel} name="feedLabel" placeholder="Apartments.com syndication" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.apartmentsListingFeedIntegration.destinationName ?? ""} name="destinationName" placeholder="Apartments.com" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.apartmentsListingFeedIntegration.destinationPath ?? ""} name="destinationPath" placeholder="https://partner.example.com/apartments-feed" type="url" />
+            <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"><input defaultChecked={messagingSettings.apartmentsListingFeedIntegration.includeOnlyActiveProperties} name="includeOnlyActiveProperties" type="checkbox" />Only active properties</label>
+          </div>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">{messagingSettings.apartmentsListingFeedIntegration.summary}<div className="mt-2">{messagingSettings.apartmentsListingFeedIntegration.propertyCount} properties available · <a className="underline" href="/api/integrations/listing-feed?provider=apartments-com">Download feed</a></div></div>
+          <input name="provider" type="hidden" value="APARTMENTS_COM" />
+          <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+          <div className="mt-4 flex justify-end"><button className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white" type="submit">Save Apartments.com feed</button></div>
+        </form>
+
+        <form action={updateSlackIntegrationAction} className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
+          <div className="text-xl font-semibold">Slack notifications</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">Forward high-signal workspace notifications into Slack channels using incoming webhooks.</p>
+          <label className="mt-4 flex items-center gap-2"><input defaultChecked={messagingSettings.slackIntegration.webhookEnabled} name="webhookEnabled" type="checkbox" /><span className="text-sm font-medium">Enable Slack notifications</span></label>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.slackIntegration.webhookUrl ?? ""} name="webhookUrl" placeholder="https://hooks.slack.com/services/..." type="url" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.slackIntegration.channelLabel ?? ""} name="channelLabel" placeholder="#leasing-alerts" type="text" />
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"><input defaultChecked={messagingSettings.slackIntegration.notifyOnNewLead} name="notifyOnNewLead" type="checkbox" />New leads</label>
+            <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"><input defaultChecked={messagingSettings.slackIntegration.notifyOnTourScheduled} name="notifyOnTourScheduled" type="checkbox" />Tour scheduled</label>
+            <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"><input defaultChecked={messagingSettings.slackIntegration.notifyOnReviewAlerts} name="notifyOnReviewAlerts" type="checkbox" />Review alerts</label>
+            <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"><input defaultChecked={messagingSettings.slackIntegration.notifyOnApplicationInviteStale} name="notifyOnApplicationInviteStale" type="checkbox" />Application stale</label>
+          </div>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">{messagingSettings.slackIntegration.summary}</div>
+          <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+          <div className="mt-5 flex justify-end"><button className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white" type="submit">Save Slack config</button></div>
+        </form>
+
+        <form action={updateS3IntegrationAction} className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
+          <div className="text-xl font-semibold">S3-compatible storage</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">Stage future attachment and export storage with bucket mapping, base paths, and endpoint configuration.</p>
+          <label className="mt-4 flex items-center gap-2"><input defaultChecked={messagingSettings.s3Integration.webhookEnabled} name="storageEnabled" type="checkbox" /><span className="text-sm font-medium">Enable S3-compatible storage</span></label>
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.s3Integration.endpointUrl ?? ""} name="endpointUrl" placeholder="https://s3.us-east-1.amazonaws.com" type="url" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.s3Integration.region ?? ""} name="region" placeholder="us-east-1" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.s3Integration.bucket ?? ""} name="bucket" placeholder="roomflow-assets" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.s3Integration.basePath} name="basePath" placeholder="roomflow" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.s3Integration.accessKeyIdHint ?? ""} name="accessKeyIdHint" placeholder="AKIA... stored in vault" type="text" />
+            <input className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none" defaultValue={messagingSettings.s3Integration.secretAccessKeyHint ?? ""} name="secretAccessKeyHint" placeholder="Secret key stored in vault" type="text" />
+          </div>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+            {messagingSettings.s3Integration.summary}
+            <div className="mt-2">Preview paths: {messagingSettings.s3Integration.manifestPreview.join(" | ")}</div>
+            <div className="mt-2"><a className="underline" href="/api/integrations/storage/manifest">View manifest</a></div>
+          </div>
+          <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+          <div className="mt-5 flex justify-end"><button className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white" type="submit">Save storage config</button></div>
+        </form>
+
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
           <div className="text-xl font-semibold">Webhook endpoint display</div>
           <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm">
@@ -742,13 +1128,285 @@ export default async function IntegrationsSettingsPage() {
           </div>
         </div>
 
+        <form
+          action={updateOutboundWebhookIntegrationAction}
+          className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2"
+        >
+          <div className="text-xl font-semibold">Outbound automation webhooks</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
+            Route lead and workflow events into Zapier, Make, n8n, or custom automation endpoints from the integrations hub.
+          </p>
+          <label className="mt-4 flex items-center gap-2">
+            <input
+              defaultChecked={messagingSettings.outboundWebhookIntegration.webhookEnabled}
+              name="automationEnabled"
+              type="checkbox"
+            />
+            <span className="text-sm font-medium">Enable outbound automation deliveries</span>
+          </label>
+          <label className="mt-5 block space-y-2">
+            <span className="text-sm font-medium">Signing secret hint</span>
+            <input
+              className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+              defaultValue={messagingSettings.outboundWebhookIntegration.secretHint ?? ""}
+              name="secretHint"
+              placeholder="Workspace signing secret stored in vault"
+              type="text"
+            />
+          </label>
+          <div className="mt-6 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+            <div className="text-sm font-medium">Destinations</div>
+            <div className="mt-4 space-y-4">
+              {[1, 2].map((destinationIndex) => {
+                const destination =
+                  messagingSettings.outboundWebhookIntegration.destinations[destinationIndex - 1];
+
+                return (
+                  <div key={destinationIndex} className="grid gap-3 md:grid-cols-[auto_1fr_1.4fr]">
+                    <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm">
+                      <input
+                        defaultChecked={destination?.enabled ?? destinationIndex === 1}
+                        name={`destination${destinationIndex}Enabled`}
+                        type="checkbox"
+                      />
+                      Enabled
+                    </label>
+                    <input
+                      className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      defaultValue={destination?.label ?? ""}
+                      name={`destination${destinationIndex}Label`}
+                      placeholder={destinationIndex === 1 ? "Zapier" : "Make or n8n"}
+                      type="text"
+                    />
+                    <input
+                      className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      defaultValue={destination?.url ?? ""}
+                      name={`destination${destinationIndex}Url`}
+                      placeholder="https://hooks.example.com/roomflow"
+                      type="url"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="mt-6 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+            <div className="text-sm font-medium">Event subscriptions</div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {outboundWebhookEventDefinitions.map((eventDefinition) => (
+                <label
+                  className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"
+                  key={eventDefinition.value}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      defaultChecked={messagingSettings.outboundWebhookIntegration.eventTypes.includes(eventDefinition.value)}
+                      name={`eventType:${eventDefinition.value}`}
+                      type="checkbox"
+                      value={eventDefinition.value}
+                    />
+                    <span className="font-medium">{eventDefinition.label}</span>
+                  </div>
+                  <div className="mt-2 text-[var(--color-muted)]">{eventDefinition.description}</div>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+            {messagingSettings.outboundWebhookIntegration.summary}
+            <div className="mt-2">
+              {messagingSettings.outboundWebhookIntegration.pendingDeliveryCount} pending · {messagingSettings.outboundWebhookIntegration.failedDeliveryCount} failed
+            </div>
+          </div>
+          <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+          <div className="mt-5 flex justify-end">
+            <button
+              className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+              type="submit"
+            >
+              Save outbound automation webhooks
+            </button>
+          </div>
+        </form>
+
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-xl font-semibold">CSV exports</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
+            Download current workspace data as CSV for offline review, migrations, or downstream automation.
+          </p>
+          <div className="mt-5 space-y-3">
+            {csvExportDatasetDefinitions.map((dataset) => (
+              <div
+                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+                key={dataset.value}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">{dataset.label}</div>
+                    <div className="mt-1 text-sm text-[var(--color-muted)]">{dataset.description}</div>
+                  </div>
+                  <a
+                    className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                    href={`/api/integrations/csv-export?dataset=${dataset.value}`}
+                  >
+                    Download CSV
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <form
+          action={updateCsvImportIntegrationAction}
+          className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2"
+        >
           <div className="text-xl font-semibold">CSV import</div>
           <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
-            Placeholder only. Bulk lead import is deferred until the lead
-            normalization layer is in place.
+            Save a field-mapping profile and validate sample rows through the normalization layer before importing anything.
           </p>
-        </div>
+          <label className="mt-4 flex items-center gap-2">
+            <input
+              defaultChecked={messagingSettings.csvImportIntegration.webhookEnabled}
+              name="importEnabled"
+              type="checkbox"
+            />
+            <span className="text-sm font-medium">Enable CSV import profile</span>
+          </label>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Source label</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.csvImportIntegration.sourceLabel}
+                name="sourceLabel"
+                placeholder="CSV import"
+                type="text"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Default lead source</span>
+              <select
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.csvImportIntegration.defaultLeadSourceId ?? ""}
+                name="defaultLeadSourceId"
+              >
+                <option value="">Use source label only</option>
+                {messagingSettings.leadSources.map((leadSource) => (
+                  <option key={leadSource.id} value={leadSource.id}>
+                    {leadSource.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mt-6 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+            <div className="text-sm font-medium">CSV field mapping</div>
+            <p className="mt-2 text-sm text-[var(--color-muted)]">
+              Map CSV headers to Roomflow fields. The preview uses the first five data rows.
+            </p>
+            <div className="mt-4 space-y-3">
+              {[
+                { target: "fullName", required: true, placeholder: "full_name" },
+                { target: "email", required: false, placeholder: "email_address" },
+                { target: "phone", required: false, placeholder: "phone" },
+                { target: "notes", required: false, placeholder: "notes" },
+              ].map((mappingDefinition, index) => {
+                const existingMapping = messagingSettings.csvImportIntegration.fieldMappings.find(
+                  (fieldMapping) => fieldMapping.targetField === mappingDefinition.target,
+                );
+
+                return (
+                <div key={mappingDefinition.target} className="grid gap-3 md:grid-cols-[1.1fr_auto_1.1fr]">
+                  <input
+                    className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={existingMapping?.sourceField ?? mappingDefinition.placeholder}
+                    name={`fieldMapping${index + 1}Source`}
+                    placeholder={mappingDefinition.placeholder}
+                    type="text"
+                  />
+                  <input
+                    name={`fieldMapping${index + 1}Target`}
+                    type="hidden"
+                    value={mappingDefinition.target}
+                  />
+                  <div className="flex items-center rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]">
+                    {mappingDefinition.target}
+                  </div>
+                  <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm">
+                    <input
+                      defaultChecked={existingMapping?.required ?? mappingDefinition.required}
+                      name={`fieldMapping${index + 1}Required`}
+                      type="checkbox"
+                    />
+                    Required
+                  </label>
+                </div>
+              );})}
+            </div>
+          </div>
+          <label className="mt-6 block space-y-2">
+            <span className="text-sm font-medium">Sample CSV</span>
+            <textarea
+              className="min-h-44 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 font-mono text-sm outline-none"
+              defaultValue={[
+                "full_name,email,phone,notes",
+                "Avery Mason,avery@example.com,5551112222,Qualified lead",
+                "Jordan Lee,jordan@example.com,5553334444,Needs parking",
+              ].join("\n")}
+              name="sampleCsv"
+            />
+          </label>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+            {messagingSettings.csvImportIntegration.summary}
+          </div>
+          {messagingSettings.csvImportIntegration.preview ? (
+            <div className="mt-5 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium">Validation preview</div>
+                  <div className="mt-1 text-sm text-[var(--color-muted)]">
+                    Headers: {messagingSettings.csvImportIntegration.preview.headerFields.join(", ") || "None"}
+                  </div>
+                </div>
+                <div className="text-sm text-[var(--color-muted)]">
+                  {messagingSettings.csvImportIntegration.preview.validRowCount} valid · {messagingSettings.csvImportIntegration.preview.invalidRowCount} invalid
+                </div>
+              </div>
+              <div className="mt-4 space-y-3">
+                {messagingSettings.csvImportIntegration.preview.rows.map((row) => (
+                  <div
+                    key={row.rowNumber}
+                    className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm"
+                  >
+                    <div className="font-medium">
+                      Row {row.rowNumber} · {row.status}
+                    </div>
+                    <div className="mt-1 text-[var(--color-muted)]">
+                      {row.fullName ?? "No name"}
+                      {row.email ? ` · ${row.email}` : ""}
+                      {row.phone ? ` · ${row.phone}` : ""}
+                    </div>
+                    {row.errors.length > 0 ? (
+                      <div className="mt-2 text-[var(--color-accent-strong)]">
+                        {row.errors.join(" | ")}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+          <div className="mt-5 flex justify-end">
+            <button
+              className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+              type="submit"
+            >
+              Save CSV mapping and preview
+            </button>
+          </div>
+        </form>
       </div>
     </main>
   );

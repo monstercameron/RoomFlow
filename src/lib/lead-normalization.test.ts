@@ -120,3 +120,37 @@ test("resolveInboundOptOutDirective recognizes stop and start directives", async
   assert.equal(resolveInboundOptOutDirective("START"), "opt_in");
   assert.equal(resolveInboundOptOutDirective("hello there"), null);
 });
+
+test("normalizeInboundMetaLeadPayload maps lead ads submissions to FACEBOOK sources", async () => {
+  const { normalizeInboundMetaLeadPayload } = await getLeadNormalizationModule();
+
+  const normalizedPayload = normalizeInboundMetaLeadPayload({
+    workspaceId: "workspace_meta",
+    fullName: "Jamie Prospect",
+    email: "Jamie@example.com",
+    phone: "(401) 555-0199",
+    notes: "Needs a room by May.",
+    submissionId: "meta_123",
+  });
+
+  assert.equal(normalizedPayload.leadSourceType, LeadSourceType.FACEBOOK);
+  assert.equal(normalizedPayload.channel, MessageChannel.EMAIL);
+  assert.equal(normalizedPayload.phone, "+14015550199");
+  assert.equal(normalizedPayload.externalMessageId, "meta_123");
+});
+
+test("normalizeInboundDirectMessagePayload supports WhatsApp channels", async () => {
+  const { normalizeInboundDirectMessagePayload } = await getLeadNormalizationModule();
+
+  const normalizedPayload = normalizeInboundDirectMessagePayload({
+    workspaceId: "workspace_dm",
+    channel: MessageChannel.WHATSAPP,
+    fromIdentifier: "+1 (401) 555-7788",
+    body: "Is the room still available?",
+    messageId: "wa_42",
+  });
+
+  assert.equal(normalizedPayload.channel, MessageChannel.WHATSAPP);
+  assert.equal(normalizedPayload.phone, "+14015557788");
+  assert.equal(normalizedPayload.externalMessageId, "wa_42");
+});

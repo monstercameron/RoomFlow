@@ -10,8 +10,31 @@ type AcceptWorkspaceInviteRequestBody = {
   token?: string;
 };
 
-export async function POST(request: Request) {
-  const session = await getServerSession();
+type CookieStoreLike = {
+  set: (name: string, value: string, options: { httpOnly: boolean; path: string; sameSite: "lax" }) => void;
+};
+
+type AcceptWorkspaceInviteRouteDependencies = {
+  acceptWorkspaceInvite: typeof acceptWorkspaceInvite;
+  buildEmailVerificationPagePath: typeof buildEmailVerificationPagePath;
+  cookies: typeof cookies;
+  getServerSession: typeof getServerSession;
+  revalidatePath: typeof revalidatePath;
+};
+
+const defaultAcceptWorkspaceInviteRouteDependencies: AcceptWorkspaceInviteRouteDependencies = {
+  acceptWorkspaceInvite,
+  buildEmailVerificationPagePath,
+  cookies,
+  getServerSession,
+  revalidatePath,
+};
+
+export async function handleAcceptWorkspaceInvitePost(
+  request: Request,
+  dependencies: AcceptWorkspaceInviteRouteDependencies = defaultAcceptWorkspaceInviteRouteDependencies,
+) {
+  const session = await dependencies.getServerSession();
 
   if (!session?.user.id || !session.user.email) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -25,7 +48,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const acceptedWorkspaceInvite = await acceptWorkspaceInvite({
+    const acceptedWorkspaceInvite = await dependencies.acceptWorkspaceInvite({
       currentUserEmailAddress: session.user.email,
       currentUserId: session.user.id,
       rawInviteToken,
@@ -33,11 +56,11 @@ export async function POST(request: Request) {
     const nextPath = acceptedWorkspaceInvite.workspace.onboardingCompletedAt ? "/app" : "/onboarding";
     const redirectPath = session.user.emailVerified
       ? nextPath
-      : buildEmailVerificationPagePath({
+      : dependencies.buildEmailVerificationPagePath({
           emailAddress: session.user.email,
           nextPath,
         });
-    const cookieStore = await cookies();
+    const cookieStore = (await dependencies.cookies()) as CookieStoreLike;
 
     cookieStore.set(activeWorkspaceCookieName, acceptedWorkspaceInvite.workspace.id, {
       httpOnly: true,
@@ -45,9 +68,9 @@ export async function POST(request: Request) {
       sameSite: "lax",
     });
 
-    revalidatePath("/app");
-    revalidatePath("/app/settings");
-    revalidatePath("/app/settings/members");
+    dependencies.revalidatePath("/app");
+    dependencies.revalidatePath("/app/settings");
+    dependencies.revalidatePath("/app/settings/members");
 
     return NextResponse.json({ redirectPath });
   } catch (error) {
@@ -64,4 +87,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ message: "Unable to accept workspace invite." }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  return handleAcceptWorkspaceInvitePost(request);
 }

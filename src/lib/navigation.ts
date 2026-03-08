@@ -11,6 +11,11 @@ export const appNav: NavItem[] = [
     description: "Operational snapshot",
   },
   {
+    href: "/app/analytics",
+    label: "Analytics",
+    description: "Funnels and performance",
+  },
+  {
     href: "/app/leads",
     label: "Leads",
     description: "Qualification queue",
@@ -31,6 +36,11 @@ export const appNav: NavItem[] = [
     description: "Tours and handoff queue",
   },
   {
+    href: "/app/tasks",
+    label: "Tasks",
+    description: "Assigned follow-up work",
+  },
+  {
     href: "/app/templates",
     label: "Templates",
     description: "Reusable messages",
@@ -39,6 +49,11 @@ export const appNav: NavItem[] = [
     href: "/app/workflows",
     label: "Workflows",
     description: "Automation builder",
+  },
+  {
+    href: "/app/audit",
+    label: "Audit",
+    description: "Sensitive actions and history",
   },
   {
     href: "/app/settings",

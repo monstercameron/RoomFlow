@@ -31,41 +31,104 @@ function redirectToAuthEntryPage(params: {
   );
 }
 
-export async function startSocialSignInAction(formData: FormData) {
+export type StartSocialSignInActionDependencies = {
+  buildAbsoluteApplicationUrl: typeof buildAbsoluteApplicationUrl;
+  buildAuthEntryPagePath: typeof buildAuthEntryPagePath;
+  getConfiguredSocialAuthProviderIds: typeof getConfiguredSocialAuthProviderIds;
+  getHeaders: typeof headers;
+  isSocialAuthProviderId: typeof isSocialAuthProviderId;
+  normalizeApplicationPath: typeof normalizeApplicationPath;
+  redirect: typeof redirect;
+  signInSocial: (params: {
+    body: {
+      callbackURL: string;
+      disableRedirect: true;
+      provider: string;
+    };
+    headers: Awaited<ReturnType<typeof headers>>;
+  }) => Promise<{ url?: string }>;
+};
+
+const defaultStartSocialSignInActionDependencies: StartSocialSignInActionDependencies = {
+  buildAbsoluteApplicationUrl,
+  buildAuthEntryPagePath,
+  getConfiguredSocialAuthProviderIds,
+  getHeaders: headers,
+  isSocialAuthProviderId,
+  normalizeApplicationPath,
+  redirect,
+  signInSocial: (params) => auth.api.signInSocial(params) as Promise<{ url?: string }>,
+};
+
+function redirectToAuthEntryPageWithDependencies(
+  params: {
+    callbackPath: string;
+    emailAddress?: string;
+    entryPath: "/login" | "/signup";
+    errorCode: string;
+    providerId?: string;
+  },
+  dependencies: Pick<StartSocialSignInActionDependencies, "buildAuthEntryPagePath" | "redirect">,
+): never {
+  dependencies.redirect(
+    dependencies.buildAuthEntryPagePath({
+      callbackPath: params.callbackPath,
+      emailAddress: params.emailAddress,
+      entryPath: params.entryPath,
+      errorCode: params.errorCode,
+      providerId: params.providerId,
+    }),
+  );
+}
+
+export async function handleStartSocialSignInAction(
+  formData: FormData,
+  dependencies: StartSocialSignInActionDependencies = defaultStartSocialSignInActionDependencies,
+) {
   const providerId = String(formData.get("providerId") ?? "").trim();
   const entryPathValue = String(formData.get("entryPath") ?? "").trim();
-  const callbackPath = normalizeApplicationPath(String(formData.get("callbackPath") ?? "/onboarding"));
+  const callbackPath = dependencies.normalizeApplicationPath(
+    String(formData.get("callbackPath") ?? "/onboarding"),
+  );
   const emailAddress = String(formData.get("emailAddress") ?? "").trim() || undefined;
 
   if (entryPathValue !== "/login" && entryPathValue !== "/signup") {
-    redirect(buildAuthEntryPagePath({ callbackPath, entryPath: "/login", errorCode: "invalid_entry" }));
+    dependencies.redirect(
+      dependencies.buildAuthEntryPagePath({
+        callbackPath,
+        entryPath: "/login",
+        errorCode: "invalid_entry",
+      }),
+    );
   }
 
-  if (!isSocialAuthProviderId(providerId)) {
-    redirectToAuthEntryPage({
+  if (!dependencies.isSocialAuthProviderId(providerId)) {
+    redirectToAuthEntryPageWithDependencies({
       callbackPath,
       emailAddress,
       entryPath: entryPathValue,
       errorCode: "provider_not_supported",
       providerId,
-    });
+    }, dependencies);
   }
 
-  if (!getConfiguredSocialAuthProviderIds().includes(providerId)) {
-    redirectToAuthEntryPage({
+  if (!dependencies.getConfiguredSocialAuthProviderIds().includes(providerId)) {
+    redirectToAuthEntryPageWithDependencies({
       callbackPath,
       emailAddress,
       entryPath: entryPathValue,
       errorCode: "provider_not_configured",
       providerId,
-    });
+    }, dependencies);
   }
 
+  let signInResult: { url?: string };
+
   try {
-    const signInResult = (await auth.api.signInSocial({
+    signInResult = await dependencies.signInSocial({
       body: {
-        callbackURL: buildAbsoluteApplicationUrl(
-          buildAuthEntryPagePath({
+        callbackURL: dependencies.buildAbsoluteApplicationUrl(
+          dependencies.buildAuthEntryPagePath({
             callbackPath,
             emailAddress,
             entryPath: entryPathValue,
@@ -75,29 +138,31 @@ export async function startSocialSignInAction(formData: FormData) {
         disableRedirect: true,
         provider: providerId,
       },
-      headers: await headers(),
-    })) as {
-      url?: string;
-    };
-
-    if (!signInResult.url) {
-      redirectToAuthEntryPage({
-        callbackPath,
-        emailAddress,
-        entryPath: entryPathValue,
-        errorCode: "social_sign_in_failed",
-        providerId,
-      });
-    }
-
-    redirect(signInResult.url);
+      headers: await dependencies.getHeaders(),
+    });
   } catch {
-    redirectToAuthEntryPage({
+    redirectToAuthEntryPageWithDependencies({
       callbackPath,
       emailAddress,
       entryPath: entryPathValue,
       errorCode: "social_sign_in_failed",
       providerId,
-    });
+    }, dependencies);
   }
+
+  if (!signInResult.url) {
+    redirectToAuthEntryPageWithDependencies({
+      callbackPath,
+      emailAddress,
+      entryPath: entryPathValue,
+      errorCode: "social_sign_in_failed",
+      providerId,
+    }, dependencies);
+  }
+
+  dependencies.redirect(signInResult.url);
+}
+
+export async function startSocialSignInAction(formData: FormData) {
+  return handleStartSocialSignInAction(formData);
 }

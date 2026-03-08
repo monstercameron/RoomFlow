@@ -80,11 +80,158 @@ async function getAiActionContext() {
   return membership;
 }
 
+type AiActionContext = {
+  userId: string;
+  workspaceId: string;
+  workspace: {
+    name: string;
+  };
+};
+
+type WorkflowTemplateArtifactKind = "workflow_template_generator";
+
+type WorkflowTemplateArtifact = {
+  body: string;
+  channel: "EMAIL" | "SMS";
+  name: string;
+  rationale: string;
+  subject?: string | null;
+  type: string;
+};
+
+export type GenerateWorkflowTemplateActionDependencies = {
+  buildAiArtifactErrorPayload: (kind: WorkflowTemplateArtifactKind, error: unknown) => unknown;
+  buildAiArtifactPayload: (kind: WorkflowTemplateArtifactKind, artifact: WorkflowTemplateArtifact) => unknown;
+  createAiAuditEvent: typeof createAiAuditEvent;
+  findSampleLead: (workspaceId: string) => Promise<{
+    property?: { name: string | null } | null;
+    conversation?: {
+      messages: Array<{ body: string }>;
+    } | null;
+  } | null>;
+  findSampleProperty: (workspaceId: string) => Promise<{ name: string | null } | null>;
+  generateWorkflowTemplate: (params: {
+    propertyName: string | null;
+    recentLeadSummary: string;
+    workspaceName: string;
+  }) => Promise<WorkflowTemplateArtifact>;
+  getAiActionContext: () => Promise<AiActionContext>;
+  redirect: typeof redirect;
+  revalidateAiPaths: typeof revalidateAiPaths;
+};
+
+const defaultGenerateWorkflowTemplateActionDependencies: GenerateWorkflowTemplateActionDependencies = {
+  buildAiArtifactErrorPayload: (kind, error) => buildAiArtifactErrorPayload(kind, error),
+  buildAiArtifactPayload: (kind, artifact) => buildAiArtifactPayload(kind, artifact),
+  createAiAuditEvent,
+  findSampleLead: (workspaceId) =>
+    prisma.lead.findFirst({
+      where: {
+        workspaceId,
+      },
+      include: {
+        property: true,
+        conversation: {
+          include: {
+            messages: {
+              orderBy: {
+                createdAt: "desc",
+              },
+              take: 2,
+            },
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+    }),
+  findSampleProperty: (workspaceId) =>
+    prisma.property.findFirst({
+      where: {
+        workspaceId,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+    }),
+  generateWorkflowTemplate,
+  getAiActionContext,
+  redirect,
+  revalidateAiPaths,
+};
+
+export type ApplyWorkflowTemplateActionDependencies = {
+  createAiAuditEvent: typeof createAiAuditEvent;
+  createMessageTemplate: (input: {
+    body: string;
+    channel: MessageChannel;
+    name: string;
+    subject: string | null;
+    type: TemplateType;
+    workspaceId: string;
+  }) => Promise<unknown>;
+  findAuditEvents: (workspaceId: string) => Promise<Array<{
+    createdAt: Date;
+    eventType: string;
+    payload: unknown;
+  }>>;
+  findLatestAiArtifact: (params: {
+    artifactKind: WorkflowTemplateArtifactKind;
+    auditEvents: Array<{
+      createdAt: Date;
+      eventType: string;
+      payload: unknown;
+    }>;
+    schema: typeof workflowTemplateGeneratorSchema;
+  }) => {
+    status: string;
+    data?: {
+      body: string;
+      channel: "EMAIL" | "SMS";
+      name: string;
+      subject?: string | null;
+      type: string;
+    };
+  } | null;
+  getAiActionContext: () => Promise<AiActionContext>;
+  redirect: typeof redirect;
+  revalidateAiPaths: typeof revalidateAiPaths;
+};
+
+const defaultApplyWorkflowTemplateActionDependencies: ApplyWorkflowTemplateActionDependencies = {
+  createAiAuditEvent,
+  createMessageTemplate: (input) =>
+    prisma.messageTemplate.create({
+      data: input,
+    }),
+  findAuditEvents: (workspaceId) =>
+    prisma.auditEvent.findMany({
+      where: {
+        workspaceId,
+        eventType: "ai_artifact_generated",
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+      select: {
+        createdAt: true,
+        eventType: true,
+        payload: true,
+      },
+    }),
+  findLatestAiArtifact: (params) => findLatestAiArtifact(params),
+  getAiActionContext,
+  redirect,
+  revalidateAiPaths,
+};
+
 async function createAiAuditEvent(params: {
   workspaceId: string;
   actorUserId: string;
   leadId?: string;
   propertyId?: string;
+  eventType?: string;
   payload: unknown;
 }) {
   await prisma.auditEvent.create({
@@ -94,7 +241,7 @@ async function createAiAuditEvent(params: {
       propertyId: params.propertyId,
       actorUserId: params.actorUserId,
       actorType: AuditActorType.USER,
-      eventType: "ai_artifact_generated",
+      eventType: params.eventType ?? "ai_artifact_generated",
       payload: params.payload as never,
     },
   });
@@ -612,6 +759,19 @@ export async function applyPropertyHouseRulesAction(
     });
   }
 
+  await createAiAuditEvent({
+    actorUserId: membership.userId,
+    eventType: "ai_artifact_applied",
+    payload: {
+      artifactKind: "house_rules_generator",
+      propertyId,
+      ruleCount: latestArtifact.data.rules.length,
+      status: "applied",
+    },
+    propertyId,
+    workspaceId: membership.workspaceId,
+  });
+
   revalidateAiPaths({ propertyId });
   redirect(redirectPath);
 }
@@ -726,48 +886,38 @@ export async function applyPropertyIntakeFormAction(
     });
   }
 
+  await createAiAuditEvent({
+    actorUserId: membership.userId,
+    eventType: "ai_artifact_applied",
+    payload: {
+      artifactKind: "intake_form_generator",
+      propertyId,
+      questionCount: latestArtifact.data.questions.length,
+      questionSetId: questionSet.id,
+      status: "applied",
+    },
+    propertyId,
+    workspaceId: membership.workspaceId,
+  });
+
   revalidateAiPaths({ propertyId });
   redirect(redirectPath);
 }
 
-export async function generateWorkflowTemplateAction(formData: FormData) {
-  const membership = await getAiActionContext();
+export async function handleGenerateWorkflowTemplateAction(
+  formData: FormData,
+  dependencies: GenerateWorkflowTemplateActionDependencies = defaultGenerateWorkflowTemplateActionDependencies,
+) {
+  const membership = await dependencies.getAiActionContext();
   const redirectPath = getRedirectPath(formData, "/app/templates");
 
   try {
     const [sampleLead, sampleProperty] = await Promise.all([
-      prisma.lead.findFirst({
-        where: {
-          workspaceId: membership.workspaceId,
-        },
-        include: {
-          property: true,
-          conversation: {
-            include: {
-              messages: {
-                orderBy: {
-                  createdAt: "desc",
-                },
-                take: 2,
-              },
-            },
-          },
-        },
-        orderBy: {
-          updatedAt: "desc",
-        },
-      }),
-      prisma.property.findFirst({
-        where: {
-          workspaceId: membership.workspaceId,
-        },
-        orderBy: {
-          updatedAt: "desc",
-        },
-      }),
+      dependencies.findSampleLead(membership.workspaceId),
+      dependencies.findSampleProperty(membership.workspaceId),
     ]);
 
-    const generatedTemplate = await generateWorkflowTemplate({
+    const generatedTemplate = await dependencies.generateWorkflowTemplate({
       propertyName: sampleProperty?.name ?? sampleLead?.property?.name ?? null,
       recentLeadSummary:
         sampleLead?.conversation?.messages.map((message) => message.body).join(" | ") ??
@@ -775,41 +925,35 @@ export async function generateWorkflowTemplateAction(formData: FormData) {
       workspaceName: membership.workspace.name,
     });
 
-    await createAiAuditEvent({
+    await dependencies.createAiAuditEvent({
       actorUserId: membership.userId,
-      payload: buildAiArtifactPayload("workflow_template_generator", generatedTemplate),
+      payload: dependencies.buildAiArtifactPayload("workflow_template_generator", generatedTemplate),
       workspaceId: membership.workspaceId,
     });
   } catch (error) {
-    await createAiAuditEvent({
+    await dependencies.createAiAuditEvent({
       actorUserId: membership.userId,
-      payload: buildAiArtifactErrorPayload("workflow_template_generator", error),
+      payload: dependencies.buildAiArtifactErrorPayload("workflow_template_generator", error),
       workspaceId: membership.workspaceId,
     });
   }
 
-  revalidateAiPaths({});
-  redirect(redirectPath);
+  dependencies.revalidateAiPaths({});
+  dependencies.redirect(redirectPath);
 }
 
-export async function applyWorkflowTemplateAction(formData: FormData) {
-  const membership = await getAiActionContext();
+export async function generateWorkflowTemplateAction(formData: FormData) {
+  return handleGenerateWorkflowTemplateAction(formData);
+}
+
+export async function handleApplyWorkflowTemplateAction(
+  formData: FormData,
+  dependencies: ApplyWorkflowTemplateActionDependencies = defaultApplyWorkflowTemplateActionDependencies,
+) {
+  const membership = await dependencies.getAiActionContext();
   const redirectPath = getRedirectPath(formData, "/app/templates");
-  const auditEvents = await prisma.auditEvent.findMany({
-    where: {
-      workspaceId: membership.workspaceId,
-      eventType: "ai_artifact_generated",
-    },
-    orderBy: {
-      createdAt: "asc",
-    },
-    select: {
-      createdAt: true,
-      eventType: true,
-      payload: true,
-    },
-  });
-  const latestArtifact = findLatestAiArtifact({
+  const auditEvents = await dependencies.findAuditEvents(membership.workspaceId);
+  const latestArtifact = dependencies.findLatestAiArtifact({
     artifactKind: "workflow_template_generator",
     auditEvents,
     schema: workflowTemplateGeneratorSchema,
@@ -819,19 +963,37 @@ export async function applyWorkflowTemplateAction(formData: FormData) {
     throw new Error("No generated workflow template is available to apply.");
   }
 
-  await prisma.messageTemplate.create({
-    data: {
-      body: latestArtifact.data.body,
-      channel: latestArtifact.data.channel === "EMAIL" ? MessageChannel.EMAIL : MessageChannel.SMS,
-      name: latestArtifact.data.name,
-      subject: latestArtifact.data.subject ?? null,
-      type: latestArtifact.data.type as TemplateType,
-      workspaceId: membership.workspaceId,
-    },
+  if (!latestArtifact.data) {
+    throw new Error("No generated workflow template is available to apply.");
+  }
+
+  await dependencies.createMessageTemplate({
+    body: latestArtifact.data.body,
+    channel: latestArtifact.data.channel === "EMAIL" ? MessageChannel.EMAIL : MessageChannel.SMS,
+    name: latestArtifact.data.name,
+    subject: latestArtifact.data.subject ?? null,
+    type: latestArtifact.data.type as TemplateType,
+    workspaceId: membership.workspaceId,
   });
 
-  revalidateAiPaths({});
-  redirect(redirectPath);
+  await dependencies.createAiAuditEvent({
+    actorUserId: membership.userId,
+    eventType: "ai_artifact_applied",
+    payload: {
+      artifactKind: "workflow_template_generator",
+      status: "applied",
+      templateName: latestArtifact.data.name,
+      workspaceId: membership.workspaceId,
+    },
+    workspaceId: membership.workspaceId,
+  });
+
+  dependencies.revalidateAiPaths({});
+  dependencies.redirect(redirectPath);
+}
+
+export async function applyWorkflowTemplateAction(formData: FormData) {
+  return handleApplyWorkflowTemplateAction(formData);
 }
 
 export async function generatePortfolioInsightsAction(formData: FormData) {

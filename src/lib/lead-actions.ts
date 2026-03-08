@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   AuditActorType,
+  CalendarSyncProvider,
   DeclineReason,
   LeadStatus,
   MembershipRole,
@@ -13,7 +14,9 @@ import {
   NotificationType,
   PropertyLifecycleStatus,
   QualificationFit,
+  ScreeningChargeMode,
   ScreeningConnectionAuthState,
+  ScreeningProvider,
   ScreeningRequestStatus,
   TourSchedulingMode,
   TourEventStatus,
@@ -83,6 +86,2025 @@ import {
 import { workspaceHasCapability } from "@/lib/workspace-plan";
 import { workflowEventTypes } from "@/lib/workflow-events";
 import { appendWorkflowErrorCodeToPath } from "@/lib/workflow-error-routing";
+
+type LeadActionContext = {
+  actorUserId: string;
+  leadId: string;
+  membershipRole: MembershipRole;
+  workspaceId: string;
+};
+
+export type LeadActionPermissionDependencies = {
+  canMembershipRolePerformLeadAction: typeof canMembershipRolePerformLeadAction;
+  createAuditEvent: (input: {
+    workspaceId: string;
+    leadId: string;
+    actorUserId: string;
+    actorType: AuditActorType;
+    eventType: string;
+    payload: unknown;
+  }) => Promise<unknown>;
+};
+
+const defaultLeadActionPermissionDependencies: LeadActionPermissionDependencies = {
+  canMembershipRolePerformLeadAction,
+  createAuditEvent: (input) =>
+    prisma.auditEvent.create({
+      data: {
+        workspaceId: input.workspaceId,
+        leadId: input.leadId,
+        actorUserId: input.actorUserId,
+        actorType: input.actorType,
+        eventType: input.eventType,
+        payload: input.payload as never,
+      },
+    }),
+};
+
+export type WorkflowActionRedirectDependencies = {
+  appendWorkflowErrorCodeToPath: typeof appendWorkflowErrorCodeToPath;
+  isLeadWorkflowError: typeof isLeadWorkflowError;
+  redirect: typeof redirect;
+  refreshLeadWorkflow: (leadId: string) => void;
+};
+
+const defaultWorkflowActionRedirectDependencies: WorkflowActionRedirectDependencies = {
+  appendWorkflowErrorCodeToPath,
+  isLeadWorkflowError,
+  redirect,
+  refreshLeadWorkflow,
+};
+
+export type EvaluateLeadActionDependencies = {
+  applyLeadEvaluation: (params: LeadActionContext) => Promise<unknown>;
+  assertLeadActionPermission: (params: {
+    workspaceId: string;
+    leadId: string;
+    actorUserId: string;
+    membershipRole: MembershipRole;
+    leadActionPermissionKey: LeadActionPermissionKey;
+  }) => Promise<void>;
+  executeWorkflowActionWithErrorRedirect: (params: {
+    leadId: string;
+    redirectPath?: string;
+    executeAction: () => Promise<void>;
+  }) => Promise<void>;
+  getActionContext: (leadId: string) => Promise<LeadActionContext>;
+};
+
+const defaultEvaluateLeadActionDependencies: EvaluateLeadActionDependencies = {
+  applyLeadEvaluation,
+  assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+  executeWorkflowActionWithErrorRedirect: (params) => handleExecuteWorkflowActionWithErrorRedirect(params),
+  getActionContext,
+};
+
+export type AssignLeadPropertyActionDependencies = {
+  applyLeadEvaluation: (params: LeadActionContext) => Promise<unknown>;
+  assertLeadActionPermission: (params: {
+    workspaceId: string;
+    leadId: string;
+    actorUserId: string;
+    membershipRole: MembershipRole;
+    leadActionPermissionKey: LeadActionPermissionKey;
+  }) => Promise<void>;
+  executeWorkflowActionWithErrorRedirect: (params: {
+    leadId: string;
+    redirectPath?: string;
+    executeAction: () => Promise<void>;
+  }) => Promise<void>;
+  findAssignableProperty: (input: { propertyId: string; workspaceId: string }) => Promise<{
+    id: string;
+    name: string;
+  } | null>;
+  findExistingProperty: (input: { propertyId: string; workspaceId: string }) => Promise<{
+    lifecycleStatus: PropertyLifecycleStatus;
+  } | null>;
+  getActionContext: (leadId: string) => Promise<LeadActionContext>;
+  propertyAcceptsNewLeads: (propertyLifecycleStatus: PropertyLifecycleStatus) => boolean;
+  shouldRecomputeFitForTrigger: typeof shouldRecomputeFitForTrigger;
+  updateLead: (input: { leadId: string; propertyId: string; lastActivityAt: Date }) => Promise<unknown>;
+  createAuditEvent: (input: {
+    workspaceId: string;
+    leadId: string;
+    propertyId: string;
+    actorUserId: string;
+    actorType: AuditActorType;
+    eventType: string;
+    payload: unknown;
+  }) => Promise<unknown>;
+};
+
+const defaultAssignLeadPropertyActionDependencies: AssignLeadPropertyActionDependencies = {
+  applyLeadEvaluation,
+  assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+  executeWorkflowActionWithErrorRedirect: (params) => handleExecuteWorkflowActionWithErrorRedirect(params),
+  findAssignableProperty: ({ propertyId, workspaceId }) =>
+    prisma.property.findFirst({
+      where: {
+        id: propertyId,
+        workspaceId,
+        lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
+      },
+    }),
+  findExistingProperty: ({ propertyId, workspaceId }) =>
+    prisma.property.findFirst({
+      where: {
+        id: propertyId,
+        workspaceId,
+      },
+      select: {
+        lifecycleStatus: true,
+      },
+    }),
+  getActionContext,
+  propertyAcceptsNewLeads,
+  shouldRecomputeFitForTrigger,
+  updateLead: ({ leadId, propertyId, lastActivityAt }) =>
+    prisma.lead.update({
+      where: {
+        id: leadId,
+      },
+      data: {
+        propertyId,
+        lastActivityAt,
+      },
+    }),
+  createAuditEvent: (input) =>
+    prisma.auditEvent.create({
+      data: {
+        workspaceId: input.workspaceId,
+        leadId: input.leadId,
+        propertyId: input.propertyId,
+        actorUserId: input.actorUserId,
+        actorType: input.actorType,
+        eventType: input.eventType,
+        payload: input.payload as never,
+      },
+    }),
+};
+
+export type CompleteTourActionDependencies = {
+  assertLeadActionPermission: (params: {
+    workspaceId: string;
+    leadId: string;
+    actorUserId: string;
+    membershipRole: MembershipRole;
+    leadActionPermissionKey: LeadActionPermissionKey;
+  }) => Promise<void>;
+  completeTour: (input: {
+    actionContext: LeadActionContext;
+    activeTour: { id: string };
+    lead: { id: string; propertyId: string | null };
+  }) => Promise<void>;
+  executeWorkflowActionWithErrorRedirect: (params: {
+    leadId: string;
+    redirectPath?: string;
+    executeAction: () => Promise<void>;
+  }) => Promise<void>;
+  findLeadWithActiveScheduledTour: (input: { leadId: string; workspaceId: string }) => Promise<{
+    id: string;
+    propertyId: string | null;
+    tours: Array<{ id: string }>;
+  } | null>;
+  getActionContext: (leadId: string) => Promise<LeadActionContext>;
+};
+
+const defaultCompleteTourActionDependencies: CompleteTourActionDependencies = {
+  assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+  completeTour: async ({ actionContext, activeTour, lead }) => {
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.tourEvent.update({
+        where: {
+          id: activeTour.id,
+        },
+        data: {
+          completedAt: new Date(),
+          status: TourEventStatus.COMPLETED,
+        },
+      });
+
+      await transactionClient.lead.update({
+        where: {
+          id: lead.id,
+        },
+        data: {
+          lastActivityAt: new Date(),
+          status: LeadStatus.QUALIFIED,
+        },
+      });
+
+      await transactionClient.auditEvent.create({
+        data: {
+          actorType: AuditActorType.USER,
+          actorUserId: actionContext.actorUserId,
+          eventType: "tour_completed",
+          leadId: lead.id,
+          payload: {
+            leadId: lead.id,
+            tourEventId: activeTour.id,
+          },
+          propertyId: lead.propertyId,
+          workspaceId: actionContext.workspaceId,
+        },
+      });
+    });
+  },
+  executeWorkflowActionWithErrorRedirect: (params) => handleExecuteWorkflowActionWithErrorRedirect(params),
+  findLeadWithActiveScheduledTour: ({ leadId, workspaceId }) =>
+    prisma.lead.findFirst({
+      where: {
+        id: leadId,
+        workspaceId,
+      },
+      include: {
+        tours: {
+          where: {
+            status: TourEventStatus.SCHEDULED,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 1,
+        },
+      },
+    }),
+  getActionContext,
+};
+
+export type MarkTourNoShowActionDependencies = {
+  assertLeadActionPermission: (params: {
+    workspaceId: string;
+    leadId: string;
+    actorUserId: string;
+    membershipRole: MembershipRole;
+    leadActionPermissionKey: LeadActionPermissionKey;
+  }) => Promise<void>;
+  executeWorkflowActionWithErrorRedirect: (params: {
+    leadId: string;
+    redirectPath?: string;
+    executeAction: () => Promise<void>;
+  }) => Promise<void>;
+  findLeadWithActiveScheduledTour: (input: { leadId: string; workspaceId: string }) => Promise<{
+    id: string;
+    propertyId: string | null;
+    tours: Array<{ id: string }>;
+  } | null>;
+  getActionContext: (leadId: string) => Promise<LeadActionContext>;
+  markTourNoShow: (input: {
+    actionContext: LeadActionContext;
+    activeTour: { id: string };
+    lead: { id: string; propertyId: string | null };
+    operatorNoShowReason: string;
+  }) => Promise<void>;
+};
+
+const defaultMarkTourNoShowActionDependencies: MarkTourNoShowActionDependencies = {
+  assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+  executeWorkflowActionWithErrorRedirect: (params) => handleExecuteWorkflowActionWithErrorRedirect(params),
+  findLeadWithActiveScheduledTour: ({ leadId, workspaceId }) =>
+    prisma.lead.findFirst({
+      where: {
+        id: leadId,
+        workspaceId,
+      },
+      include: {
+        tours: {
+          where: {
+            status: TourEventStatus.SCHEDULED,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 1,
+        },
+      },
+    }),
+  getActionContext,
+  markTourNoShow: async ({ actionContext, activeTour, lead, operatorNoShowReason }) => {
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.tourEvent.update({
+        where: {
+          id: activeTour.id,
+        },
+        data: {
+          completedAt: new Date(),
+          operatorNoShowReason,
+          status: TourEventStatus.NO_SHOW,
+        },
+      });
+
+      await transactionClient.lead.update({
+        where: {
+          id: lead.id,
+        },
+        data: {
+          lastActivityAt: new Date(),
+          status: LeadStatus.UNDER_REVIEW,
+        },
+      });
+
+      await transactionClient.auditEvent.create({
+        data: {
+          actorType: AuditActorType.USER,
+          actorUserId: actionContext.actorUserId,
+          eventType: "tour_no_show_recorded",
+          leadId: lead.id,
+          payload: {
+            leadId: lead.id,
+            operatorNoShowReason,
+            tourEventId: activeTour.id,
+          },
+          propertyId: lead.propertyId,
+          workspaceId: actionContext.workspaceId,
+        },
+      });
+    });
+  },
+};
+
+type ManualOutboundWorkspaceMember = {
+  userId: string;
+  name: string;
+  emailAddress: string;
+  membershipRole: MembershipRole;
+};
+
+type ManualOutboundLead = {
+  contact: {
+    email: string | null;
+    phone: string | null;
+  } | null;
+  conversation: {
+    id: string;
+  } | null;
+  email: string | null;
+  fullName: string;
+  id: string;
+  propertyId: string | null;
+  phone: string | null;
+  optOutAt?: Date | null;
+  optOutReason?: string | null;
+  emailOptOutAt?: Date | null;
+  emailOptOutReason?: string | null;
+  smsOptOutAt?: Date | null;
+  smsOptOutReason?: string | null;
+  whatsappOptOutAt?: Date | null;
+  whatsappOptOutReason?: string | null;
+  instagramOptOutAt?: Date | null;
+  instagramOptOutReason?: string | null;
+};
+
+export type SendManualOutboundMessageActionDependencies = {
+  assertLeadActionPermission: (params: {
+    workspaceId: string;
+    leadId: string;
+    actorUserId: string;
+    membershipRole: MembershipRole;
+    leadActionPermissionKey: LeadActionPermissionKey;
+  }) => Promise<void>;
+  createConversation: (input: {
+    leadId: string;
+    subject: string | null;
+  }) => Promise<{ id: string }>;
+  createMessage: (input: {
+    body: string;
+    channel: MessageChannel;
+    conversationId: string;
+    deliveryStatus: string;
+    direction: MessageDirection;
+    origin: MessageOrigin;
+    sentAt: Date | null;
+    subject: string | null;
+  }) => Promise<{ id: string }>;
+  executeWorkflowActionWithErrorRedirect: (params: {
+    leadId: string;
+    redirectPath?: string;
+    executeAction: () => Promise<void>;
+  }) => Promise<void>;
+  findLeadForManualOutbound: (input: { leadId: string; workspaceId: string }) => Promise<ManualOutboundLead | null>;
+  findWorkspaceMembersForInternalNotes: (input: {
+    workspaceId: string;
+    actorUserId: string;
+  }) => Promise<ManualOutboundWorkspaceMember[]>;
+  getActionContext: (leadId: string) => Promise<LeadActionContext>;
+  isLeadChannelOptedOut: typeof isLeadChannelOptedOut;
+  isProviderConfigurationError: typeof isProviderConfigurationError;
+  markMessageDeliveryFailure: typeof markMessageDeliveryFailure;
+  markMessageProviderUnresolved: typeof markMessageProviderUnresolved;
+  persistManualOutboundActivity: (input: {
+    actionContext: LeadActionContext;
+    lead: { id: string; propertyId: string | null; optOutAt?: Date | null };
+    messageId: string;
+    outboundMessageChannel: MessageChannel;
+  }) => Promise<void>;
+  resolveInternalNoteMentions: typeof resolveInternalNoteMentions;
+  sendQueuedMessage: typeof sendQueuedMessage;
+};
+
+const defaultSendManualOutboundMessageActionDependencies: SendManualOutboundMessageActionDependencies = {
+  assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+  createConversation: ({ leadId, subject }) =>
+    prisma.conversation.create({
+      data: {
+        leadId,
+        subject,
+      },
+    }),
+  createMessage: (input) =>
+    prisma.message.create({
+      data: {
+        body: input.body,
+        channel: input.channel,
+        conversationId: input.conversationId,
+        deliveryStatus: input.deliveryStatus,
+        direction: input.direction,
+        origin: input.origin,
+        sentAt: input.sentAt,
+        subject: input.subject,
+      },
+    }),
+  executeWorkflowActionWithErrorRedirect: (params) => handleExecuteWorkflowActionWithErrorRedirect(params),
+  findLeadForManualOutbound: ({ leadId, workspaceId }) =>
+    prisma.lead.findFirst({
+      where: {
+        id: leadId,
+        workspaceId,
+      },
+      include: {
+        contact: true,
+        conversation: true,
+      },
+    }),
+  findWorkspaceMembersForInternalNotes: async ({ workspaceId, actorUserId }) => {
+    const workspaceMembers = await prisma.membership.findMany({
+      where: {
+        workspaceId,
+        userId: {
+          not: actorUserId,
+        },
+      },
+      include: {
+        user: {
+          select: {
+            email: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+    });
+
+    return workspaceMembers.map((workspaceMember) => ({
+      userId: workspaceMember.userId,
+      name: workspaceMember.user.name ?? workspaceMember.user.email ?? "Teammate",
+      emailAddress:
+        workspaceMember.user.email ?? `${workspaceMember.userId}@roomflow.local`,
+      membershipRole: workspaceMember.role,
+    }));
+  },
+  getActionContext,
+  isLeadChannelOptedOut,
+  isProviderConfigurationError,
+  markMessageDeliveryFailure,
+  markMessageProviderUnresolved,
+  persistManualOutboundActivity: async ({
+    actionContext,
+    lead,
+    messageId,
+    outboundMessageChannel,
+  }) => {
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.lead.update({
+        where: {
+          id: lead.id,
+        },
+        data: {
+          lastActivityAt: new Date(),
+        },
+      });
+
+      await transactionClient.auditEvent.create({
+        data: {
+          workspaceId: actionContext.workspaceId,
+          leadId: lead.id,
+          propertyId: lead.propertyId,
+          actorUserId: actionContext.actorUserId,
+          actorType: AuditActorType.USER,
+          eventType: "manual_outbound_sent",
+          payload: {
+            messageId,
+            channel: outboundMessageChannel,
+            optOutAt: lead.optOutAt?.toISOString() ?? null,
+          },
+        },
+      });
+    });
+  },
+  resolveInternalNoteMentions,
+  sendQueuedMessage,
+};
+
+type LeadChannelOptOutRecord = {
+  id: string;
+  propertyId: string | null;
+  optOutAt: Date | null;
+  optOutReason: string | null;
+  emailOptOutAt: Date | null;
+  emailOptOutReason: string | null;
+  smsOptOutAt: Date | null;
+  smsOptOutReason: string | null;
+  whatsappOptOutAt: Date | null;
+  whatsappOptOutReason: string | null;
+  instagramOptOutAt: Date | null;
+  instagramOptOutReason: string | null;
+};
+
+export type UpdateLeadChannelOptOutActionDependencies = {
+  assertLeadActionPermission: (params: {
+    workspaceId: string;
+    leadId: string;
+    actorUserId: string;
+    membershipRole: MembershipRole;
+    leadActionPermissionKey: LeadActionPermissionKey;
+  }) => Promise<void>;
+  buildLeadChannelOptOutUpdate: typeof buildLeadChannelOptOutUpdate;
+  executeWorkflowActionWithErrorRedirect: (params: {
+    leadId: string;
+    redirectPath?: string;
+    executeAction: () => Promise<void>;
+  }) => Promise<void>;
+  findLeadForChannelOptOut: (input: { leadId: string; workspaceId: string }) => Promise<LeadChannelOptOutRecord | null>;
+  getActionContext: (leadId: string) => Promise<LeadActionContext>;
+  persistLeadChannelOptOutUpdate: (input: {
+    actionContext: LeadActionContext;
+    channel: MessageChannel;
+    isOptedOut: boolean;
+    lead: { id: string; propertyId: string | null };
+    reason: string | null;
+    updateData: ReturnType<typeof buildLeadChannelOptOutUpdate>;
+  }) => Promise<void>;
+};
+
+const defaultUpdateLeadChannelOptOutActionDependencies: UpdateLeadChannelOptOutActionDependencies = {
+  assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+  buildLeadChannelOptOutUpdate,
+  executeWorkflowActionWithErrorRedirect: (params) => handleExecuteWorkflowActionWithErrorRedirect(params),
+  findLeadForChannelOptOut: ({ leadId, workspaceId }) =>
+    prisma.lead.findFirst({
+      where: {
+        id: leadId,
+        workspaceId,
+      },
+      select: {
+        id: true,
+        propertyId: true,
+        optOutAt: true,
+        optOutReason: true,
+        emailOptOutAt: true,
+        emailOptOutReason: true,
+        smsOptOutAt: true,
+        smsOptOutReason: true,
+        whatsappOptOutAt: true,
+        whatsappOptOutReason: true,
+        instagramOptOutAt: true,
+        instagramOptOutReason: true,
+      },
+    }),
+  getActionContext,
+  persistLeadChannelOptOutUpdate: async ({
+    actionContext,
+    channel,
+    isOptedOut,
+    lead,
+    reason,
+    updateData,
+  }) => {
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.lead.update({
+        where: {
+          id: lead.id,
+        },
+        data: {
+          ...updateData,
+          lastActivityAt: new Date(),
+        },
+      });
+
+      await transactionClient.auditEvent.create({
+        data: {
+          workspaceId: actionContext.workspaceId,
+          leadId: lead.id,
+          propertyId: lead.propertyId,
+          actorUserId: actionContext.actorUserId,
+          actorType: AuditActorType.USER,
+          eventType: isOptedOut ? "lead_opted_out" : "lead_opted_in",
+          payload: {
+            channel,
+            reason,
+            source: "operator_control",
+          },
+        },
+      });
+    });
+  },
+};
+
+  export type DeclineLeadActionDependencies = {
+    assertLeadActionPermission: (params: {
+      workspaceId: string;
+      leadId: string;
+      actorUserId: string;
+      membershipRole: MembershipRole;
+      leadActionPermissionKey: LeadActionPermissionKey;
+    }) => Promise<void>;
+    assertLeadStatusTransitionIsAllowed: typeof assertLeadStatusTransitionIsAllowed;
+    declineLead: (input: {
+      actionContext: LeadActionContext;
+      declineNote: string | null;
+      declineReason: DeclineReason;
+      lead: {
+        id: string;
+        status: LeadStatus;
+        propertyId: string | null;
+        conversation: {
+          messages: Array<{ id: string }>;
+        } | null;
+      };
+    }) => Promise<void>;
+    executeWorkflowActionWithErrorRedirect: (params: {
+      leadId: string;
+      redirectPath?: string;
+      executeAction: () => Promise<void>;
+    }) => Promise<void>;
+    findLeadForDecline: (input: { leadId: string; workspaceId: string }) => Promise<{
+      id: string;
+      status: LeadStatus;
+      propertyId: string | null;
+      conversation: {
+        messages: Array<{ id: string }>;
+      } | null;
+    } | null>;
+    getActionContext: (leadId: string) => Promise<LeadActionContext>;
+  };
+
+  const defaultDeclineLeadActionDependencies: DeclineLeadActionDependencies = {
+    assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+    assertLeadStatusTransitionIsAllowed,
+    declineLead: async ({ actionContext, declineNote, declineReason, lead }) => {
+      await prisma.$transaction(async (transactionClient) => {
+        await transactionClient.lead.update({
+          where: {
+            id: lead.id,
+          },
+          data: {
+            status: LeadStatus.DECLINED,
+            declineReason,
+            declinedAt: new Date(),
+            isSoftDeclined: true,
+            lastActivityAt: new Date(),
+          },
+        });
+
+        await transactionClient.leadStatusHistory.create({
+          data: {
+            leadId: lead.id,
+            fromStatus: lead.status,
+            toStatus: LeadStatus.DECLINED,
+            reason: `Declined (${declineReason})`,
+          },
+        });
+
+        await transactionClient.auditEvent.create({
+          data: {
+            workspaceId: actionContext.workspaceId,
+            leadId: lead.id,
+            propertyId: lead.propertyId,
+            actorUserId: actionContext.actorUserId,
+            actorType: AuditActorType.USER,
+            eventType: workflowEventTypes.declineRecorded,
+            payload: {
+              reason: declineReason,
+              note: declineNote,
+              previousStatus: lead.status,
+              nextStatus: LeadStatus.DECLINED,
+            },
+          },
+        });
+
+        if (lead.conversation?.messages.length) {
+          for (const queuedOutboundMessage of lead.conversation.messages) {
+            await transactionClient.message.update({
+              where: {
+                id: queuedOutboundMessage.id,
+              },
+              data: {
+                deliveryStatus: serializeDeliveryStatus({
+                  state: "failed",
+                  provider: null,
+                  retryCount: 0,
+                  error: "Lead declined; automation stopped.",
+                }),
+              },
+            });
+          }
+        }
+      });
+    },
+    executeWorkflowActionWithErrorRedirect: (params) => handleExecuteWorkflowActionWithErrorRedirect(params),
+    findLeadForDecline: ({ leadId, workspaceId }) =>
+      prisma.lead.findFirst({
+        where: {
+          id: leadId,
+          workspaceId,
+        },
+        include: {
+          conversation: {
+            include: {
+              messages: {
+                where: {
+                  direction: MessageDirection.OUTBOUND,
+                  sentAt: null,
+                },
+              },
+            },
+          },
+        },
+      }),
+    getActionContext,
+  };
+
+  export type ConfirmDuplicateLeadActionDependencies = {
+    assertLeadActionPermission: (params: {
+      workspaceId: string;
+      leadId: string;
+      actorUserId: string;
+      membershipRole: MembershipRole;
+      leadActionPermissionKey: LeadActionPermissionKey;
+    }) => Promise<void>;
+    confirmDuplicateLead: (input: {
+      actionContext: LeadActionContext;
+      canonicalLead: {
+        id: string;
+        fullName: string;
+        propertyId: string | null;
+      };
+      duplicateLead: {
+        id: string;
+        fullName: string;
+        propertyId: string | null;
+        status: LeadStatus;
+      };
+    }) => Promise<void>;
+    findCanonicalLead: (input: { leadId: string; workspaceId: string }) => Promise<{
+      id: string;
+      fullName: string;
+      propertyId: string | null;
+    } | null>;
+    findDuplicateLead: (input: { leadId: string; workspaceId: string }) => Promise<{
+      id: string;
+      fullName: string;
+      propertyId: string | null;
+      status: LeadStatus;
+    } | null>;
+    getActionContext: (leadId: string) => Promise<LeadActionContext>;
+    redirect: typeof redirect;
+    redirectToWorkflowErrorPath: typeof redirectToWorkflowErrorPath;
+    refreshLeadWorkflow: (leadId: string) => void;
+  };
+
+  const defaultConfirmDuplicateLeadActionDependencies: ConfirmDuplicateLeadActionDependencies = {
+    assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+    confirmDuplicateLead: async ({ actionContext, canonicalLead, duplicateLead }) => {
+      const duplicateConfirmationReason = `Confirmed duplicate of ${canonicalLead.fullName}.`;
+      const statusAfterConfirmation = LeadStatus.ARCHIVED;
+
+      await prisma.$transaction(async (transactionClient) => {
+        await transactionClient.lead.update({
+          where: {
+            id: duplicateLead.id,
+          },
+          data: {
+            status: statusAfterConfirmation,
+            lastActivityAt: new Date(),
+          },
+        });
+
+        if (duplicateLead.status !== statusAfterConfirmation) {
+          await transactionClient.leadStatusHistory.create({
+            data: {
+              leadId: duplicateLead.id,
+              fromStatus: duplicateLead.status,
+              toStatus: statusAfterConfirmation,
+              reason: duplicateConfirmationReason,
+            },
+          });
+        }
+
+        await transactionClient.auditEvent.create({
+          data: {
+            workspaceId: actionContext.workspaceId,
+            leadId: duplicateLead.id,
+            propertyId: duplicateLead.propertyId,
+            actorUserId: actionContext.actorUserId,
+            actorType: AuditActorType.USER,
+            eventType: "duplicate_confirmed",
+            payload: {
+              canonicalLeadId: canonicalLead.id,
+              canonicalLeadName: canonicalLead.fullName,
+              reason: duplicateConfirmationReason,
+            },
+          },
+        });
+
+        await transactionClient.auditEvent.create({
+          data: {
+            workspaceId: actionContext.workspaceId,
+            leadId: canonicalLead.id,
+            propertyId: canonicalLead.propertyId,
+            actorUserId: actionContext.actorUserId,
+            actorType: AuditActorType.USER,
+            eventType: "duplicate_linked",
+            payload: {
+              duplicateLeadId: duplicateLead.id,
+              duplicateLeadName: duplicateLead.fullName,
+            },
+          },
+        });
+      });
+    },
+    findCanonicalLead: ({ leadId, workspaceId }) =>
+      prisma.lead.findFirst({
+        where: {
+          id: leadId,
+          workspaceId,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          propertyId: true,
+        },
+      }),
+    findDuplicateLead: ({ leadId, workspaceId }) =>
+      prisma.lead.findFirst({
+        where: {
+          id: leadId,
+          workspaceId,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          propertyId: true,
+          status: true,
+        },
+      }),
+    getActionContext,
+    redirect,
+    redirectToWorkflowErrorPath,
+    refreshLeadWorkflow,
+  };
+
+  export type LaunchScreeningActionDependencies = {
+    appendNotificationEvent: typeof appendNotificationEvent;
+    assertLeadActionPermission: (params: {
+      workspaceId: string;
+      leadId: string;
+      actorUserId: string;
+      membershipRole: MembershipRole;
+      leadActionPermissionKey: LeadActionPermissionKey;
+    }) => Promise<void>;
+    createScreeningRequest: (input: {
+      actionContext: LeadActionContext;
+      lead: {
+        fullName: string;
+        id: string;
+        property: {
+          name: string;
+        } | null;
+        propertyId: string | null;
+        workspace: {
+          webhookSigningSecret: string | null;
+        } | null;
+      };
+      packageKey: string;
+      packageLabel: string;
+      providerReference: string | null;
+      screeningConnection: {
+        authState: ScreeningConnectionAuthState;
+        chargeMode: ScreeningChargeMode;
+        id: string;
+        provider: ScreeningProvider;
+      };
+    }) => Promise<{ id: string }>;
+    findLeadForScreeningLaunch: (input: { leadId: string; workspaceId: string }) => Promise<{
+      fullName: string;
+      id: string;
+      property: {
+        name: string;
+      } | null;
+      propertyId: string | null;
+      screeningRequests: Array<unknown>;
+      status: LeadStatus;
+      workspace: {
+        webhookSigningSecret: string | null;
+      } | null;
+    } | null>;
+    findScreeningConnection: (input: { screeningConnectionId: string; workspaceId: string }) => Promise<{
+      authState: ScreeningConnectionAuthState;
+      chargeMode: ScreeningChargeMode;
+      id: string;
+      provider: ScreeningProvider;
+    } | null>;
+    getActionContext: (leadId: string) => Promise<LeadActionContext>;
+    getCurrentWorkspaceMembership: typeof getCurrentWorkspaceMembership;
+    queueOutboundWorkflowWebhook: typeof queueOutboundWorkflowWebhook;
+    redirect: typeof redirect;
+    redirectToWorkflowErrorPath: typeof redirectToWorkflowErrorPath;
+    refreshLeadWorkflow: (leadId: string) => void;
+    workspaceHasCapability: typeof workspaceHasCapability;
+  };
+
+  const defaultLaunchScreeningActionDependencies: LaunchScreeningActionDependencies = {
+    appendNotificationEvent,
+    assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+    createScreeningRequest: async ({ actionContext, lead, packageKey, packageLabel, providerReference, screeningConnection }) =>
+      prisma.$transaction(async (transactionClient) => {
+        const screeningRequest = await transactionClient.screeningRequest.create({
+          data: {
+            chargeMode: screeningConnection.chargeMode,
+            inviteSentAt: new Date(),
+            leadId: lead.id,
+            packageKey,
+            packageLabel,
+            propertyId: lead.propertyId,
+            providerReference,
+            requestedAt: new Date(),
+            screeningProviderConnectionId: screeningConnection.id,
+            status: ScreeningRequestStatus.INVITE_SENT,
+            workspaceId: actionContext.workspaceId,
+          },
+        });
+
+        await transactionClient.screeningStatusEvent.createMany({
+          data: [
+            {
+              screeningRequestId: screeningRequest.id,
+              status: ScreeningRequestStatus.REQUESTED,
+              detail: `Screening requested for ${packageLabel}.`,
+            },
+            {
+              screeningRequestId: screeningRequest.id,
+              status: ScreeningRequestStatus.INVITE_SENT,
+              detail: `Provider-hosted invite launched with ${packageLabel}.`,
+            },
+          ],
+        });
+
+        await transactionClient.auditEvent.create({
+          data: {
+            workspaceId: actionContext.workspaceId,
+            leadId: lead.id,
+            propertyId: lead.propertyId,
+            actorUserId: actionContext.actorUserId,
+            actorType: AuditActorType.USER,
+            eventType: workflowEventTypes.screeningRequested,
+            payload: {
+              packageKey,
+              packageLabel,
+              provider: screeningConnection.provider,
+              screeningRequestId: screeningRequest.id,
+            },
+          },
+        });
+
+        return screeningRequest;
+      }),
+    findLeadForScreeningLaunch: ({ leadId, workspaceId }) =>
+      prisma.lead.findFirst({
+        where: {
+          id: leadId,
+          workspaceId,
+        },
+        include: {
+          property: {
+            select: {
+              name: true,
+            },
+          },
+          workspace: {
+            select: {
+              webhookSigningSecret: true,
+            },
+          },
+          screeningRequests: {
+            where: {
+              status: {
+                notIn: [
+                  ScreeningRequestStatus.REVIEWED,
+                  ScreeningRequestStatus.ADVERSE_ACTION_RECORDED,
+                ],
+              },
+            },
+            take: 1,
+          },
+        },
+      }),
+    findScreeningConnection: ({ screeningConnectionId, workspaceId }) =>
+      prisma.screeningProviderConnection.findFirst({
+        where: {
+          id: screeningConnectionId,
+          workspaceId,
+        },
+      }),
+    getActionContext,
+    getCurrentWorkspaceMembership,
+    queueOutboundWorkflowWebhook,
+    redirect,
+    redirectToWorkflowErrorPath,
+    refreshLeadWorkflow,
+    workspaceHasCapability,
+  };
+
+  export type UpdateScreeningRequestStatusActionDependencies = {
+    appendNotificationEvent: typeof appendNotificationEvent;
+    assertLeadActionPermission: (params: {
+      workspaceId: string;
+      leadId: string;
+      actorUserId: string;
+      membershipRole: MembershipRole;
+      leadActionPermissionKey: LeadActionPermissionKey;
+    }) => Promise<void>;
+    findScreeningRequestForStatusUpdate: (input: {
+      leadId: string;
+      screeningRequestId: string;
+      workspaceId: string;
+    }) => Promise<{
+      adverseActionNotes: string | null;
+      chargeAmountCents: number | null;
+      chargeCurrency: string | null;
+      chargeReference: string | null;
+      completedAt: Date | null;
+      consentCompletedAt: Date | null;
+      consentRecords: Array<{
+        id: string;
+      }>;
+      id: string;
+      lead: {
+        fullName: string;
+        workspace: {
+          webhookSigningSecret: string | null;
+        } | null;
+      };
+      leadId: string;
+      propertyId: string | null;
+      providerReference: string | null;
+      providerReportId: string | null;
+      providerReportUrl: string | null;
+      reviewNotes: string | null;
+      reviewedAt: Date | null;
+      screeningProviderConnection: {
+        provider: ScreeningProvider;
+      };
+      status: ScreeningRequestStatus;
+    } | null>;
+    getActionContext: (leadId: string) => Promise<LeadActionContext>;
+    queueOutboundWorkflowWebhook: typeof queueOutboundWorkflowWebhook;
+    redirect: typeof redirect;
+    redirectToWorkflowErrorPath: typeof redirectToWorkflowErrorPath;
+    refreshLeadWorkflow: (leadId: string) => void;
+    resolveScreeningStatusTransitionGuard: typeof resolveScreeningStatusTransitionGuard;
+    resolveScreeningWebhookEventType: typeof resolveScreeningWebhookEventType;
+    updateScreeningRequestStatus: (input: {
+      actionContext: LeadActionContext;
+      adverseActionNotes: string | null;
+      attachmentContentType: string | null;
+      attachmentExternalId: string | null;
+      attachmentLabel: string | null;
+      attachmentUrl: string | null;
+      chargeAmountCents: number | null;
+      chargeCurrency: string | null;
+      chargeReference: string | null;
+      consentSource: string | null;
+      detail: string | null;
+      disclosureVersion: string | null;
+      effectiveProviderTimestamp: Date;
+      nextStatus: ScreeningRequestStatus;
+      providerReference: string | null;
+      providerReportId: string | null;
+      providerReportUrl: string | null;
+      reviewNotes: string | null;
+      screeningRequest: {
+        adverseActionNotes: string | null;
+        chargeAmountCents: number | null;
+        chargeCurrency: string | null;
+        chargeReference: string | null;
+        consentRecords: Array<{
+          id: string;
+        }>;
+        id: string;
+        leadId: string;
+        propertyId: string | null;
+        providerReference: string | null;
+        providerReportId: string | null;
+        providerReportUrl: string | null;
+        reviewNotes: string | null;
+      };
+    }) => Promise<void>;
+  };
+
+  const defaultUpdateScreeningRequestStatusActionDependencies: UpdateScreeningRequestStatusActionDependencies = {
+    appendNotificationEvent,
+    assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+    findScreeningRequestForStatusUpdate: ({ leadId, screeningRequestId, workspaceId }) =>
+      prisma.screeningRequest.findFirst({
+        where: {
+          id: screeningRequestId,
+          leadId,
+          workspaceId,
+        },
+        include: {
+          lead: {
+            include: {
+              workspace: {
+                select: {
+                  webhookSigningSecret: true,
+                },
+              },
+            },
+          },
+          consentRecords: {
+            select: {
+              id: true,
+            },
+          },
+          screeningProviderConnection: true,
+        },
+      }),
+    getActionContext,
+    queueOutboundWorkflowWebhook,
+    redirect,
+    redirectToWorkflowErrorPath,
+    refreshLeadWorkflow,
+    resolveScreeningStatusTransitionGuard,
+    resolveScreeningWebhookEventType,
+    updateScreeningRequestStatus: async ({
+      actionContext,
+      adverseActionNotes,
+      attachmentContentType,
+      attachmentExternalId,
+      attachmentLabel,
+      attachmentUrl,
+      chargeAmountCents,
+      chargeCurrency,
+      chargeReference,
+      consentSource,
+      detail,
+      disclosureVersion,
+      effectiveProviderTimestamp,
+      nextStatus,
+      providerReference,
+      providerReportId,
+      providerReportUrl,
+      reviewNotes,
+      screeningRequest,
+    }) => {
+      await prisma.$transaction(async (transactionClient) => {
+        await transactionClient.screeningRequest.update({
+          where: {
+            id: screeningRequest.id,
+          },
+          data: {
+            ...buildScreeningStatusTimestampUpdate(nextStatus, effectiveProviderTimestamp),
+            adverseActionNotes: adverseActionNotes ?? screeningRequest.adverseActionNotes,
+            chargeAmountCents: chargeAmountCents ?? screeningRequest.chargeAmountCents,
+            chargeCurrency:
+              chargeCurrency ??
+              screeningRequest.chargeCurrency ??
+              (chargeAmountCents !== null ? "USD" : null),
+            chargeReference: chargeReference ?? screeningRequest.chargeReference,
+            providerReference: providerReference ?? screeningRequest.providerReference,
+            providerReportId: providerReportId ?? screeningRequest.providerReportId,
+            providerReportUrl: providerReportUrl ?? screeningRequest.providerReportUrl,
+            providerUpdatedAt: effectiveProviderTimestamp,
+            reviewNotes: reviewNotes ?? screeningRequest.reviewNotes,
+            status: nextStatus,
+          },
+        });
+
+        await transactionClient.screeningStatusEvent.create({
+          data: {
+            screeningRequestId: screeningRequest.id,
+            status: nextStatus,
+            detail,
+            providerTimestamp: effectiveProviderTimestamp,
+            payload: {
+              attachmentExternalId,
+              attachmentLabel,
+              attachmentUrl,
+              chargeAmountCents,
+              chargeCurrency,
+              chargeReference,
+              providerReference,
+              providerReportId,
+              providerReportUrl,
+            },
+          },
+        });
+
+        if (
+          nextStatus === ScreeningRequestStatus.CONSENT_COMPLETED &&
+          screeningRequest.consentRecords.length === 0
+        ) {
+          await transactionClient.screeningConsentRecord.create({
+            data: {
+              screeningRequestId: screeningRequest.id,
+              consentedAt: effectiveProviderTimestamp,
+              disclosureVersion,
+              providerReference: providerReference ?? screeningRequest.providerReference,
+              source: consentSource,
+            },
+          });
+        }
+
+        if (attachmentLabel || attachmentUrl || attachmentExternalId) {
+          await transactionClient.screeningAttachmentReference.create({
+            data: {
+              contentType: attachmentContentType,
+              externalId: attachmentExternalId,
+              label:
+                attachmentLabel ??
+                providerReportId ??
+                providerReference ??
+                "Screening report reference",
+              screeningRequestId: screeningRequest.id,
+              url: attachmentUrl,
+            },
+          });
+        }
+
+        await transactionClient.auditEvent.create({
+          data: {
+            workspaceId: actionContext.workspaceId,
+            leadId: screeningRequest.leadId,
+            propertyId: screeningRequest.propertyId,
+            actorUserId: actionContext.actorUserId,
+            actorType: AuditActorType.USER,
+            eventType: workflowEventTypes[resolveScreeningWorkflowEventType(nextStatus)],
+            payload: {
+              chargeAmountCents,
+              chargeCurrency,
+              chargeReference,
+              nextStatus,
+              screeningRequestId: screeningRequest.id,
+            },
+          },
+        });
+      });
+    },
+  };
+
+  export type CreateManualTourActionDependencies = {
+    appendNotificationEvent: typeof appendNotificationEvent;
+    assertLeadActionPermission: (params: {
+      workspaceId: string;
+      leadId: string;
+      actorUserId: string;
+      membershipRole: MembershipRole;
+      leadActionPermissionKey: LeadActionPermissionKey;
+    }) => Promise<void>;
+    assertLeadStatusTransitionIsAllowed: typeof assertLeadStatusTransitionIsAllowed;
+    assertScheduledAtWithinAvailabilityWindow: typeof assertScheduledAtWithinAvailabilityWindow;
+    buildInitialTourReminderState: typeof buildInitialTourReminderState;
+    createManualTour: (input: {
+      actionContext: LeadActionContext;
+      assignedMembershipId: string | null;
+      lead: {
+        fullName: string;
+        id: string;
+        property: {
+          id: string;
+          lifecycleStatus: PropertyLifecycleStatus;
+          name: string;
+          schedulingAvailability: Parameters<typeof parseAvailabilityWindowConfig>[0];
+        } | null;
+        propertyId: string | null;
+        status: LeadStatus;
+        tours: Array<{
+          status: TourEventStatus;
+        }>;
+        workspace: {
+          webhookSigningSecret: string | null;
+        };
+      };
+      propertyCalendarSettings: {
+        calendarTargetExternalId: string | null;
+        calendarTargetProvider: string | null;
+      } | null;
+      reminderSequenceState: ReturnType<typeof buildInitialTourReminderState>;
+      scheduledAt: Date;
+      workspaceCalendarConnections: ReturnType<typeof parseCalendarConnectionsConfig>;
+    }) => Promise<{
+      calendarSyncState: ReturnType<typeof buildCalendarSyncState>;
+      nextTour: {
+        id: string;
+      };
+    }>;
+    evaluateLeadQualification: typeof evaluateLeadQualification;
+    findPropertyCalendarSettings: (input: {
+      propertyId: string;
+      workspaceId: string;
+    }) => Promise<{
+      calendarTargetExternalId: string | null;
+      calendarTargetProvider: string | null;
+    } | null>;
+    getActionContext: (leadId: string) => Promise<LeadActionContext>;
+    getCurrentWorkspaceMembership: typeof getCurrentWorkspaceMembership;
+    getEligibleTourCoverageMemberships: typeof getEligibleTourCoverageMemberships;
+    getLeadWorkflowContext: typeof getLeadWorkflowContext;
+    parseAvailabilityWindowConfig: typeof parseAvailabilityWindowConfig;
+    parseCalendarConnectionsConfig: typeof parseCalendarConnectionsConfig;
+    parseTourReminderSequence: typeof parseTourReminderSequence;
+    propertyAcceptsNewLeads: typeof propertyAcceptsNewLeads;
+    queueOutboundWorkflowWebhook: typeof queueOutboundWorkflowWebhook;
+    redirect: typeof redirect;
+    redirectToWorkflowErrorPath: typeof redirectToWorkflowErrorPath;
+    refreshLeadWorkflow: (leadId: string) => void;
+    resolveAssignedTourMembershipId: typeof resolveAssignedTourMembershipId;
+    scheduleTourReminderJobs: typeof scheduleTourReminderJobs;
+    sendTourScheduledConfirmation: typeof sendTourScheduledConfirmation;
+    updateTourProspectNotificationSentAt: (tourEventId: string) => Promise<unknown>;
+    workspaceHasCapability: typeof workspaceHasCapability;
+  };
+
+  const defaultCreateManualTourActionDependencies: CreateManualTourActionDependencies = {
+    appendNotificationEvent,
+    assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+    assertLeadStatusTransitionIsAllowed,
+    assertScheduledAtWithinAvailabilityWindow,
+    buildInitialTourReminderState,
+    createManualTour: async ({ actionContext, assignedMembershipId, lead, propertyCalendarSettings, reminderSequenceState, scheduledAt, workspaceCalendarConnections }) => {
+      const now = new Date();
+
+      return prisma.$transaction(async (transactionClient) => {
+        const createdTour = await transactionClient.tourEvent.create({
+          data: {
+            assignedMembershipId,
+            workspaceId: actionContext.workspaceId,
+            leadId: lead.id,
+            propertyId: lead.propertyId,
+            reminderSequenceState,
+            status: TourEventStatus.SCHEDULED,
+            scheduledAt,
+          },
+        });
+        const calendarSyncState = buildCalendarSyncState({
+          propertyCalendarTargetExternalId:
+            propertyCalendarSettings?.calendarTargetExternalId ?? null,
+          propertyCalendarTargetProvider: propertyCalendarSettings?.calendarTargetProvider ?? null,
+          tourEventId: createdTour.id,
+          workspaceCalendarConnections,
+        });
+
+        await transactionClient.tourEvent.update({
+          where: {
+            id: createdTour.id,
+          },
+          data: {
+            calendarSyncError: calendarSyncState.calendarSyncError,
+            calendarSyncProvider: calendarSyncState.calendarSyncProvider,
+            calendarSyncStatus: calendarSyncState.calendarSyncStatus,
+            calendarSyncedAt: calendarSyncState.calendarSyncedAt,
+            externalCalendarId: calendarSyncState.externalCalendarId,
+          },
+        });
+
+        if (assignedMembershipId) {
+          await transactionClient.membership.update({
+            where: {
+              id: assignedMembershipId,
+            },
+            data: {
+              lastTourAssignedAt: now,
+            },
+          });
+        }
+
+        await transactionClient.lead.update({
+          where: {
+            id: lead.id,
+          },
+          data: {
+            status: LeadStatus.TOUR_SCHEDULED,
+            lastActivityAt: now,
+          },
+        });
+
+        await transactionClient.leadStatusHistory.create({
+          data: {
+            leadId: lead.id,
+            fromStatus: lead.status,
+            toStatus: LeadStatus.TOUR_SCHEDULED,
+            reason: "Manual tour scheduled by operator.",
+          },
+        });
+
+        await transactionClient.auditEvent.create({
+          data: {
+            workspaceId: actionContext.workspaceId,
+            leadId: lead.id,
+            propertyId: lead.propertyId,
+            actorUserId: actionContext.actorUserId,
+            actorType: AuditActorType.USER,
+            eventType: workflowEventTypes.tourScheduled,
+            payload: {
+              assignedMembershipId,
+              calendarSyncStatus: calendarSyncState.calendarSyncStatus,
+              scheduledAt: scheduledAt.toISOString(),
+              schedulingMethod: "manual",
+              source: "operator",
+            },
+          },
+        });
+
+        return {
+          calendarSyncState,
+          nextTour: createdTour,
+        };
+      });
+    },
+    evaluateLeadQualification,
+    findPropertyCalendarSettings: ({ propertyId, workspaceId }) =>
+      prisma.property.findFirst({
+        where: {
+          id: propertyId,
+          workspaceId,
+        },
+        select: {
+          calendarTargetExternalId: true,
+          calendarTargetProvider: true,
+        },
+      }),
+    getActionContext,
+    getCurrentWorkspaceMembership,
+    getEligibleTourCoverageMemberships,
+    getLeadWorkflowContext,
+    parseAvailabilityWindowConfig,
+    parseCalendarConnectionsConfig,
+    parseTourReminderSequence,
+    propertyAcceptsNewLeads,
+    queueOutboundWorkflowWebhook,
+    redirect,
+    redirectToWorkflowErrorPath,
+    refreshLeadWorkflow,
+    resolveAssignedTourMembershipId,
+    scheduleTourReminderJobs,
+    sendTourScheduledConfirmation,
+    updateTourProspectNotificationSentAt: (tourEventId) =>
+      prisma.tourEvent.update({
+        where: {
+          id: tourEventId,
+        },
+        data: {
+          prospectNotificationSentAt: new Date(),
+        },
+      }),
+    workspaceHasCapability,
+  };
+
+  export type CancelTourActionDependencies = {
+    assertLeadActionPermission: (params: {
+      workspaceId: string;
+      leadId: string;
+      actorUserId: string;
+      membershipRole: MembershipRole;
+      leadActionPermissionKey: LeadActionPermissionKey;
+    }) => Promise<void>;
+    assertLeadStatusTransitionIsAllowed: typeof assertLeadStatusTransitionIsAllowed;
+    buildCalendarSyncState: typeof buildCalendarSyncState;
+    cancelTourAndRouteLead: (input: {
+      actionContext: LeadActionContext;
+      activeTour: {
+        id: string;
+      };
+      calendarSyncState: ReturnType<typeof buildCalendarSyncState>;
+      lead: {
+        id: string;
+        propertyId: string | null;
+        status: LeadStatus;
+      };
+      notifyProspect: boolean;
+      operatorCancelReason: string;
+      targetStatus: LeadStatus;
+    }) => Promise<void>;
+    findLeadForCancelTour: (input: { leadId: string; workspaceId: string }) => Promise<{
+      id: string;
+      property: {
+        calendarTargetExternalId: string | null;
+        calendarTargetProvider: string | null;
+        name: string;
+      } | null;
+      propertyId: string | null;
+      status: LeadStatus;
+      tours: Array<{
+        externalCalendarId: string | null;
+        id: string;
+      }>;
+      workspace: {
+        webhookSigningSecret: string | null;
+      } | null;
+    } | null>;
+    getActionContext: (leadId: string) => Promise<LeadActionContext>;
+    getCurrentWorkspaceMembership: typeof getCurrentWorkspaceMembership;
+    parseCalendarConnectionsConfig: typeof parseCalendarConnectionsConfig;
+    queueOutboundWorkflowWebhook: typeof queueOutboundWorkflowWebhook;
+    redirect: typeof redirect;
+    redirectToWorkflowErrorPath: typeof redirectToWorkflowErrorPath;
+    refreshLeadWorkflow: (leadId: string) => void;
+    sendTourCanceledNotification: typeof sendTourCanceledNotification;
+    updateTourProspectNotificationSentAt: (tourEventId: string) => Promise<unknown>;
+  };
+
+  const defaultCancelTourActionDependencies: CancelTourActionDependencies = {
+    assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+    assertLeadStatusTransitionIsAllowed,
+    buildCalendarSyncState,
+    cancelTourAndRouteLead: async ({ actionContext, activeTour, calendarSyncState, lead, notifyProspect, operatorCancelReason, targetStatus }) => {
+      await prisma.$transaction(async (transactionClient) => {
+        await transactionClient.tourEvent.update({
+          where: {
+            id: activeTour.id,
+          },
+          data: {
+            calendarSyncError: calendarSyncState.calendarSyncError,
+            calendarSyncProvider: calendarSyncState.calendarSyncProvider,
+            calendarSyncStatus: calendarSyncState.calendarSyncStatus,
+            calendarSyncedAt: calendarSyncState.calendarSyncedAt,
+            status: "CANCELED",
+            canceledAt: new Date(),
+            cancelReason: operatorCancelReason,
+            operatorCancelReason,
+          },
+        });
+
+        await transactionClient.lead.update({
+          where: {
+            id: lead.id,
+          },
+          data: {
+            status: targetStatus,
+            lastActivityAt: new Date(),
+          },
+        });
+
+        await transactionClient.leadStatusHistory.create({
+          data: {
+            leadId: lead.id,
+            fromStatus: lead.status,
+            toStatus: targetStatus,
+            reason: "Tour canceled and rerouted.",
+          },
+        });
+
+        await transactionClient.auditEvent.create({
+          data: {
+            workspaceId: actionContext.workspaceId,
+            leadId: lead.id,
+            propertyId: lead.propertyId,
+            actorUserId: actionContext.actorUserId,
+            actorType: AuditActorType.USER,
+            eventType: workflowEventTypes.tourCanceled,
+            payload: {
+              tourEventId: activeTour.id,
+              cancelReason: operatorCancelReason,
+              notifyProspect,
+              reroutedStatus: targetStatus,
+            },
+          },
+        });
+      });
+    },
+    findLeadForCancelTour: ({ leadId, workspaceId }) =>
+      prisma.lead.findFirst({
+        where: {
+          id: leadId,
+          workspaceId,
+        },
+        include: {
+          property: {
+            select: {
+              calendarTargetExternalId: true,
+              calendarTargetProvider: true,
+              name: true,
+            },
+          },
+          workspace: {
+            select: {
+              webhookSigningSecret: true,
+            },
+          },
+          tours: {
+            where: {
+              status: "SCHEDULED",
+            },
+            orderBy: {
+              createdAt: "desc",
+            },
+            take: 1,
+          },
+        },
+      }),
+    getActionContext,
+    getCurrentWorkspaceMembership,
+    parseCalendarConnectionsConfig,
+    queueOutboundWorkflowWebhook,
+    redirect,
+    redirectToWorkflowErrorPath,
+    refreshLeadWorkflow,
+    sendTourCanceledNotification,
+    updateTourProspectNotificationSentAt: (tourEventId) =>
+      prisma.tourEvent.update({
+        where: {
+          id: tourEventId,
+        },
+        data: {
+          prospectNotificationSentAt: new Date(),
+        },
+      }),
+  };
+
+  export type RescheduleTourActionDependencies = {
+    assertLeadActionPermission: (params: {
+      workspaceId: string;
+      leadId: string;
+      actorUserId: string;
+      membershipRole: MembershipRole;
+      leadActionPermissionKey: LeadActionPermissionKey;
+    }) => Promise<void>;
+    assertScheduledAtWithinAvailabilityWindow: typeof assertScheduledAtWithinAvailabilityWindow;
+    buildInitialTourReminderState: typeof buildInitialTourReminderState;
+    findLeadForRescheduleTour: (input: { leadId: string; workspaceId: string }) => Promise<{
+      id: string;
+      property: {
+        calendarTargetExternalId: string | null;
+        calendarTargetProvider: string | null;
+        name: string;
+        schedulingAvailability: Parameters<typeof parseAvailabilityWindowConfig>[0];
+      } | null;
+      propertyId: string | null;
+      tours: Array<{
+        externalCalendarId: string | null;
+        id: string;
+      }>;
+      workspace: {
+        webhookSigningSecret: string | null;
+      } | null;
+    } | null>;
+    findPropertyAvailabilityForRescheduleTour: (input: {
+      propertyId: string;
+      workspaceId: string;
+    }) => Promise<{
+      schedulingAvailability: Parameters<typeof parseAvailabilityWindowConfig>[0];
+    } | null>;
+    getActionContext: (leadId: string) => Promise<LeadActionContext>;
+    getCurrentWorkspaceMembership: typeof getCurrentWorkspaceMembership;
+    getEligibleTourCoverageMemberships: typeof getEligibleTourCoverageMemberships;
+    parseAvailabilityWindowConfig: typeof parseAvailabilityWindowConfig;
+    parseCalendarConnectionsConfig: typeof parseCalendarConnectionsConfig;
+    parseTourReminderSequence: typeof parseTourReminderSequence;
+    queueOutboundWorkflowWebhook: typeof queueOutboundWorkflowWebhook;
+    redirect: typeof redirect;
+    redirectToWorkflowErrorPath: typeof redirectToWorkflowErrorPath;
+    refreshLeadWorkflow: (leadId: string) => void;
+    rescheduleTour: (input: {
+      actionContext: LeadActionContext;
+      assignedMembershipId: string | null;
+      lead: {
+        id: string;
+        property: {
+          calendarTargetExternalId: string | null;
+          calendarTargetProvider: string | null;
+          name: string;
+          schedulingAvailability: Parameters<typeof parseAvailabilityWindowConfig>[0];
+        } | null;
+        propertyId: string | null;
+      };
+      notifyProspect: boolean;
+      operatorRescheduleReason: string;
+      previousTourEvent: {
+        externalCalendarId: string | null;
+        id: string;
+      };
+      reminderSequenceState: ReturnType<typeof buildInitialTourReminderState>;
+      scheduledAtDate: Date;
+      workspaceCalendarConnections: ReturnType<typeof parseCalendarConnectionsConfig>;
+    }) => Promise<{
+      calendarSyncState: ReturnType<typeof buildCalendarSyncState>;
+      nextTourEvent: {
+        id: string;
+      };
+    }>;
+    resolveAssignedTourMembershipId: typeof resolveAssignedTourMembershipId;
+    scheduleTourReminderJobs: typeof scheduleTourReminderJobs;
+    sendTourRescheduledNotification: typeof sendTourRescheduledNotification;
+    updateTourProspectNotificationSentAt: (tourEventId: string) => Promise<unknown>;
+    workspaceHasCapability: typeof workspaceHasCapability;
+  };
+
+  const defaultRescheduleTourActionDependencies: RescheduleTourActionDependencies = {
+    assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+    assertScheduledAtWithinAvailabilityWindow,
+    buildInitialTourReminderState,
+    findLeadForRescheduleTour: ({ leadId, workspaceId }) =>
+      prisma.lead.findFirst({
+        where: {
+          id: leadId,
+          workspaceId,
+        },
+        include: {
+          property: {
+            select: {
+              calendarTargetExternalId: true,
+              calendarTargetProvider: true,
+              name: true,
+              schedulingAvailability: true,
+            },
+          },
+          workspace: {
+            select: {
+              webhookSigningSecret: true,
+            },
+          },
+          tours: {
+            where: {
+              status: TourEventStatus.SCHEDULED,
+            },
+            orderBy: {
+              createdAt: "desc",
+            },
+            take: 1,
+          },
+        },
+      }),
+    findPropertyAvailabilityForRescheduleTour: ({ propertyId, workspaceId }) =>
+      prisma.property.findFirst({
+        where: {
+          id: propertyId,
+          workspaceId,
+        },
+        select: {
+          schedulingAvailability: true,
+        },
+      }),
+    getActionContext,
+    getCurrentWorkspaceMembership,
+    getEligibleTourCoverageMemberships,
+    parseAvailabilityWindowConfig,
+    parseCalendarConnectionsConfig,
+    parseTourReminderSequence,
+    queueOutboundWorkflowWebhook,
+    redirect,
+    redirectToWorkflowErrorPath,
+    refreshLeadWorkflow,
+    rescheduleTour: async ({
+      actionContext,
+      assignedMembershipId,
+      lead,
+      notifyProspect,
+      operatorRescheduleReason,
+      previousTourEvent,
+      reminderSequenceState,
+      scheduledAtDate,
+      workspaceCalendarConnections,
+    }) =>
+      prisma.$transaction(async (transactionClient) => {
+        await transactionClient.tourEvent.update({
+          where: {
+            id: previousTourEvent.id,
+          },
+          data: {
+            operatorRescheduleReason,
+            status: "RESCHEDULED",
+          },
+        });
+
+        const nextTourEvent = await transactionClient.tourEvent.create({
+          data: {
+            assignedMembershipId,
+            operatorRescheduleReason,
+            workspaceId: actionContext.workspaceId,
+            leadId: lead.id,
+            propertyId: lead.propertyId,
+            reminderSequenceState,
+            status: "SCHEDULED",
+            scheduledAt: scheduledAtDate,
+            previousTourEventId: previousTourEvent.id,
+          },
+        });
+        const calendarSyncState = buildCalendarSyncState({
+          existingExternalCalendarId: previousTourEvent.externalCalendarId,
+          propertyCalendarTargetExternalId:
+            lead.property?.calendarTargetExternalId ?? null,
+          propertyCalendarTargetProvider: lead.property?.calendarTargetProvider ?? null,
+          tourEventId: nextTourEvent.id,
+          workspaceCalendarConnections,
+        });
+
+        await transactionClient.tourEvent.update({
+          where: {
+            id: nextTourEvent.id,
+          },
+          data: {
+            calendarSyncError: calendarSyncState.calendarSyncError,
+            calendarSyncProvider: calendarSyncState.calendarSyncProvider,
+            calendarSyncStatus: calendarSyncState.calendarSyncStatus,
+            calendarSyncedAt: calendarSyncState.calendarSyncedAt,
+            externalCalendarId: calendarSyncState.externalCalendarId,
+          },
+        });
+
+        if (assignedMembershipId) {
+          await transactionClient.membership.update({
+            where: {
+              id: assignedMembershipId,
+            },
+            data: {
+              lastTourAssignedAt: new Date(),
+            },
+          });
+        }
+
+        await transactionClient.auditEvent.create({
+          data: {
+            workspaceId: actionContext.workspaceId,
+            leadId: lead.id,
+            propertyId: lead.propertyId,
+            actorUserId: actionContext.actorUserId,
+            actorType: AuditActorType.USER,
+            eventType: workflowEventTypes.tourRescheduled,
+            payload: {
+              assignedMembershipId,
+              calendarSyncStatus: calendarSyncState.calendarSyncStatus,
+              notifyProspect,
+              operatorRescheduleReason,
+              previousTourEventId: previousTourEvent.id,
+              nextTourEventId: nextTourEvent.id,
+              scheduledAt: scheduledAtDate.toISOString(),
+            },
+          },
+        });
+
+        return {
+          calendarSyncState,
+          nextTourEvent,
+        };
+      }),
+    resolveAssignedTourMembershipId,
+    scheduleTourReminderJobs,
+    sendTourRescheduledNotification,
+    updateTourProspectNotificationSentAt: (tourEventId) =>
+      prisma.tourEvent.update({
+        where: {
+          id: tourEventId,
+        },
+        data: {
+          prospectNotificationSentAt: new Date(),
+        },
+      }),
+    workspaceHasCapability,
+  };
+
+  export type OverrideLeadRoutingActionDependencies = {
+    assertLeadActionPermission: (params: {
+      workspaceId: string;
+      leadId: string;
+      actorUserId: string;
+      membershipRole: MembershipRole;
+      leadActionPermissionKey: LeadActionPermissionKey;
+    }) => Promise<void>;
+    assertLeadStatusTransitionIsAllowed: typeof assertLeadStatusTransitionIsAllowed;
+    createRecomputedFitAuditEvent: (input: {
+      actionContext: LeadActionContext;
+      lead: {
+        id: string;
+        propertyId: string | null;
+      };
+      overrideFit: QualificationFit;
+      recomputedEvaluation: ReturnType<typeof evaluateLeadQualification>;
+    }) => Promise<unknown>;
+    evaluateLeadQualification: typeof evaluateLeadQualification;
+    findLeadForOverride: (input: { leadId: string; workspaceId: string }) => Promise<{
+      fitResult: QualificationFit | null;
+      id: string;
+      propertyId: string | null;
+      status: LeadStatus;
+    } | null>;
+    getActionContext: (leadId: string) => Promise<LeadActionContext>;
+    getLeadWorkflowContext: typeof getLeadWorkflowContext;
+    redirect: typeof redirect;
+    redirectToWorkflowErrorPath: typeof redirectToWorkflowErrorPath;
+    refreshLeadWorkflow: (leadId: string) => void;
+    shouldRecomputeFitForTrigger: typeof shouldRecomputeFitForTrigger;
+    updateLeadRoutingOverride: (input: {
+      actionContext: LeadActionContext;
+      lead: {
+        fitResult: QualificationFit | null;
+        id: string;
+        propertyId: string | null;
+        status: LeadStatus;
+      };
+      overrideFit: QualificationFit;
+      overrideReason: string;
+      overrideStatus: LeadStatus;
+    }) => Promise<void>;
+  };
+
+  const defaultOverrideLeadRoutingActionDependencies: OverrideLeadRoutingActionDependencies = {
+    assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+    assertLeadStatusTransitionIsAllowed,
+    createRecomputedFitAuditEvent: ({ actionContext, lead, overrideFit, recomputedEvaluation }) =>
+      prisma.auditEvent.create({
+        data: {
+          workspaceId: actionContext.workspaceId,
+          leadId: lead.id,
+          propertyId: lead.propertyId,
+          actorUserId: actionContext.actorUserId,
+          actorType: AuditActorType.USER,
+          eventType: workflowEventTypes.fitComputed,
+          payload: {
+            triggerType: "override_confirmed",
+            previousFitResult: overrideFit,
+            recomputedFitResult: recomputedEvaluation.fitResult,
+            recommendedStatus: recomputedEvaluation.recommendedStatus,
+            summary: recomputedEvaluation.summary,
+          },
+        },
+      }),
+    evaluateLeadQualification,
+    findLeadForOverride: ({ leadId, workspaceId }) =>
+      prisma.lead.findFirst({
+        where: {
+          id: leadId,
+          workspaceId,
+        },
+        select: {
+          fitResult: true,
+          id: true,
+          propertyId: true,
+          status: true,
+        },
+      }),
+    getActionContext,
+    getLeadWorkflowContext,
+    redirect,
+    redirectToWorkflowErrorPath,
+    refreshLeadWorkflow,
+    shouldRecomputeFitForTrigger,
+    updateLeadRoutingOverride: async ({ actionContext, lead, overrideFit, overrideReason, overrideStatus }) => {
+      await prisma.$transaction(async (transactionClient) => {
+        await transactionClient.lead.update({
+          where: {
+            id: lead.id,
+          },
+          data: {
+            status: overrideStatus,
+            fitResult: overrideFit,
+            lastActivityAt: new Date(),
+          },
+        });
+
+        if (lead.status !== overrideStatus) {
+          await transactionClient.leadStatusHistory.create({
+            data: {
+              leadId: lead.id,
+              fromStatus: lead.status,
+              toStatus: overrideStatus,
+              reason: `Manual override: ${overrideReason}`,
+            },
+          });
+        }
+
+        await transactionClient.auditEvent.create({
+          data: {
+            workspaceId: actionContext.workspaceId,
+            leadId: lead.id,
+            propertyId: lead.propertyId,
+            actorUserId: actionContext.actorUserId,
+            actorType: AuditActorType.USER,
+            eventType: workflowEventTypes.overrideApplied,
+            payload: {
+              reason: overrideReason,
+              previousStatus: lead.status,
+              nextStatus: overrideStatus,
+              previousFitResult: lead.fitResult,
+              nextFitResult: overrideFit,
+            },
+          },
+        });
+      });
+    },
+  };
 
 async function getActionContext(leadId: string) {
   const workspaceState = await getCurrentWorkspaceState();
@@ -173,25 +2195,98 @@ async function assertLeadActionPermission(params: {
   );
 }
 
-export async function evaluateLeadAction(leadId: string, formData?: FormData) {
-  const actionContext = await getActionContext(leadId);
+export async function handleAssertLeadActionPermission(
+  params: {
+    workspaceId: string;
+    leadId: string;
+    actorUserId: string;
+    membershipRole: MembershipRole;
+    leadActionPermissionKey: LeadActionPermissionKey;
+  },
+  dependencies: LeadActionPermissionDependencies = defaultLeadActionPermissionDependencies,
+) {
+  const canPerformLeadAction = dependencies.canMembershipRolePerformLeadAction(
+    params.membershipRole,
+    params.leadActionPermissionKey,
+  );
+
+  if (canPerformLeadAction) {
+    return;
+  }
+
+  await dependencies.createAuditEvent({
+    workspaceId: params.workspaceId,
+    leadId: params.leadId,
+    actorUserId: params.actorUserId,
+    actorType: AuditActorType.USER,
+    eventType: "lead.action_denied",
+    payload: {
+      membershipRole: params.membershipRole,
+      permission: params.leadActionPermissionKey,
+    },
+  });
+
+  throw new LeadWorkflowError(
+    "ACTION_FORBIDDEN_BY_ROLE",
+    `Role ${params.membershipRole} cannot perform ${params.leadActionPermissionKey}.`,
+  );
+}
+
+export async function handleExecuteWorkflowActionWithErrorRedirect(
+  params: {
+    leadId: string;
+    redirectPath?: string;
+    executeAction: () => Promise<void>;
+  },
+  dependencies: WorkflowActionRedirectDependencies = defaultWorkflowActionRedirectDependencies,
+) {
+  const fallbackLeadDetailPath = getLeadDetailPath(params.leadId);
+  const redirectPath = params.redirectPath ?? fallbackLeadDetailPath;
+
+  try {
+    await params.executeAction();
+  } catch (error) {
+    if (dependencies.isLeadWorkflowError(error)) {
+      dependencies.redirect(
+        dependencies.appendWorkflowErrorCodeToPath(redirectPath, error.code),
+      );
+      return;
+    }
+
+    throw error;
+  }
+
+  dependencies.refreshLeadWorkflow(params.leadId);
+  dependencies.redirect(redirectPath);
+}
+
+export async function handleEvaluateLeadAction(
+  leadId: string,
+  formData?: FormData,
+  dependencies: EvaluateLeadActionDependencies = defaultEvaluateLeadActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
   const redirectTargetValue = formData?.get("redirectTo");
   const redirectPath =
     typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
       ? redirectTargetValue
       : getLeadDetailPath(leadId);
 
-  await executeWorkflowActionWithErrorRedirect({
+  await dependencies.executeWorkflowActionWithErrorRedirect({
     leadId,
     redirectPath,
     executeAction: async () => {
-      await assertLeadActionPermission({
+      await dependencies.assertLeadActionPermission({
         ...actionContext,
         leadActionPermissionKey: "evaluateFit",
       });
-      await applyLeadEvaluation(actionContext);
+      await dependencies.applyLeadEvaluation(actionContext);
     },
   });
+}
+
+export async function evaluateLeadAction(leadId: string, formData?: FormData) {
+  return handleEvaluateLeadAction(leadId, formData);
 }
 
 export async function requestInfoAction(leadId: string) {
@@ -230,8 +2325,12 @@ export async function scheduleTourAction(leadId: string) {
   });
 }
 
-export async function createManualTourAction(leadId: string, formData: FormData) {
-  const actionContext = await getActionContext(leadId);
+export async function handleCreateManualTourAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: CreateManualTourActionDependencies = defaultCreateManualTourActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
   const redirectTargetValue = formData.get("redirectTo");
   const fallbackRedirectPath = getLeadDetailPath(leadId);
   const redirectPath =
@@ -240,7 +2339,7 @@ export async function createManualTourAction(leadId: string, formData: FormData)
       : fallbackRedirectPath;
 
   try {
-    await assertLeadActionPermission({
+    await dependencies.assertLeadActionPermission({
       ...actionContext,
       leadActionPermissionKey: "scheduleTour",
     });
@@ -250,8 +2349,8 @@ export async function createManualTourAction(leadId: string, formData: FormData)
       formData.get("assignedMembershipId"),
     );
     const notifyProspect = formData.get("notifyProspect") === "on";
-    const workspaceMembership = await getCurrentWorkspaceMembership();
-    const lead = await getLeadWorkflowContext(actionContext.workspaceId, leadId);
+    const workspaceMembership = await dependencies.getCurrentWorkspaceMembership();
+    const lead = await dependencies.getLeadWorkflowContext(actionContext.workspaceId, leadId);
 
     if (!lead) {
       throw new LeadWorkflowError(
@@ -267,14 +2366,14 @@ export async function createManualTourAction(leadId: string, formData: FormData)
       );
     }
 
-    if (!propertyAcceptsNewLeads(lead.property.lifecycleStatus)) {
+    if (!dependencies.propertyAcceptsNewLeads(lead.property.lifecycleStatus)) {
       throw new LeadWorkflowError(
         "PROPERTY_NOT_ACTIVE",
         `Property ${lead.property.id} is not active for manual scheduling.`,
       );
     }
 
-    const evaluation = evaluateLeadQualification(lead);
+    const evaluation = dependencies.evaluateLeadQualification(lead);
 
     if (evaluation.fitResult === QualificationFit.MISMATCH) {
       throw new LeadWorkflowError(
@@ -297,44 +2396,38 @@ export async function createManualTourAction(leadId: string, formData: FormData)
       );
     }
 
-    const propertyCalendarSettings = await prisma.property.findFirst({
-      where: {
-        id: lead.propertyId,
-        workspaceId: actionContext.workspaceId,
-      },
-      select: {
-        calendarTargetExternalId: true,
-        calendarTargetProvider: true,
-      },
+    const propertyCalendarSettings = await dependencies.findPropertyCalendarSettings({
+      propertyId: lead.propertyId,
+      workspaceId: actionContext.workspaceId,
     });
-    const eligibleTourCoverageMemberships = workspaceHasCapability(
+    const eligibleTourCoverageMemberships = dependencies.workspaceHasCapability(
       workspaceMembership.workspace.enabledCapabilities,
       WorkspaceCapability.ORG_MEMBERS,
     )
-      ? await getEligibleTourCoverageMemberships(actionContext.workspaceId)
+      ? await dependencies.getEligibleTourCoverageMemberships(actionContext.workspaceId)
       : [];
-    const assignedMembershipId = resolveAssignedTourMembershipId({
+    const assignedMembershipId = dependencies.resolveAssignedTourMembershipId({
       currentMembershipId: workspaceMembership.id,
       eligibleMemberships: eligibleTourCoverageMemberships,
       explicitAssignedMembershipId,
       workspaceSchedulingMode: workspaceMembership.workspace.tourSchedulingMode,
     });
-    const reminderSequence = parseTourReminderSequence(
+    const reminderSequence = dependencies.parseTourReminderSequence(
       workspaceMembership.workspace.tourReminderSequence,
     );
-    const reminderSequenceState = buildInitialTourReminderState({
+    const reminderSequenceState = dependencies.buildInitialTourReminderState({
       reminderSequence,
       scheduledAt,
     });
-    assertScheduledAtWithinAvailabilityWindow({
-      availabilityWindow: parseAvailabilityWindowConfig(
+    dependencies.assertScheduledAtWithinAvailabilityWindow({
+      availabilityWindow: dependencies.parseAvailabilityWindowConfig(
         workspaceMembership.schedulingAvailability,
       ),
       label: "Operator",
       scheduledAt,
     });
-    assertScheduledAtWithinAvailabilityWindow({
-      availabilityWindow: parseAvailabilityWindowConfig(
+    dependencies.assertScheduledAtWithinAvailabilityWindow({
+      availabilityWindow: dependencies.parseAvailabilityWindowConfig(
         lead.property.schedulingAvailability,
       ),
       label: "Property",
@@ -352,100 +2445,22 @@ export async function createManualTourAction(leadId: string, formData: FormData)
       );
     }
 
-    assertLeadStatusTransitionIsAllowed(lead.status, LeadStatus.TOUR_SCHEDULED);
+    dependencies.assertLeadStatusTransitionIsAllowed(lead.status, LeadStatus.TOUR_SCHEDULED);
 
-    const now = new Date();
-    const { nextTour, calendarSyncState } = await prisma.$transaction(async (transactionClient) => {
-      const createdTour = await transactionClient.tourEvent.create({
-        data: {
-          assignedMembershipId,
-          workspaceId: actionContext.workspaceId,
-          leadId: lead.id,
-          propertyId: lead.propertyId,
-          reminderSequenceState,
-          status: TourEventStatus.SCHEDULED,
-          scheduledAt,
-        },
-      });
-      const calendarSyncState = buildCalendarSyncState({
-        propertyCalendarTargetExternalId:
-          propertyCalendarSettings?.calendarTargetExternalId ?? null,
-        propertyCalendarTargetProvider: propertyCalendarSettings?.calendarTargetProvider ?? null,
-        tourEventId: createdTour.id,
-        workspaceCalendarConnections: parseCalendarConnectionsConfig(
-          workspaceMembership.workspace.calendarConnections,
-        ),
-      });
-
-      await transactionClient.tourEvent.update({
-        where: {
-          id: createdTour.id,
-        },
-        data: {
-          calendarSyncError: calendarSyncState.calendarSyncError,
-          calendarSyncProvider: calendarSyncState.calendarSyncProvider,
-          calendarSyncStatus: calendarSyncState.calendarSyncStatus,
-          calendarSyncedAt: calendarSyncState.calendarSyncedAt,
-          externalCalendarId: calendarSyncState.externalCalendarId,
-        },
-      });
-
-      if (assignedMembershipId) {
-        await transactionClient.membership.update({
-          where: {
-            id: assignedMembershipId,
-          },
-          data: {
-            lastTourAssignedAt: now,
-          },
-        });
-      }
-
-      await transactionClient.lead.update({
-        where: {
-          id: lead.id,
-        },
-        data: {
-          status: LeadStatus.TOUR_SCHEDULED,
-          lastActivityAt: now,
-        },
-      });
-
-      await transactionClient.leadStatusHistory.create({
-        data: {
-          leadId: lead.id,
-          fromStatus: lead.status,
-          toStatus: LeadStatus.TOUR_SCHEDULED,
-          reason: "Manual tour scheduled by operator.",
-        },
-      });
-
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: lead.id,
-          propertyId: lead.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: workflowEventTypes.tourScheduled,
-          payload: {
-            assignedMembershipId,
-            calendarSyncStatus: calendarSyncState.calendarSyncStatus,
-            scheduledAt: scheduledAt.toISOString(),
-            schedulingMethod: "manual",
-            source: "operator",
-          },
-        },
-      });
-
-      return {
-        calendarSyncState,
-        nextTour: createdTour,
-      };
+    const { nextTour, calendarSyncState } = await dependencies.createManualTour({
+      actionContext,
+      assignedMembershipId,
+      lead,
+      propertyCalendarSettings,
+      reminderSequenceState,
+      scheduledAt,
+      workspaceCalendarConnections: dependencies.parseCalendarConnectionsConfig(
+        workspaceMembership.workspace.calendarConnections,
+      ),
     });
 
     try {
-      await scheduleTourReminderJobs({
+      await dependencies.scheduleTourReminderJobs({
         leadId: lead.id,
         reminderSequence,
         scheduledAt,
@@ -456,25 +2471,18 @@ export async function createManualTourAction(leadId: string, formData: FormData)
     }
 
     if (notifyProspect) {
-      const prospectNotificationSent = await sendTourScheduledConfirmation({
+      const prospectNotificationSent = await dependencies.sendTourScheduledConfirmation({
         leadId: lead.id,
         propertyName: lead.property.name,
         scheduledAt,
       });
 
       if (prospectNotificationSent) {
-        await prisma.tourEvent.update({
-          where: {
-            id: nextTour.id,
-          },
-          data: {
-            prospectNotificationSentAt: new Date(),
-          },
-        });
+        await dependencies.updateTourProspectNotificationSentAt(nextTour.id);
       }
     }
 
-    await appendNotificationEvent({
+    await dependencies.appendNotificationEvent({
       workspaceId: actionContext.workspaceId,
       leadId: lead.id,
       type: NotificationType.TOUR_SCHEDULED,
@@ -489,7 +2497,7 @@ export async function createManualTourAction(leadId: string, formData: FormData)
       },
     });
 
-    await queueOutboundWorkflowWebhook({
+    await dependencies.queueOutboundWorkflowWebhook({
       workspaceId: actionContext.workspaceId,
       leadId: lead.id,
       eventType: "tour.scheduled",
@@ -505,14 +2513,18 @@ export async function createManualTourAction(leadId: string, formData: FormData)
     });
   } catch (error) {
     if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
+      dependencies.redirectToWorkflowErrorPath(redirectPath, error.code);
     }
 
     throw error;
   }
 
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+  dependencies.refreshLeadWorkflow(leadId);
+  dependencies.redirect(redirectPath);
+}
+
+export async function createManualTourAction(leadId: string, formData: FormData) {
+  return handleCreateManualTourAction(leadId, formData);
 }
 
 export async function sendApplicationAction(leadId: string) {
@@ -533,8 +2545,12 @@ export async function sendApplicationAction(leadId: string) {
   });
 }
 
-export async function launchScreeningAction(leadId: string, formData: FormData) {
-  const actionContext = await getActionContext(leadId);
+export async function handleLaunchScreeningAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: LaunchScreeningActionDependencies = defaultLaunchScreeningActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
   const redirectTargetValue = formData.get("redirectTo");
   const redirectPath =
     typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
@@ -542,15 +2558,15 @@ export async function launchScreeningAction(leadId: string, formData: FormData) 
       : getLeadDetailPath(leadId);
 
   try {
-    await assertLeadActionPermission({
+    await dependencies.assertLeadActionPermission({
       ...actionContext,
       leadActionPermissionKey: "launchScreening",
     });
 
-    const workspaceMembership = await getCurrentWorkspaceMembership();
+    const workspaceMembership = await dependencies.getCurrentWorkspaceMembership();
 
     if (
-      !workspaceHasCapability(
+      !dependencies.workspaceHasCapability(
         workspaceMembership.workspace.enabledCapabilities,
         WorkspaceCapability.SCREENING,
       )
@@ -573,40 +2589,13 @@ export async function launchScreeningAction(leadId: string, formData: FormData) 
     const providerReference = parseOptionalFormText(formData.get("providerReference"));
 
     const [lead, screeningConnection] = await Promise.all([
-      prisma.lead.findFirst({
-        where: {
-          id: leadId,
-          workspaceId: actionContext.workspaceId,
-        },
-        include: {
-          property: {
-            select: {
-              name: true,
-            },
-          },
-          workspace: {
-            select: {
-              webhookSigningSecret: true,
-            },
-          },
-          screeningRequests: {
-            where: {
-              status: {
-                notIn: [
-                  ScreeningRequestStatus.REVIEWED,
-                  ScreeningRequestStatus.ADVERSE_ACTION_RECORDED,
-                ],
-              },
-            },
-            take: 1,
-          },
-        },
+      dependencies.findLeadForScreeningLaunch({
+        leadId,
+        workspaceId: actionContext.workspaceId,
       }),
-      prisma.screeningProviderConnection.findFirst({
-        where: {
-          id: screeningConnectionId,
-          workspaceId: actionContext.workspaceId,
-        },
+      dependencies.findScreeningConnection({
+        screeningConnectionId,
+        workspaceId: actionContext.workspaceId,
       }),
     ]);
 
@@ -645,59 +2634,16 @@ export async function launchScreeningAction(leadId: string, formData: FormData) 
       );
     }
 
-    const screeningRequest = await prisma.$transaction(async (transactionClient) => {
-      const screeningRequest = await transactionClient.screeningRequest.create({
-        data: {
-          chargeMode: screeningConnection.chargeMode,
-          inviteSentAt: new Date(),
-          leadId: lead.id,
-          packageKey,
-          packageLabel,
-          propertyId: lead.propertyId,
-          providerReference,
-          requestedAt: new Date(),
-          screeningProviderConnectionId: screeningConnection.id,
-          status: ScreeningRequestStatus.INVITE_SENT,
-          workspaceId: actionContext.workspaceId,
-        },
-      });
-
-      await transactionClient.screeningStatusEvent.createMany({
-        data: [
-          {
-            screeningRequestId: screeningRequest.id,
-            status: ScreeningRequestStatus.REQUESTED,
-            detail: `Screening requested for ${packageLabel}.`,
-          },
-          {
-            screeningRequestId: screeningRequest.id,
-            status: ScreeningRequestStatus.INVITE_SENT,
-            detail: `Provider-hosted invite launched with ${packageLabel}.`,
-          },
-        ],
-      });
-
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: lead.id,
-          propertyId: lead.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: workflowEventTypes.screeningRequested,
-          payload: {
-            packageKey,
-            packageLabel,
-            provider: screeningConnection.provider,
-            screeningRequestId: screeningRequest.id,
-          },
-        },
-      });
-
-      return screeningRequest;
+    const screeningRequest = await dependencies.createScreeningRequest({
+      actionContext,
+      lead,
+      packageKey,
+      packageLabel,
+      providerReference,
+      screeningConnection,
     });
 
-    await appendNotificationEvent({
+    await dependencies.appendNotificationEvent({
       workspaceId: actionContext.workspaceId,
       leadId: lead.id,
       type: NotificationType.TOUR_SCHEDULED,
@@ -708,7 +2654,7 @@ export async function launchScreeningAction(leadId: string, formData: FormData) 
       },
     });
 
-    await queueOutboundWorkflowWebhook({
+    await dependencies.queueOutboundWorkflowWebhook({
       workspaceId: actionContext.workspaceId,
       leadId: lead.id,
       eventType: "screening.requested",
@@ -724,22 +2670,27 @@ export async function launchScreeningAction(leadId: string, formData: FormData) 
     });
   } catch (error) {
     if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
+      dependencies.redirectToWorkflowErrorPath(redirectPath, error.code);
     }
 
     throw error;
   }
 
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+  dependencies.refreshLeadWorkflow(leadId);
+  dependencies.redirect(redirectPath);
 }
 
-export async function updateScreeningRequestStatusAction(
+export async function launchScreeningAction(leadId: string, formData: FormData) {
+  return handleLaunchScreeningAction(leadId, formData);
+}
+
+export async function handleUpdateScreeningRequestStatusAction(
   leadId: string,
   screeningRequestId: string,
   formData: FormData,
+  dependencies: UpdateScreeningRequestStatusActionDependencies = defaultUpdateScreeningRequestStatusActionDependencies,
 ) {
-  const actionContext = await getActionContext(leadId);
+  const actionContext = await dependencies.getActionContext(leadId);
   const redirectTargetValue = formData.get("redirectTo");
   const redirectPath =
     typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
@@ -747,7 +2698,7 @@ export async function updateScreeningRequestStatusAction(
       : getLeadDetailPath(leadId);
 
   try {
-    await assertLeadActionPermission({
+    await dependencies.assertLeadActionPermission({
       ...actionContext,
       leadActionPermissionKey: "launchScreening",
     });
@@ -772,29 +2723,10 @@ export async function updateScreeningRequestStatusAction(
     const attachmentExternalId = parseOptionalFormText(formData.get("attachmentExternalId"));
     const attachmentContentType = parseOptionalFormText(formData.get("attachmentContentType"));
 
-    const screeningRequest = await prisma.screeningRequest.findFirst({
-      where: {
-        id: screeningRequestId,
-        leadId,
-        workspaceId: actionContext.workspaceId,
-      },
-      include: {
-        lead: {
-          include: {
-            workspace: {
-              select: {
-                webhookSigningSecret: true,
-              },
-            },
-          },
-        },
-        consentRecords: {
-          select: {
-            id: true,
-          },
-        },
-        screeningProviderConnection: true,
-      },
+    const screeningRequest = await dependencies.findScreeningRequestForStatusUpdate({
+      leadId,
+      screeningRequestId,
+      workspaceId: actionContext.workspaceId,
     });
 
     if (!screeningRequest) {
@@ -806,7 +2738,7 @@ export async function updateScreeningRequestStatusAction(
 
     const now = new Date();
     const effectiveProviderTimestamp = providerTimestamp ?? now;
-    const transitionGuard = resolveScreeningStatusTransitionGuard({
+    const transitionGuard = dependencies.resolveScreeningStatusTransitionGuard({
       completedAt: screeningRequest.completedAt,
       consentCompletedAt: screeningRequest.consentCompletedAt,
       currentStatus: screeningRequest.status,
@@ -823,101 +2755,30 @@ export async function updateScreeningRequestStatusAction(
       );
     }
 
-    await prisma.$transaction(async (transactionClient) => {
-      await transactionClient.screeningRequest.update({
-        where: {
-          id: screeningRequest.id,
-        },
-        data: {
-          ...buildScreeningStatusTimestampUpdate(nextStatus, effectiveProviderTimestamp),
-          adverseActionNotes: adverseActionNotes ?? screeningRequest.adverseActionNotes,
-          chargeAmountCents: chargeAmountCents ?? screeningRequest.chargeAmountCents,
-          chargeCurrency:
-            chargeCurrency ??
-            screeningRequest.chargeCurrency ??
-            (chargeAmountCents !== null ? "USD" : null),
-          chargeReference: chargeReference ?? screeningRequest.chargeReference,
-          providerReference: providerReference ?? screeningRequest.providerReference,
-          providerReportId: providerReportId ?? screeningRequest.providerReportId,
-          providerReportUrl: providerReportUrl ?? screeningRequest.providerReportUrl,
-          providerUpdatedAt: effectiveProviderTimestamp,
-          reviewNotes: reviewNotes ?? screeningRequest.reviewNotes,
-          status: nextStatus,
-        },
-      });
-
-      await transactionClient.screeningStatusEvent.create({
-        data: {
-          screeningRequestId: screeningRequest.id,
-          status: nextStatus,
-          detail,
-          providerTimestamp: effectiveProviderTimestamp,
-          payload: {
-            attachmentExternalId,
-            attachmentLabel,
-            attachmentUrl,
-            chargeAmountCents,
-            chargeCurrency,
-            chargeReference,
-            providerReference,
-            providerReportId,
-            providerReportUrl,
-          },
-        },
-      });
-
-      if (
-        nextStatus === ScreeningRequestStatus.CONSENT_COMPLETED &&
-        screeningRequest.consentRecords.length === 0
-      ) {
-        await transactionClient.screeningConsentRecord.create({
-          data: {
-            screeningRequestId: screeningRequest.id,
-            consentedAt: effectiveProviderTimestamp,
-            disclosureVersion,
-            providerReference: providerReference ?? screeningRequest.providerReference,
-            source: consentSource,
-          },
-        });
-      }
-
-      if (attachmentLabel || attachmentUrl || attachmentExternalId) {
-        await transactionClient.screeningAttachmentReference.create({
-          data: {
-            contentType: attachmentContentType,
-            externalId: attachmentExternalId,
-            label:
-              attachmentLabel ??
-              providerReportId ??
-              providerReference ??
-              "Screening report reference",
-            screeningRequestId: screeningRequest.id,
-            url: attachmentUrl,
-          },
-        });
-      }
-
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: screeningRequest.leadId,
-          propertyId: screeningRequest.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: workflowEventTypes[resolveScreeningWorkflowEventType(nextStatus)],
-          payload: {
-            chargeAmountCents,
-            chargeCurrency,
-            chargeReference,
-            nextStatus,
-            screeningRequestId: screeningRequest.id,
-          },
-        },
-      });
+    await dependencies.updateScreeningRequestStatus({
+      actionContext,
+      adverseActionNotes,
+      attachmentContentType,
+      attachmentExternalId,
+      attachmentLabel,
+      attachmentUrl,
+      chargeAmountCents,
+      chargeCurrency,
+      chargeReference,
+      consentSource,
+      detail,
+      disclosureVersion,
+      effectiveProviderTimestamp,
+      nextStatus,
+      providerReference,
+      providerReportId,
+      providerReportUrl,
+      reviewNotes,
+      screeningRequest,
     });
 
     if (nextStatus === ScreeningRequestStatus.COMPLETED) {
-      await appendNotificationEvent({
+      await dependencies.appendNotificationEvent({
         workspaceId: actionContext.workspaceId,
         leadId: screeningRequest.leadId,
         type: NotificationType.TOUR_SCHEDULED,
@@ -928,10 +2789,10 @@ export async function updateScreeningRequestStatusAction(
         },
       });
 
-      await queueOutboundWorkflowWebhook({
+      await dependencies.queueOutboundWorkflowWebhook({
         workspaceId: actionContext.workspaceId,
         leadId: screeningRequest.leadId,
-        eventType: resolveScreeningWebhookEventType(nextStatus),
+        eventType: dependencies.resolveScreeningWebhookEventType(nextStatus),
         signingSecret: screeningRequest.lead.workspace?.webhookSigningSecret ?? null,
         payload: {
           leadId: screeningRequest.leadId,
@@ -942,10 +2803,10 @@ export async function updateScreeningRequestStatusAction(
         },
       });
     } else {
-      await queueOutboundWorkflowWebhook({
+      await dependencies.queueOutboundWorkflowWebhook({
         workspaceId: actionContext.workspaceId,
         leadId: screeningRequest.leadId,
-        eventType: resolveScreeningWebhookEventType(nextStatus),
+        eventType: dependencies.resolveScreeningWebhookEventType(nextStatus),
         signingSecret: screeningRequest.lead.workspace?.webhookSigningSecret ?? null,
         payload: {
           leadId: screeningRequest.leadId,
@@ -958,18 +2819,30 @@ export async function updateScreeningRequestStatusAction(
     }
   } catch (error) {
     if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
+      dependencies.redirectToWorkflowErrorPath(redirectPath, error.code);
     }
 
     throw error;
   }
 
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+  dependencies.refreshLeadWorkflow(leadId);
+  dependencies.redirect(redirectPath);
 }
 
-export async function assignLeadPropertyAction(leadId: string, formData: FormData) {
-  const actionContext = await getActionContext(leadId);
+export async function updateScreeningRequestStatusAction(
+  leadId: string,
+  screeningRequestId: string,
+  formData: FormData,
+) {
+  return handleUpdateScreeningRequestStatusAction(leadId, screeningRequestId, formData);
+}
+
+export async function handleAssignLeadPropertyAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: AssignLeadPropertyActionDependencies = defaultAssignLeadPropertyActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
   const propertyIdFormValue = formData.get("propertyId");
   const redirectTargetValue = formData.get("redirectTo");
   const fallbackRedirectPath = getLeadDetailPath(leadId);
@@ -978,69 +2851,59 @@ export async function assignLeadPropertyAction(leadId: string, formData: FormDat
       ? redirectTargetValue
       : fallbackRedirectPath;
 
-  try {
-    await assertLeadActionPermission({
-      ...actionContext,
-      leadActionPermissionKey: "assignProperty",
-    });
-
-    if (
-      typeof propertyIdFormValue !== "string" ||
-      propertyIdFormValue.length === 0
-    ) {
-      throw new LeadWorkflowError(
-        "PROPERTY_SELECTION_REQUIRED",
-        "Property selection is required before assignment.",
-      );
-    }
-
-    const matchingProperty = await prisma.property.findFirst({
-      where: {
-        id: propertyIdFormValue,
-        workspaceId: actionContext.workspaceId,
-        lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
-      },
-    });
-
-    if (!matchingProperty) {
-      const existingProperty = await prisma.property.findFirst({
-        where: {
-          id: propertyIdFormValue,
-          workspaceId: actionContext.workspaceId,
-        },
-        select: {
-          lifecycleStatus: true,
-        },
+  await dependencies.executeWorkflowActionWithErrorRedirect({
+    leadId,
+    redirectPath,
+    executeAction: async () => {
+      await dependencies.assertLeadActionPermission({
+        ...actionContext,
+        leadActionPermissionKey: "assignProperty",
       });
 
       if (
-        existingProperty &&
-        !propertyAcceptsNewLeads(existingProperty.lifecycleStatus)
+        typeof propertyIdFormValue !== "string" ||
+        propertyIdFormValue.length === 0
       ) {
         throw new LeadWorkflowError(
-          "PROPERTY_NOT_ACTIVE",
-          `Property ${propertyIdFormValue} is not active for new lead assignment.`,
+          "PROPERTY_SELECTION_REQUIRED",
+          "Property selection is required before assignment.",
         );
       }
 
-      throw new LeadWorkflowError(
-        "PROPERTY_NOT_FOUND",
-        `Property ${propertyIdFormValue} was not found in workspace ${actionContext.workspaceId}.`,
-      );
-    }
+      const matchingProperty = await dependencies.findAssignableProperty({
+        propertyId: propertyIdFormValue,
+        workspaceId: actionContext.workspaceId,
+      });
 
-    await prisma.lead.update({
-      where: {
-        id: leadId,
-      },
-      data: {
+      if (!matchingProperty) {
+        const existingProperty = await dependencies.findExistingProperty({
+          propertyId: propertyIdFormValue,
+          workspaceId: actionContext.workspaceId,
+        });
+
+        if (
+          existingProperty &&
+          !dependencies.propertyAcceptsNewLeads(existingProperty.lifecycleStatus)
+        ) {
+          throw new LeadWorkflowError(
+            "PROPERTY_NOT_ACTIVE",
+            `Property ${propertyIdFormValue} is not active for new lead assignment.`,
+          );
+        }
+
+        throw new LeadWorkflowError(
+          "PROPERTY_NOT_FOUND",
+          `Property ${propertyIdFormValue} was not found in workspace ${actionContext.workspaceId}.`,
+        );
+      }
+
+      await dependencies.updateLead({
+        leadId,
         propertyId: matchingProperty.id,
         lastActivityAt: new Date(),
-      },
-    });
+      });
 
-    await prisma.auditEvent.create({
-      data: {
+      await dependencies.createAuditEvent({
         workspaceId: actionContext.workspaceId,
         leadId,
         propertyId: matchingProperty.id,
@@ -1051,26 +2914,25 @@ export async function assignLeadPropertyAction(leadId: string, formData: FormDat
           propertyId: matchingProperty.id,
           propertyName: matchingProperty.name,
         },
-      },
-    });
+      });
 
-    if (shouldRecomputeFitForTrigger("property_reassigned")) {
-      await applyLeadEvaluation(actionContext);
-    }
-  } catch (error) {
-    if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
-    }
-
-    throw error;
-  }
-
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+      if (dependencies.shouldRecomputeFitForTrigger("property_reassigned")) {
+        await dependencies.applyLeadEvaluation(actionContext);
+      }
+    },
+  });
 }
 
-export async function confirmDuplicateLeadAction(leadId: string, formData: FormData) {
-  const actionContext = await getActionContext(leadId);
+export async function assignLeadPropertyAction(leadId: string, formData: FormData) {
+  return handleAssignLeadPropertyAction(leadId, formData);
+}
+
+export async function handleConfirmDuplicateLeadAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: ConfirmDuplicateLeadActionDependencies = defaultConfirmDuplicateLeadActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
   const candidateLeadIdFormValue = formData.get("candidateLeadId");
   const redirectTargetValue = formData.get("redirectTo");
   const fallbackRedirectPath = getLeadDetailPath(leadId);
@@ -1080,7 +2942,7 @@ export async function confirmDuplicateLeadAction(leadId: string, formData: FormD
       : fallbackRedirectPath;
 
   try {
-    await assertLeadActionPermission({
+    await dependencies.assertLeadActionPermission({
       ...actionContext,
       leadActionPermissionKey: "archiveLead",
     });
@@ -1103,17 +2965,13 @@ export async function confirmDuplicateLeadAction(leadId: string, formData: FormD
     }
 
     const [duplicateLead, canonicalLead] = await Promise.all([
-      prisma.lead.findFirst({
-        where: {
-          id: leadId,
-          workspaceId: actionContext.workspaceId,
-        },
+      dependencies.findDuplicateLead({
+        leadId,
+        workspaceId: actionContext.workspaceId,
       }),
-      prisma.lead.findFirst({
-        where: {
-          id: candidateLeadIdFormValue,
-          workspaceId: actionContext.workspaceId,
-        },
+      dependencies.findCanonicalLead({
+        leadId: candidateLeadIdFormValue,
+        workspaceId: actionContext.workspaceId,
       }),
     ]);
 
@@ -1131,76 +2989,29 @@ export async function confirmDuplicateLeadAction(leadId: string, formData: FormD
       );
     }
 
-    const duplicateConfirmationReason = `Confirmed duplicate of ${canonicalLead.fullName}.`;
-    const statusAfterConfirmation = LeadStatus.ARCHIVED;
-
-    await prisma.$transaction(async (transactionClient) => {
-      await transactionClient.lead.update({
-        where: {
-          id: duplicateLead.id,
-        },
-        data: {
-          status: statusAfterConfirmation,
-          lastActivityAt: new Date(),
-        },
-      });
-
-      if (duplicateLead.status !== statusAfterConfirmation) {
-        await transactionClient.leadStatusHistory.create({
-          data: {
-            leadId: duplicateLead.id,
-            fromStatus: duplicateLead.status,
-            toStatus: statusAfterConfirmation,
-            reason: duplicateConfirmationReason,
-          },
-        });
-      }
-
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: duplicateLead.id,
-          propertyId: duplicateLead.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: "duplicate_confirmed",
-          payload: {
-            canonicalLeadId: canonicalLead.id,
-            canonicalLeadName: canonicalLead.fullName,
-            reason: duplicateConfirmationReason,
-          },
-        },
-      });
-
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: canonicalLead.id,
-          propertyId: canonicalLead.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: "duplicate_linked",
-          payload: {
-            duplicateLeadId: duplicateLead.id,
-            duplicateLeadName: duplicateLead.fullName,
-          },
-        },
-      });
+    await dependencies.confirmDuplicateLead({
+      actionContext,
+      canonicalLead,
+      duplicateLead,
     });
 
   } catch (error) {
     if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
+      dependencies.redirectToWorkflowErrorPath(redirectPath, error.code);
     }
 
     throw error;
   }
 
-  refreshLeadWorkflow(leadId);
-  refreshLeadWorkflow(
+  dependencies.refreshLeadWorkflow(leadId);
+  dependencies.refreshLeadWorkflow(
     typeof candidateLeadIdFormValue === "string" ? candidateLeadIdFormValue : leadId,
   );
-  redirect(redirectPath);
+  dependencies.redirect(redirectPath);
+}
+
+export async function confirmDuplicateLeadAction(leadId: string, formData: FormData) {
+  return handleConfirmDuplicateLeadAction(leadId, formData);
 }
 
 function parseLeadStatusFromFormValue(value: FormDataEntryValue | null) {
@@ -1441,8 +3252,12 @@ function parseBooleanFormValue(value: FormDataEntryValue | null) {
   return null;
 }
 
-export async function overrideLeadRoutingAction(leadId: string, formData: FormData) {
-  const actionContext = await getActionContext(leadId);
+export async function handleOverrideLeadRoutingAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: OverrideLeadRoutingActionDependencies = defaultOverrideLeadRoutingActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
   const overrideStatus = parseLeadStatusFromFormValue(formData.get("overrideStatus"));
   const overrideFit = parseQualificationFitFromFormValue(formData.get("overrideFit"));
   const overrideReason = formData.get("overrideReason");
@@ -1454,7 +3269,7 @@ export async function overrideLeadRoutingAction(leadId: string, formData: FormDa
       : fallbackRedirectPath;
 
   try {
-    await assertLeadActionPermission({
+    await dependencies.assertLeadActionPermission({
       ...actionContext,
       leadActionPermissionKey: "overrideFit",
     });
@@ -1480,18 +3295,9 @@ export async function overrideLeadRoutingAction(leadId: string, formData: FormDa
       );
     }
 
-    const lead = await prisma.lead.findFirst({
-      where: {
-        id: leadId,
-        workspaceId: actionContext.workspaceId,
-      },
-      include: {
-        conversation: {
-          include: {
-            messages: true,
-          },
-        },
-      },
+    const lead = await dependencies.findLeadForOverride({
+      leadId,
+      workspaceId: actionContext.workspaceId,
     });
 
     if (!lead) {
@@ -1502,7 +3308,7 @@ export async function overrideLeadRoutingAction(leadId: string, formData: FormDa
     }
 
     try {
-      assertLeadStatusTransitionIsAllowed(lead.status, overrideStatus);
+      dependencies.assertLeadStatusTransitionIsAllowed(lead.status, overrideStatus);
     } catch {
       throw new LeadWorkflowError(
         "INVALID_STATUS_TRANSITION",
@@ -1510,93 +3316,53 @@ export async function overrideLeadRoutingAction(leadId: string, formData: FormDa
       );
     }
 
-    await prisma.$transaction(async (transactionClient) => {
-      await transactionClient.lead.update({
-        where: {
-          id: lead.id,
-        },
-        data: {
-          status: overrideStatus,
-          fitResult: overrideFit,
-          lastActivityAt: new Date(),
-        },
-      });
-
-      if (lead.status !== overrideStatus) {
-        await transactionClient.leadStatusHistory.create({
-          data: {
-            leadId: lead.id,
-            fromStatus: lead.status,
-            toStatus: overrideStatus,
-            reason: `Manual override: ${overrideReason}`,
-          },
-        });
-      }
-
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: lead.id,
-          propertyId: lead.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: workflowEventTypes.overrideApplied,
-          payload: {
-            reason: overrideReason,
-            previousStatus: lead.status,
-            nextStatus: overrideStatus,
-            previousFitResult: lead.fitResult,
-            nextFitResult: overrideFit,
-          },
-        },
-      });
+    await dependencies.updateLeadRoutingOverride({
+      actionContext,
+      lead,
+      overrideFit,
+      overrideReason: overrideReason.trim(),
+      overrideStatus,
     });
 
-    if (shouldRecomputeFitForTrigger("override_confirmed")) {
-      const leadAfterOverride = await getLeadWorkflowContext(
+    if (dependencies.shouldRecomputeFitForTrigger("override_confirmed")) {
+      const leadAfterOverride = await dependencies.getLeadWorkflowContext(
         actionContext.workspaceId,
         leadId,
       );
 
       if (leadAfterOverride) {
-        const recomputedEvaluation = evaluateLeadQualification(leadAfterOverride);
+        const recomputedEvaluation = dependencies.evaluateLeadQualification(leadAfterOverride);
 
-        await prisma.auditEvent.create({
-          data: {
-            workspaceId: actionContext.workspaceId,
-            leadId: leadAfterOverride.id,
-            propertyId: leadAfterOverride.propertyId,
-            actorUserId: actionContext.actorUserId,
-            actorType: AuditActorType.USER,
-            eventType: workflowEventTypes.fitComputed,
-            payload: {
-              triggerType: "override_confirmed",
-              previousFitResult: overrideFit,
-              recomputedFitResult: recomputedEvaluation.fitResult,
-              recommendedStatus: recomputedEvaluation.recommendedStatus,
-              summary: recomputedEvaluation.summary,
-            },
-          },
+        await dependencies.createRecomputedFitAuditEvent({
+          actionContext,
+          lead: leadAfterOverride,
+          overrideFit,
+          recomputedEvaluation,
         });
       }
     }
   } catch (error) {
     if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
+      dependencies.redirectToWorkflowErrorPath(redirectPath, error.code);
     }
 
     throw error;
   }
 
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+  dependencies.refreshLeadWorkflow(leadId);
+  dependencies.redirect(redirectPath);
 }
 
-export async function sendManualOutboundMessageAction(
+export async function overrideLeadRoutingAction(leadId: string, formData: FormData) {
+  return handleOverrideLeadRoutingAction(leadId, formData);
+}
+
+export async function handleSendManualOutboundMessageAction(
   leadId: string,
   formData: FormData,
+  dependencies: SendManualOutboundMessageActionDependencies = defaultSendManualOutboundMessageActionDependencies,
 ) {
-  const actionContext = await getActionContext(leadId);
+  const actionContext = await dependencies.getActionContext(leadId);
   const outboundMessageChannel = parseMessageChannelFromFormValue(
     formData.get("manualChannel"),
   );
@@ -1609,208 +3375,151 @@ export async function sendManualOutboundMessageAction(
       ? redirectTargetValue
       : fallbackRedirectPath;
 
-  try {
-    await assertLeadActionPermission({
-      ...actionContext,
-      leadActionPermissionKey: "requestInfo",
-    });
+  await dependencies.executeWorkflowActionWithErrorRedirect({
+    leadId,
+    redirectPath,
+    executeAction: async () => {
+      await dependencies.assertLeadActionPermission({
+        ...actionContext,
+        leadActionPermissionKey: "requestInfo",
+      });
 
-    if (!outboundMessageChannel) {
-      throw new LeadWorkflowError(
-        "ACTION_REQUIRES_CONTACT_CHANNEL",
-        "A manual outbound channel is required.",
-      );
-    }
+      if (!outboundMessageChannel) {
+        throw new LeadWorkflowError(
+          "ACTION_REQUIRES_CONTACT_CHANNEL",
+          "A manual outbound channel is required.",
+        );
+      }
 
-    if (
-      typeof outboundMessageBodyValue !== "string" ||
-      outboundMessageBodyValue.trim().length === 0
-    ) {
-      throw new LeadWorkflowError(
-        "ACTION_BLOCKED_MISSING_INFO",
-        "Manual outbound body is required.",
-      );
-    }
+      if (
+        typeof outboundMessageBodyValue !== "string" ||
+        outboundMessageBodyValue.trim().length === 0
+      ) {
+        throw new LeadWorkflowError(
+          "ACTION_BLOCKED_MISSING_INFO",
+          "Manual outbound body is required.",
+        );
+      }
 
-    const lead = await prisma.lead.findFirst({
-      where: {
-        id: leadId,
+      const lead = await dependencies.findLeadForManualOutbound({
+        leadId,
         workspaceId: actionContext.workspaceId,
-      },
-      include: {
-        contact: true,
-        conversation: true,
-      },
-    });
+      });
 
-    if (!lead) {
-      throw new LeadWorkflowError(
-        "LEAD_NOT_FOUND",
-        `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
-      );
-    }
+      if (!lead) {
+        throw new LeadWorkflowError(
+          "LEAD_NOT_FOUND",
+          `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
+        );
+      }
 
-    const resolvedContactEmailAddress = lead.contact?.email ?? lead.email;
-    const resolvedContactPhoneNumber = lead.contact?.phone ?? lead.phone;
+      const resolvedContactEmailAddress = lead.contact?.email ?? lead.email;
+      const resolvedContactPhoneNumber = lead.contact?.phone ?? lead.phone;
 
-    if (outboundMessageChannel === MessageChannel.EMAIL && !resolvedContactEmailAddress) {
-      throw new LeadWorkflowError(
-        "ACTION_REQUIRES_CONTACT_CHANNEL",
-        "Lead is missing an email address for manual outbound.",
-      );
-    }
+      if (outboundMessageChannel === MessageChannel.EMAIL && !resolvedContactEmailAddress) {
+        throw new LeadWorkflowError(
+          "ACTION_REQUIRES_CONTACT_CHANNEL",
+          "Lead is missing an email address for manual outbound.",
+        );
+      }
 
-    if (outboundMessageChannel === MessageChannel.SMS && !resolvedContactPhoneNumber) {
-      throw new LeadWorkflowError(
-        "ACTION_REQUIRES_CONTACT_CHANNEL",
-        "Lead is missing a phone number for manual outbound.",
-      );
-    }
+      if (outboundMessageChannel === MessageChannel.SMS && !resolvedContactPhoneNumber) {
+        throw new LeadWorkflowError(
+          "ACTION_REQUIRES_CONTACT_CHANNEL",
+          "Lead is missing a phone number for manual outbound.",
+        );
+      }
 
-    if (isLeadChannelOptedOut(lead, outboundMessageChannel)) {
-      throw new LeadWorkflowError(
-        "ACTION_BLOCKED_OPT_OUT",
-        `Lead has opted out of ${formatMessageChannelLabel(outboundMessageChannel)} messaging.`,
-      );
-    }
+      if (dependencies.isLeadChannelOptedOut(lead, outboundMessageChannel)) {
+        throw new LeadWorkflowError(
+          "ACTION_BLOCKED_OPT_OUT",
+          `Lead has opted out of ${formatMessageChannelLabel(outboundMessageChannel)} messaging.`,
+        );
+      }
 
-    const conversation =
-      lead.conversation ??
-      (await prisma.conversation.create({
-        data: {
+      const normalizedSubject =
+        typeof outboundMessageSubjectValue === "string" &&
+        outboundMessageSubjectValue.trim().length > 0
+          ? outboundMessageSubjectValue.trim()
+          : null;
+      const conversation =
+        lead.conversation ??
+        (await dependencies.createConversation({
           leadId: lead.id,
-          subject:
-            typeof outboundMessageSubjectValue === "string" &&
-            outboundMessageSubjectValue.trim().length > 0
-              ? outboundMessageSubjectValue.trim()
-              : null,
-        },
-      }));
+          subject: normalizedSubject,
+        }));
 
-    const isInternalNoteChannel =
-      outboundMessageChannel === MessageChannel.INTERNAL_NOTE;
-    const normalizedManualBody = isInternalNoteChannel
-      ? (
-          await (async () => {
-            const workspaceMembers = await prisma.membership.findMany({
-              where: {
-                workspaceId: actionContext.workspaceId,
-                userId: {
-                  not: actionContext.actorUserId,
-                },
-              },
-              include: {
-                user: {
-                  select: {
-                    email: true,
-                    name: true,
-                  },
-                },
-              },
-              orderBy: {
-                createdAt: "asc",
-              },
-            });
-
-            // Only internal notes get mention normalization so outbound copy stays untouched.
-            return resolveInternalNoteMentions({
-              noteBody: outboundMessageBodyValue.trim(),
-              workspaceMembers: workspaceMembers.map((workspaceMember) => ({
-                userId: workspaceMember.userId,
-                name: workspaceMember.user.name,
-                emailAddress: workspaceMember.user.email,
-                membershipRole: workspaceMember.role,
-              })),
-            }).normalizedNoteBody;
-          })()
-        )
-      : outboundMessageBodyValue.trim();
-    const messageRecord = await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        direction: MessageDirection.OUTBOUND,
-        origin: MessageOrigin.OUTBOUND_MANUAL,
-        channel: outboundMessageChannel,
-        subject:
-          typeof outboundMessageSubjectValue === "string" &&
-          outboundMessageSubjectValue.trim().length > 0
-            ? outboundMessageSubjectValue.trim()
-            : null,
+      const isInternalNoteChannel =
+        outboundMessageChannel === MessageChannel.INTERNAL_NOTE;
+      const normalizedManualBody = isInternalNoteChannel
+        ? dependencies.resolveInternalNoteMentions({
+            noteBody: outboundMessageBodyValue.trim(),
+            workspaceMembers: await dependencies.findWorkspaceMembersForInternalNotes({
+              workspaceId: actionContext.workspaceId,
+              actorUserId: actionContext.actorUserId,
+            }),
+          }).normalizedNoteBody
+        : outboundMessageBodyValue.trim();
+      const messageRecord = await dependencies.createMessage({
         body: normalizedManualBody,
+        channel: outboundMessageChannel,
+        conversationId: conversation.id,
         deliveryStatus: serializeDeliveryStatus({
           state: isInternalNoteChannel ? "sent" : "queued",
           provider: outboundMessageChannel,
           retryCount: 0,
         }),
+        direction: MessageDirection.OUTBOUND,
+        origin: MessageOrigin.OUTBOUND_MANUAL,
         sentAt: isInternalNoteChannel ? new Date() : null,
-      },
-    });
+        subject: normalizedSubject,
+      });
 
-    if (!isInternalNoteChannel) {
-      try {
-        await sendQueuedMessage(messageRecord.id, 0);
-      } catch (error) {
-        const deliveryErrorMessage =
-          error instanceof Error ? error.message : "Manual outbound delivery failed";
+      if (!isInternalNoteChannel) {
+        try {
+          await dependencies.sendQueuedMessage(messageRecord.id, 0);
+        } catch (error) {
+          const deliveryErrorMessage =
+            error instanceof Error ? error.message : "Manual outbound delivery failed";
 
-        if (isProviderConfigurationError(deliveryErrorMessage)) {
-          await markMessageProviderUnresolved({
-            messageId: messageRecord.id,
-            error: deliveryErrorMessage,
-          });
-        } else {
-          await markMessageDeliveryFailure({
-            messageId: messageRecord.id,
-            retryCount: 0,
-            error: deliveryErrorMessage,
-          });
+          if (dependencies.isProviderConfigurationError(deliveryErrorMessage)) {
+            await dependencies.markMessageProviderUnresolved({
+              messageId: messageRecord.id,
+              error: deliveryErrorMessage,
+            });
+          } else {
+            await dependencies.markMessageDeliveryFailure({
+              messageId: messageRecord.id,
+              retryCount: 0,
+              error: deliveryErrorMessage,
+            });
+          }
         }
       }
-    }
 
-    await prisma.$transaction(async (transactionClient) => {
-      await transactionClient.lead.update({
-        where: {
-          id: lead.id,
-        },
-        data: {
-          lastActivityAt: new Date(),
-        },
+      await dependencies.persistManualOutboundActivity({
+        actionContext,
+        lead,
+        messageId: messageRecord.id,
+        outboundMessageChannel,
       });
-
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: lead.id,
-          propertyId: lead.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: "manual_outbound_sent",
-          payload: {
-            messageId: messageRecord.id,
-            channel: outboundMessageChannel,
-            optOutAt: lead.optOutAt?.toISOString() ?? null,
-          },
-        },
-      });
-    });
-  } catch (error) {
-    if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
-    }
-
-    throw error;
-  }
-
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+    },
+  });
 }
 
-export async function updateLeadChannelOptOutAction(
+export async function sendManualOutboundMessageAction(
   leadId: string,
   formData: FormData,
 ) {
-  const actionContext = await getActionContext(leadId);
+  return handleSendManualOutboundMessageAction(leadId, formData);
+}
+
+export async function handleUpdateLeadChannelOptOutAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: UpdateLeadChannelOptOutActionDependencies = defaultUpdateLeadChannelOptOutActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
   const channel = parseMessageChannelFromFormValue(formData.get("channel"));
   const isOptedOut = parseBooleanFormValue(formData.get("isOptedOut"));
   const reasonValue = formData.get("reason");
@@ -1820,104 +3529,76 @@ export async function updateLeadChannelOptOutAction(
       ? redirectTargetValue
       : getLeadDetailPath(leadId);
 
-  try {
-    await assertLeadActionPermission({
-      ...actionContext,
-      leadActionPermissionKey: "requestInfo",
-    });
+  await dependencies.executeWorkflowActionWithErrorRedirect({
+    leadId,
+    redirectPath,
+    executeAction: async () => {
+      await dependencies.assertLeadActionPermission({
+        ...actionContext,
+        leadActionPermissionKey: "requestInfo",
+      });
 
-    if (
-      !channel ||
-      channel === MessageChannel.INTERNAL_NOTE ||
-      isOptedOut === null
-    ) {
-      throw new LeadWorkflowError(
-        "ACTION_REQUIRES_CONTACT_CHANNEL",
-        "A valid contact channel is required for opt-out updates.",
-      );
-    }
+      if (
+        !channel ||
+        channel === MessageChannel.INTERNAL_NOTE ||
+        isOptedOut === null
+      ) {
+        throw new LeadWorkflowError(
+          "ACTION_REQUIRES_CONTACT_CHANNEL",
+          "A valid contact channel is required for opt-out updates.",
+        );
+      }
 
-    const lead = await prisma.lead.findFirst({
-      where: {
-        id: leadId,
+      const lead = await dependencies.findLeadForChannelOptOut({
+        leadId,
         workspaceId: actionContext.workspaceId,
-      },
-      select: {
-        id: true,
-        propertyId: true,
-        optOutAt: true,
-        optOutReason: true,
-        emailOptOutAt: true,
-        emailOptOutReason: true,
-        smsOptOutAt: true,
-        smsOptOutReason: true,
-        whatsappOptOutAt: true,
-        whatsappOptOutReason: true,
-        instagramOptOutAt: true,
-        instagramOptOutReason: true,
-      },
-    });
-
-    if (!lead) {
-      throw new LeadWorkflowError(
-        "LEAD_NOT_FOUND",
-        `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
-      );
-    }
-
-    const changedAt = new Date();
-    const updateData = buildLeadChannelOptOutUpdate({
-      lead,
-      channel,
-      isOptedOut,
-      changedAt,
-      reason: typeof reasonValue === "string" ? reasonValue : null,
-    });
-
-    await prisma.$transaction(async (transactionClient) => {
-      await transactionClient.lead.update({
-        where: {
-          id: lead.id,
-        },
-        data: {
-          ...updateData,
-          lastActivityAt: changedAt,
-        },
       });
 
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: lead.id,
-          propertyId: lead.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: isOptedOut ? "lead_opted_out" : "lead_opted_in",
-          payload: {
-            channel,
-            reason:
-              typeof reasonValue === "string" && reasonValue.trim().length > 0
-                ? reasonValue.trim()
-                : null,
-            source: "operator_control",
-          },
-        },
+      if (!lead) {
+        throw new LeadWorkflowError(
+          "LEAD_NOT_FOUND",
+          `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
+        );
+      }
+
+      const normalizedReason = typeof reasonValue === "string" ? reasonValue.trim() : "";
+      const updateData = dependencies.buildLeadChannelOptOutUpdate({
+        lead,
+        channel,
+        isOptedOut,
+        changedAt: new Date(),
+        reason: typeof reasonValue === "string" ? reasonValue : null,
       });
-    });
-  } catch (error) {
-    if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
-    }
 
-    throw error;
-  }
+      await dependencies.persistLeadChannelOptOutUpdate({
+        actionContext,
+        channel,
+        isOptedOut,
+        lead,
+        reason: normalizedReason.length > 0 ? normalizedReason : null,
+        updateData,
+      });
+    },
+  });
+}
 
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+export async function updateLeadChannelOptOutAction(
+  leadId: string,
+  formData: FormData,
+) {
+  return handleUpdateLeadChannelOptOutAction(leadId, formData);
 }
 
 export async function declineLeadAction(leadId: string, formData: FormData) {
-  const actionContext = await getActionContext(leadId);
+  return handleDeclineLeadAction(leadId, formData);
+}
+
+export async function handleDeclineLeadAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: DeclineLeadActionDependencies = defaultDeclineLeadActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
   const declineReason = parseDeclineReasonFromFormValue(formData.get("declineReason"));
   const declineNoteValue = formData.get("declineNote");
   const redirectTargetValue = formData.get("redirectTo");
@@ -1927,133 +3608,165 @@ export async function declineLeadAction(leadId: string, formData: FormData) {
       ? redirectTargetValue
       : fallbackRedirectPath;
 
-  try {
-    await assertLeadActionPermission({
-      ...actionContext,
-      leadActionPermissionKey: "declineLead",
-    });
-
-    if (!declineReason) {
-      throw new LeadWorkflowError(
-        "DECLINE_REASON_REQUIRED",
-        "Decline reason is required.",
-      );
-    }
-
-    if (!Object.values(DeclineReason).includes(declineReason)) {
-      throw new LeadWorkflowError(
-        "DECLINE_REASON_INVALID",
-        "Decline reason is invalid.",
-      );
-    }
-
-    const lead = await prisma.lead.findFirst({
-      where: {
-        id: leadId,
-        workspaceId: actionContext.workspaceId,
-      },
-      include: {
-        conversation: {
-          include: {
-            messages: {
-              where: {
-                direction: MessageDirection.OUTBOUND,
-                sentAt: null,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!lead) {
-      throw new LeadWorkflowError(
-        "LEAD_NOT_FOUND",
-        `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
-      );
-    }
-
-    try {
-      assertLeadStatusTransitionIsAllowed(lead.status, LeadStatus.DECLINED);
-    } catch {
-      throw new LeadWorkflowError(
-        "INVALID_STATUS_TRANSITION",
-        `Lead status transition is not allowed: ${lead.status} -> ${LeadStatus.DECLINED}`,
-      );
-    }
-
-    await prisma.$transaction(async (transactionClient) => {
-      await transactionClient.lead.update({
-        where: {
-          id: lead.id,
-        },
-        data: {
-          status: LeadStatus.DECLINED,
-          declineReason,
-          declinedAt: new Date(),
-          isSoftDeclined: true,
-          lastActivityAt: new Date(),
-        },
+  await dependencies.executeWorkflowActionWithErrorRedirect({
+    leadId,
+    redirectPath,
+    executeAction: async () => {
+      await dependencies.assertLeadActionPermission({
+        ...actionContext,
+        leadActionPermissionKey: "declineLead",
       });
 
-      await transactionClient.leadStatusHistory.create({
-        data: {
-          leadId: lead.id,
-          fromStatus: lead.status,
-          toStatus: LeadStatus.DECLINED,
-          reason: `Declined (${declineReason})`,
-        },
-      });
-
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: lead.id,
-          propertyId: lead.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: workflowEventTypes.declineRecorded,
-          payload: {
-            reason: declineReason,
-            note: typeof declineNoteValue === "string" ? declineNoteValue : null,
-            previousStatus: lead.status,
-            nextStatus: LeadStatus.DECLINED,
-          },
-        },
-      });
-
-      if (lead.conversation?.messages.length) {
-        for (const queuedOutboundMessage of lead.conversation.messages) {
-          await transactionClient.message.update({
-            where: {
-              id: queuedOutboundMessage.id,
-            },
-            data: {
-              deliveryStatus: serializeDeliveryStatus({
-                state: "failed",
-                provider: null,
-                retryCount: 0,
-                error: "Lead declined; automation stopped.",
-              }),
-            },
-          });
-        }
+      if (!declineReason) {
+        throw new LeadWorkflowError(
+          "DECLINE_REASON_REQUIRED",
+          "Decline reason is required.",
+        );
       }
-    });
-  } catch (error) {
-    if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
-    }
 
-    throw error;
-  }
+      if (!Object.values(DeclineReason).includes(declineReason)) {
+        throw new LeadWorkflowError(
+          "DECLINE_REASON_INVALID",
+          "Decline reason is invalid.",
+        );
+      }
 
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+      const lead = await dependencies.findLeadForDecline({
+        leadId,
+        workspaceId: actionContext.workspaceId,
+      });
+
+      if (!lead) {
+        throw new LeadWorkflowError(
+          "LEAD_NOT_FOUND",
+          `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
+        );
+      }
+
+      try {
+        dependencies.assertLeadStatusTransitionIsAllowed(lead.status, LeadStatus.DECLINED);
+      } catch {
+        throw new LeadWorkflowError(
+          "INVALID_STATUS_TRANSITION",
+          `Lead status transition is not allowed: ${lead.status} -> ${LeadStatus.DECLINED}`,
+        );
+      }
+
+      await dependencies.declineLead({
+        actionContext,
+        declineNote: typeof declineNoteValue === "string" ? declineNoteValue : null,
+        declineReason,
+        lead,
+      });
+    },
+  });
 }
 
-export async function cancelTourAction(leadId: string, formData: FormData) {
-  const actionContext = await getActionContext(leadId);
+export async function handleCompleteTourAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: CompleteTourActionDependencies = defaultCompleteTourActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
+  const redirectTargetValue = formData.get("redirectTo");
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : getLeadDetailPath(leadId);
+
+  await dependencies.executeWorkflowActionWithErrorRedirect({
+    leadId,
+    redirectPath,
+    executeAction: async () => {
+      await dependencies.assertLeadActionPermission({
+        ...actionContext,
+        leadActionPermissionKey: "scheduleTour",
+      });
+
+      const lead = await dependencies.findLeadWithActiveScheduledTour({
+        leadId,
+        workspaceId: actionContext.workspaceId,
+      });
+
+      if (!lead) {
+        throw new LeadWorkflowError("LEAD_NOT_FOUND", `Lead ${leadId} was not found.`);
+      }
+
+      const activeTour = lead.tours[0] ?? null;
+
+      if (!activeTour) {
+        throw new LeadWorkflowError(
+          "ACTION_REQUIRES_QUALIFIED_LEAD",
+          "No active scheduled tour exists for this lead.",
+        );
+      }
+
+      await dependencies.completeTour({
+        actionContext,
+        activeTour,
+        lead,
+      });
+    },
+  });
+}
+
+export async function handleMarkTourNoShowAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: MarkTourNoShowActionDependencies = defaultMarkTourNoShowActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
+  const redirectTargetValue = formData.get("redirectTo");
+  const operatorNoShowReason =
+    parseOptionalFormText(formData.get("operatorNoShowReason")) ?? "Prospect did not attend.";
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : getLeadDetailPath(leadId);
+
+  await dependencies.executeWorkflowActionWithErrorRedirect({
+    leadId,
+    redirectPath,
+    executeAction: async () => {
+      await dependencies.assertLeadActionPermission({
+        ...actionContext,
+        leadActionPermissionKey: "scheduleTour",
+      });
+
+      const lead = await dependencies.findLeadWithActiveScheduledTour({
+        leadId,
+        workspaceId: actionContext.workspaceId,
+      });
+
+      if (!lead) {
+        throw new LeadWorkflowError("LEAD_NOT_FOUND", `Lead ${leadId} was not found.`);
+      }
+
+      const activeTour = lead.tours[0] ?? null;
+
+      if (!activeTour) {
+        throw new LeadWorkflowError(
+          "ACTION_REQUIRES_QUALIFIED_LEAD",
+          "No active scheduled tour exists for this lead.",
+        );
+      }
+
+      await dependencies.markTourNoShow({
+        actionContext,
+        activeTour,
+        lead,
+        operatorNoShowReason,
+      });
+    },
+  });
+}
+
+export async function handleCancelTourAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: CancelTourActionDependencies = defaultCancelTourActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
   const operatorCancelReason =
     parseOptionalFormText(formData.get("operatorCancelReason")) ?? "Canceled by operator";
   const notifyProspect = formData.get("notifyProspect") === "on";
@@ -2067,41 +3780,16 @@ export async function cancelTourAction(leadId: string, formData: FormData) {
       : fallbackRedirectPath;
 
   try {
-    await assertLeadActionPermission({
+    await dependencies.assertLeadActionPermission({
       ...actionContext,
       leadActionPermissionKey: "scheduleTour",
     });
 
-    const workspaceMembership = await getCurrentWorkspaceMembership();
+    const workspaceMembership = await dependencies.getCurrentWorkspaceMembership();
 
-    const lead = await prisma.lead.findFirst({
-      where: {
-        id: leadId,
-        workspaceId: actionContext.workspaceId,
-      },
-      include: {
-        property: {
-          select: {
-            calendarTargetExternalId: true,
-            calendarTargetProvider: true,
-            name: true,
-          },
-        },
-        workspace: {
-          select: {
-            webhookSigningSecret: true,
-          },
-        },
-        tours: {
-          where: {
-            status: "SCHEDULED",
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-          take: 1,
-        },
-      },
+    const lead = await dependencies.findLeadForCancelTour({
+      leadId,
+      workspaceId: actionContext.workspaceId,
     });
 
     if (!lead) {
@@ -2124,92 +3812,41 @@ export async function cancelTourAction(leadId: string, formData: FormData) {
     const targetStatus =
       routeToStatus === LeadStatus.UNDER_REVIEW ? LeadStatus.UNDER_REVIEW : fallbackRouteStatus;
 
-    assertLeadStatusTransitionIsAllowed(lead.status, targetStatus);
+    dependencies.assertLeadStatusTransitionIsAllowed(lead.status, targetStatus);
 
-    const calendarSyncState = buildCalendarSyncState({
+    const calendarSyncState = dependencies.buildCalendarSyncState({
       existingExternalCalendarId: activeTour.externalCalendarId,
       propertyCalendarTargetExternalId: lead.property?.calendarTargetExternalId ?? null,
       propertyCalendarTargetProvider: lead.property?.calendarTargetProvider ?? null,
       tourEventId: activeTour.id,
-      workspaceCalendarConnections: parseCalendarConnectionsConfig(
+      workspaceCalendarConnections: dependencies.parseCalendarConnectionsConfig(
         workspaceMembership.workspace.calendarConnections,
       ),
     });
 
-    await prisma.$transaction(async (transactionClient) => {
-      await transactionClient.tourEvent.update({
-        where: {
-          id: activeTour.id,
-        },
-        data: {
-          calendarSyncError: calendarSyncState.calendarSyncError,
-          calendarSyncProvider: calendarSyncState.calendarSyncProvider,
-          calendarSyncStatus: calendarSyncState.calendarSyncStatus,
-          calendarSyncedAt: calendarSyncState.calendarSyncedAt,
-          status: "CANCELED",
-          canceledAt: new Date(),
-          cancelReason: operatorCancelReason,
-          operatorCancelReason,
-        },
-      });
-
-      await transactionClient.lead.update({
-        where: {
-          id: lead.id,
-        },
-        data: {
-          status: targetStatus,
-          lastActivityAt: new Date(),
-        },
-      });
-
-      await transactionClient.leadStatusHistory.create({
-        data: {
-          leadId: lead.id,
-          fromStatus: lead.status,
-          toStatus: targetStatus,
-          reason: "Tour canceled and rerouted.",
-        },
-      });
-
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: lead.id,
-          propertyId: lead.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: workflowEventTypes.tourCanceled,
-          payload: {
-            tourEventId: activeTour.id,
-            cancelReason: operatorCancelReason,
-            notifyProspect,
-            reroutedStatus: targetStatus,
-          },
-        },
-      });
+    await dependencies.cancelTourAndRouteLead({
+      actionContext,
+      activeTour,
+      calendarSyncState,
+      lead,
+      notifyProspect,
+      operatorCancelReason,
+      targetStatus,
     });
 
     if (notifyProspect && lead.property?.name) {
-      const prospectNotificationSent = await sendTourCanceledNotification({
+      const prospectNotificationSent = await dependencies.sendTourCanceledNotification({
         leadId: lead.id,
         propertyName: lead.property.name,
         prospectMessage,
       });
 
       if (prospectNotificationSent) {
-        await prisma.tourEvent.update({
-          where: {
-            id: activeTour.id,
-          },
-          data: {
-            prospectNotificationSentAt: new Date(),
-          },
-        });
+        await dependencies.updateTourProspectNotificationSentAt(activeTour.id);
       }
     }
 
-    await queueOutboundWorkflowWebhook({
+    await dependencies.queueOutboundWorkflowWebhook({
       workspaceId: actionContext.workspaceId,
       leadId: lead.id,
       eventType: "tour.canceled",
@@ -2224,18 +3861,26 @@ export async function cancelTourAction(leadId: string, formData: FormData) {
     });
   } catch (error) {
     if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
+      dependencies.redirectToWorkflowErrorPath(redirectPath, error.code);
     }
 
     throw error;
   }
 
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+  dependencies.refreshLeadWorkflow(leadId);
+  dependencies.redirect(redirectPath);
 }
 
-export async function rescheduleTourAction(leadId: string, formData: FormData) {
-  const actionContext = await getActionContext(leadId);
+export async function cancelTourAction(leadId: string, formData: FormData) {
+  return handleCancelTourAction(leadId, formData);
+}
+
+export async function handleRescheduleTourAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: RescheduleTourActionDependencies = defaultRescheduleTourActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
   const redirectTargetValue = formData.get("redirectTo");
   const explicitAssignedMembershipId = parseAssignedMembershipIdFromFormValue(
     formData.get("assignedMembershipId"),
@@ -2252,46 +3897,20 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
       : fallbackRedirectPath;
 
   try {
-    await assertLeadActionPermission({
+    await dependencies.assertLeadActionPermission({
       ...actionContext,
       leadActionPermissionKey: "scheduleTour",
     });
 
     const scheduledAtDate = parseScheduledAtFromFormValue(formData.get("scheduledAt"));
-    const workspaceMembership = await getCurrentWorkspaceMembership();
-    const reminderSequence = parseTourReminderSequence(
+    const workspaceMembership = await dependencies.getCurrentWorkspaceMembership();
+    const reminderSequence = dependencies.parseTourReminderSequence(
       workspaceMembership.workspace.tourReminderSequence,
     );
 
-    const lead = await prisma.lead.findFirst({
-      where: {
-        id: leadId,
-        workspaceId: actionContext.workspaceId,
-      },
-      include: {
-        property: {
-          select: {
-            calendarTargetExternalId: true,
-            calendarTargetProvider: true,
-            name: true,
-            schedulingAvailability: true,
-          },
-        },
-        workspace: {
-          select: {
-            webhookSigningSecret: true,
-          },
-        },
-        tours: {
-          where: {
-            status: TourEventStatus.SCHEDULED,
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-          take: 1,
-        },
-      },
+    const lead = await dependencies.findLeadForRescheduleTour({
+      leadId,
+      workspaceId: actionContext.workspaceId,
     });
 
     if (!lead) {
@@ -2310,8 +3929,8 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
       );
     }
 
-    assertScheduledAtWithinAvailabilityWindow({
-      availabilityWindow: parseAvailabilityWindowConfig(
+    dependencies.assertScheduledAtWithinAvailabilityWindow({
+      availabilityWindow: dependencies.parseAvailabilityWindowConfig(
         workspaceMembership.schedulingAvailability,
       ),
       label: "Operator",
@@ -2319,131 +3938,54 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
     });
 
     const propertyAvailability = lead.propertyId
-      ? await prisma.property.findFirst({
-          where: {
-            id: lead.propertyId,
-            workspaceId: actionContext.workspaceId,
-          },
-          select: {
-            schedulingAvailability: true,
-          },
+      ? await dependencies.findPropertyAvailabilityForRescheduleTour({
+          propertyId: lead.propertyId,
+          workspaceId: actionContext.workspaceId,
         })
       : null;
 
-    assertScheduledAtWithinAvailabilityWindow({
-      availabilityWindow: parseAvailabilityWindowConfig(
+    dependencies.assertScheduledAtWithinAvailabilityWindow({
+      availabilityWindow: dependencies.parseAvailabilityWindowConfig(
         propertyAvailability?.schedulingAvailability ?? lead.property?.schedulingAvailability,
       ),
       label: "Property",
       scheduledAt: scheduledAtDate,
     });
 
-    const eligibleTourCoverageMemberships = workspaceHasCapability(
+    const eligibleTourCoverageMemberships = dependencies.workspaceHasCapability(
       workspaceMembership.workspace.enabledCapabilities,
       WorkspaceCapability.ORG_MEMBERS,
     )
-      ? await getEligibleTourCoverageMemberships(actionContext.workspaceId)
+      ? await dependencies.getEligibleTourCoverageMemberships(actionContext.workspaceId)
       : [];
-    const assignedMembershipId = resolveAssignedTourMembershipId({
+    const assignedMembershipId = dependencies.resolveAssignedTourMembershipId({
       currentMembershipId: workspaceMembership.id,
       eligibleMemberships: eligibleTourCoverageMemberships,
       explicitAssignedMembershipId,
       workspaceSchedulingMode: workspaceMembership.workspace.tourSchedulingMode,
     });
-    const reminderSequenceState = buildInitialTourReminderState({
+    const reminderSequenceState = dependencies.buildInitialTourReminderState({
       reminderSequence,
       scheduledAt: scheduledAtDate,
     });
+    const workspaceCalendarConnections = dependencies.parseCalendarConnectionsConfig(
+      workspaceMembership.workspace.calendarConnections,
+    );
 
-    const { calendarSyncState, nextTourEvent } = await prisma.$transaction(async (transactionClient) => {
-      if (previousTourEvent) {
-        await transactionClient.tourEvent.update({
-          where: {
-            id: previousTourEvent.id,
-          },
-          data: {
-            operatorRescheduleReason,
-            status: "RESCHEDULED",
-          },
-        });
-      }
-
-      const nextTourEvent = await transactionClient.tourEvent.create({
-        data: {
-          assignedMembershipId,
-          operatorRescheduleReason,
-          workspaceId: actionContext.workspaceId,
-          leadId: lead.id,
-          propertyId: lead.propertyId,
-          reminderSequenceState,
-          status: "SCHEDULED",
-          scheduledAt: scheduledAtDate,
-          previousTourEventId: previousTourEvent?.id ?? null,
-        },
-      });
-      const calendarSyncState = buildCalendarSyncState({
-        existingExternalCalendarId: previousTourEvent?.externalCalendarId ?? null,
-        propertyCalendarTargetExternalId:
-          lead.property?.calendarTargetExternalId ?? null,
-        propertyCalendarTargetProvider: lead.property?.calendarTargetProvider ?? null,
-        tourEventId: nextTourEvent.id,
-        workspaceCalendarConnections: parseCalendarConnectionsConfig(
-          workspaceMembership.workspace.calendarConnections,
-        ),
-      });
-
-      await transactionClient.tourEvent.update({
-        where: {
-          id: nextTourEvent.id,
-        },
-        data: {
-          calendarSyncError: calendarSyncState.calendarSyncError,
-          calendarSyncProvider: calendarSyncState.calendarSyncProvider,
-          calendarSyncStatus: calendarSyncState.calendarSyncStatus,
-          calendarSyncedAt: calendarSyncState.calendarSyncedAt,
-          externalCalendarId: calendarSyncState.externalCalendarId,
-        },
-      });
-
-      if (assignedMembershipId) {
-        await transactionClient.membership.update({
-          where: {
-            id: assignedMembershipId,
-          },
-          data: {
-            lastTourAssignedAt: new Date(),
-          },
-        });
-      }
-
-      await transactionClient.auditEvent.create({
-        data: {
-          workspaceId: actionContext.workspaceId,
-          leadId: lead.id,
-          propertyId: lead.propertyId,
-          actorUserId: actionContext.actorUserId,
-          actorType: AuditActorType.USER,
-          eventType: workflowEventTypes.tourRescheduled,
-          payload: {
-            assignedMembershipId,
-            calendarSyncStatus: calendarSyncState.calendarSyncStatus,
-            notifyProspect,
-            operatorRescheduleReason,
-            previousTourEventId: previousTourEvent?.id ?? null,
-            nextTourEventId: nextTourEvent.id,
-            scheduledAt: scheduledAtDate.toISOString(),
-          },
-        },
-      });
-
-      return {
-        calendarSyncState,
-        nextTourEvent,
-      };
+    const { calendarSyncState, nextTourEvent } = await dependencies.rescheduleTour({
+      actionContext,
+      assignedMembershipId,
+      lead,
+      notifyProspect,
+      operatorRescheduleReason,
+      previousTourEvent,
+      reminderSequenceState,
+      scheduledAtDate,
+      workspaceCalendarConnections,
     });
 
     try {
-      await scheduleTourReminderJobs({
+      await dependencies.scheduleTourReminderJobs({
         leadId: lead.id,
         reminderSequence,
         scheduledAt: scheduledAtDate,
@@ -2454,7 +3996,7 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
     }
 
     if (notifyProspect && lead.property?.name) {
-      const prospectNotificationSent = await sendTourRescheduledNotification({
+      const prospectNotificationSent = await dependencies.sendTourRescheduledNotification({
         leadId: lead.id,
         propertyName: lead.property.name,
         prospectMessage,
@@ -2462,18 +4004,11 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
       });
 
       if (prospectNotificationSent) {
-        await prisma.tourEvent.update({
-          where: {
-            id: nextTourEvent.id,
-          },
-          data: {
-            prospectNotificationSentAt: new Date(),
-          },
-        });
+        await dependencies.updateTourProspectNotificationSentAt(nextTourEvent.id);
       }
     }
 
-    await queueOutboundWorkflowWebhook({
+    await dependencies.queueOutboundWorkflowWebhook({
       workspaceId: actionContext.workspaceId,
       leadId: lead.id,
       eventType: "tour.rescheduled",
@@ -2490,202 +4025,24 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
     });
   } catch (error) {
     if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
+      dependencies.redirectToWorkflowErrorPath(redirectPath, error.code);
     }
 
     throw error;
   }
 
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+  dependencies.refreshLeadWorkflow(leadId);
+  dependencies.redirect(redirectPath);
+}
+
+export async function rescheduleTourAction(leadId: string, formData: FormData) {
+  return handleRescheduleTourAction(leadId, formData);
 }
 
 export async function completeTourAction(leadId: string, formData: FormData) {
-  const actionContext = await getActionContext(leadId);
-  const redirectTargetValue = formData.get("redirectTo");
-  const redirectPath =
-    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
-      ? redirectTargetValue
-      : getLeadDetailPath(leadId);
-
-  try {
-    await assertLeadActionPermission({
-      ...actionContext,
-      leadActionPermissionKey: "scheduleTour",
-    });
-
-    const lead = await prisma.lead.findFirst({
-      where: {
-        id: leadId,
-        workspaceId: actionContext.workspaceId,
-      },
-      include: {
-        tours: {
-          where: {
-            status: TourEventStatus.SCHEDULED,
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-          take: 1,
-        },
-      },
-    });
-
-    if (!lead) {
-      throw new LeadWorkflowError("LEAD_NOT_FOUND", `Lead ${leadId} was not found.`);
-    }
-
-    const activeTour = lead.tours[0] ?? null;
-
-    if (!activeTour) {
-      throw new LeadWorkflowError(
-        "ACTION_REQUIRES_QUALIFIED_LEAD",
-        "No active scheduled tour exists for this lead.",
-      );
-    }
-
-    await prisma.$transaction(async (transactionClient) => {
-      await transactionClient.tourEvent.update({
-        where: {
-          id: activeTour.id,
-        },
-        data: {
-          completedAt: new Date(),
-          status: TourEventStatus.COMPLETED,
-        },
-      });
-
-      await transactionClient.lead.update({
-        where: {
-          id: lead.id,
-        },
-        data: {
-          lastActivityAt: new Date(),
-          status: LeadStatus.QUALIFIED,
-        },
-      });
-
-      await transactionClient.auditEvent.create({
-        data: {
-          actorType: AuditActorType.USER,
-          actorUserId: actionContext.actorUserId,
-          eventType: "tour_completed",
-          leadId: lead.id,
-          payload: {
-            leadId: lead.id,
-            tourEventId: activeTour.id,
-          },
-          propertyId: lead.propertyId,
-          workspaceId: actionContext.workspaceId,
-        },
-      });
-    });
-  } catch (error) {
-    if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
-    }
-
-    throw error;
-  }
-
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+  return handleCompleteTourAction(leadId, formData);
 }
 
 export async function markTourNoShowAction(leadId: string, formData: FormData) {
-  const actionContext = await getActionContext(leadId);
-  const redirectTargetValue = formData.get("redirectTo");
-  const operatorNoShowReason =
-    parseOptionalFormText(formData.get("operatorNoShowReason")) ?? "Prospect did not attend.";
-  const redirectPath =
-    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
-      ? redirectTargetValue
-      : getLeadDetailPath(leadId);
-
-  try {
-    await assertLeadActionPermission({
-      ...actionContext,
-      leadActionPermissionKey: "scheduleTour",
-    });
-
-    const lead = await prisma.lead.findFirst({
-      where: {
-        id: leadId,
-        workspaceId: actionContext.workspaceId,
-      },
-      include: {
-        tours: {
-          where: {
-            status: TourEventStatus.SCHEDULED,
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-          take: 1,
-        },
-      },
-    });
-
-    if (!lead) {
-      throw new LeadWorkflowError("LEAD_NOT_FOUND", `Lead ${leadId} was not found.`);
-    }
-
-    const activeTour = lead.tours[0] ?? null;
-
-    if (!activeTour) {
-      throw new LeadWorkflowError(
-        "ACTION_REQUIRES_QUALIFIED_LEAD",
-        "No active scheduled tour exists for this lead.",
-      );
-    }
-
-    await prisma.$transaction(async (transactionClient) => {
-      await transactionClient.tourEvent.update({
-        where: {
-          id: activeTour.id,
-        },
-        data: {
-          completedAt: new Date(),
-          operatorNoShowReason,
-          status: TourEventStatus.NO_SHOW,
-        },
-      });
-
-      await transactionClient.lead.update({
-        where: {
-          id: lead.id,
-        },
-        data: {
-          lastActivityAt: new Date(),
-          status: LeadStatus.UNDER_REVIEW,
-        },
-      });
-
-      await transactionClient.auditEvent.create({
-        data: {
-          actorType: AuditActorType.USER,
-          actorUserId: actionContext.actorUserId,
-          eventType: "tour_no_show_recorded",
-          leadId: lead.id,
-          payload: {
-            leadId: lead.id,
-            operatorNoShowReason,
-            tourEventId: activeTour.id,
-          },
-          propertyId: lead.propertyId,
-          workspaceId: actionContext.workspaceId,
-        },
-      });
-    });
-  } catch (error) {
-    if (isLeadWorkflowError(error)) {
-      redirectToWorkflowErrorPath(redirectPath, error.code);
-    }
-
-    throw error;
-  }
-
-  refreshLeadWorkflow(leadId);
-  redirect(redirectPath);
+  return handleMarkTourNoShowAction(leadId, formData);
 }

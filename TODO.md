@@ -393,6 +393,94 @@ These come after the first usable product slice.
 - [x] Add integration tests for end-to-end lead lifecycle from inquiry to decline/tour/application.
 - [x] Add regression tests for routing case matrix (A-D) and status machine constraints.
 
+### Full file-review testing audit follow-up (March 8, 2026)
+
+Reviewed config and build files:
+
+- [ ] Keep config/build files on transitive coverage only and validate them through lint, typecheck, build, and runtime checks: `package.json`, `tsconfig.json`, `eslint.config.mjs`, `next.config.ts`, `postcss.config.mjs`, `prisma.config.ts`, `docker-compose.yml`, `Dockerfile`.
+
+Reviewed Prisma data layer:
+
+- [ ] Add schema-level integration tests for `prisma/schema.prisma` covering key unique constraints, foreign-key cascades, and enum compatibility.
+- [ ] Add deployment-safety integration checks for `prisma/migrations/**/*.sql`, especially workspace-property-lead relationships and newly added integration-hub tables.
+
+Reviewed scripts:
+
+- [ ] Keep `scripts/openai-realtime-smoke.ts`, `scripts/seed-test-user.ts`, `scripts/backfill-workflow-events.ts`, `scripts/bootstrap-pglite.js`, and `scripts/start-pglite.js` on runtime-only coverage unless they gain reusable logic.
+- [x] Add queue/worker coverage around `scripts/worker.ts` indirectly through `src/lib/jobs.ts` handler registration and job execution tests.
+- [ ] Expand `scripts/playwright-smoke.mjs` into a broader runtime suite. Current smoke coverage now exercises auth entry and recovery pages, dashboard/settings navigation, members access, workflow creation, lead detail notes, property detail and rules, logout, and persisted integration save flows. Onboarding completion, invite acceptance, richer lead actions, property question creation, and deeper workflow editing remain.
+
+Reviewed untested core lib modules:
+
+- [x] Add unit and integration tests for `src/lib/jobs.ts`: queue registration, enqueue helpers, retry behavior, outbound webhook delivery jobs, reminder jobs, and worker handler dispatch.
+- [ ] Expand server-action tests for `src/lib/lead-actions.ts`: permission checks, decline reasons, status transitions, property assignment, manual outbound, channel opt-out updates, complete-tour, no-show, duplicate confirmation, override routing, screening launch, cancel-tour, reschedule-tour, screening-status-update, and manual create-tour flows are covered. Remaining gaps are workflow-emission-heavy branches.
+- [ ] Expand server-action tests for `src/lib/property-actions.ts`: rule parsing, question configuration, and deeper lead re-evaluation triggers remain. Scheduling availability, calendar target, operational details, lifecycle, quiet hours, listing metadata, listing sync, and scheduling-link updates are covered.
+- [x] Add server-action tests for `src/lib/workflow-actions.ts`: workflow create/update/publish flows, node and edge validation, versioning, and capability gating.
+- [ ] Add server-action tests for `src/lib/ai-actions.ts`: artifact schema validation, capability checks, provider failure handling, and persisted AI artifact writes.
+- [ ] Expand direct tests for `src/lib/lead-workflow.ts`: notification fan-out and outbound webhook queuing are covered. Workflow context loading and deeper workflow action side effects remain.
+- [x] Add direct tests for `src/lib/notification-delivery.ts`: recipient filtering, missing-provider behavior, Resend failures, Slack gating, and Slack webhook failure handling.
+- [x] Add direct tests for `src/lib/tour-communications.ts`: scheduled, cancelled, and rescheduled message generation and channel selection.
+- [x] Add direct tests for `src/lib/workflow-data.ts`: workflow list aggregation, version status formatting, and builder view-data shaping.
+- [x] Add direct tests for `src/lib/session.ts`: session lookup, failure recovery, and active-session listing behavior.
+- [x] Add direct tests for `src/lib/auth-accounts.ts`: linked-account discovery, provider availability checks, and missing-env fallbacks.
+- [x] Add direct tests for `src/lib/auth-urls.ts`: redirect safety, query encoding, and next-path sanitization.
+- [ ] Keep `src/lib/auth-client.ts`, `src/lib/auth.ts`, `src/lib/prisma.ts`, `src/lib/onboarding.ts`, `src/lib/navigation.ts`, and `src/lib/workspaces.ts` on transitive coverage unless logic grows further.
+
+Reviewed auth and settings actions:
+
+- [x] Add tests for `src/app/(auth)/social-auth-actions.ts`: provider validation, redirect construction, and error paths.
+- [x] Add tests for `src/app/(app)/app/settings/security/actions.ts`: password changes, session revocation, and account linking/unlinking behavior.
+- [x] Add tests for `src/app/(app)/app/settings/members/actions.ts`: role permission checks, invite validation, member removal, and billing-owner restrictions.
+- [x] Add tests for `src/app/(app)/app/settings/plan-actions.ts`: plan transitions, capability updates, and downgrade warnings.
+- [x] Add tests for `src/app/(app)/app/settings/integrations/actions.ts`: quiet hours, throttle controls, operator availability, tour scheduling, calendar, screening, webhook, CSV, Slack, storage, messaging-channel, meta-lead-ads, outbound webhook, and listing-feed configuration saves.
+
+Reviewed API routes and webhooks:
+
+- [x] Add route tests for `src/app/api/webhooks/email/route.ts`: signature rejection, payload validation, job queue path, and direct fallback processing path.
+- [x] Add route tests for `src/app/api/webhooks/sms/route.ts`: form-encoded parsing, signature rejection, queue path, and fallback processing path.
+- [x] Add route tests for `src/app/api/webhooks/whatsapp/route.ts`: connection lookup, signature rejection, Twilio-style payload parsing, and direct processing fallback.
+- [x] Add route tests for `src/app/api/webhooks/meta/instagram/route.ts`: verification handshake, signature validation, message extraction, and processing fallback.
+- [x] Add route tests for `src/app/api/webhooks/meta/lead-ads/route.ts`: verification handshake, signature validation, field-data mapping, and external-id lead ingestion.
+- [x] Add route tests for `src/app/api/workspace-invites/route.ts`: auth failure, bad role/email validation, capability gating, and successful invite creation.
+- [x] Add route tests for `src/app/api/workspace-invites/accept/route.ts`: auth failure, missing token, invite acceptance, cookie setting, and redirect-path branching.
+- [x] Add route tests for `src/app/api/workspaces/active/route.ts`: session validation and workspace resolution.
+- [x] Add route tests for `src/app/api/integrations/csv-export/route.ts`: auth gating, dataset validation, workspace access checks, and CSV serialization for leads, messages, and activity.
+- [x] Add route tests for `src/app/api/integrations/listing-feed/route.ts`: provider validation, workspace access checks, active-only filtering, and payload shaping.
+- [x] Add route tests for `src/app/api/integrations/storage/manifest/route.ts`: auth gating, workspace resolution, and manifest preview formatting.
+- [x] Cover `src/app/api/auth/[...all]/route.ts` transitively through auth integration and Playwright flows rather than direct handler tests.
+
+Reviewed pages and user-facing routes:
+
+- [x] Add Playwright coverage for auth pages: `src/app/(auth)/login/page.tsx`, `signup/page.tsx`, `forgot-password/page.tsx`, `reset-password/page.tsx`, `magic-link/page.tsx`, `verify-email/page.tsx`.
+- [ ] Add Playwright coverage for onboarding pages: `src/app/(auth)/onboarding/page.tsx`, `property/page.tsx`, `house-rules/page.tsx`, `channels/page.tsx`.
+- [ ] Expand Playwright coverage for core app pages. Current smoke coverage hits `src/app/(app)/app/page.tsx`, `leads/page.tsx`, `leads/[leadId]/page.tsx`, `properties/page.tsx`, `properties/[propertyId]/page.tsx`, `properties/[propertyId]/rules/page.tsx`, `workflows/page.tsx`, `workflows/[workflowId]/page.tsx`, `settings/page.tsx`, `settings/integrations/page.tsx`, `settings/members/page.tsx`, and `settings/security/page.tsx`. Remaining runtime gaps are `properties/[propertyId]/questions/page.tsx`, `inbox/page.tsx`, `templates/page.tsx`, `calendar/page.tsx`, and `invite/[token]/page.tsx`, plus deeper action coverage on already-visited pages.
+- [ ] Keep `src/app/layout.tsx`, `src/app/(app)/app/layout.tsx`, and `src/app/(marketing)/page.tsx` on Playwright/transitive coverage unless layout-specific regressions appear.
+
+Reviewed components:
+
+- [ ] Keep simple presentational UI primitives on transitive coverage only: `src/components/ui/Button.tsx`, `Input.tsx`, `Modal.tsx`, `Card.tsx`, `Select.tsx`, `Textarea.tsx`, `Table.tsx`, `Badge.tsx`, `Stepper.tsx`, plus `src/components/page-header.tsx`.
+- [ ] Add component or E2E coverage for `src/components/workflow-builder-canvas.tsx`: node rendering, edge rendering, and builder interaction states.
+- [ ] Add component or E2E coverage for `src/components/workspace-switcher.tsx`: workspace selection and active-workspace state changes.
+- [ ] Add component or E2E coverage for `src/components/workspace-members-panel.tsx` and `workspace-invite-acceptance-panel.tsx`: member role display is exercised transitively through settings navigation, but invite state mutations and acceptance UI branches still need direct runtime coverage.
+- [x] Add Playwright coverage for `src/components/logout-button.tsx`: sign-out flow and redirect.
+- [ ] Keep `src/components/app-shell.tsx` and `src/components/app-sidebar.tsx` primarily on Playwright coverage, unless sidebar state logic expands.
+- [ ] Add component and Playwright coverage for auth form components: `src/components/auth/login-form.tsx`, `signup-form.tsx`, `forgot-password-form.tsx`, `reset-password-form.tsx`, `magic-link-form.tsx`, `verify-email-panel.tsx`, `account-methods-panel.tsx`, `session-management-panel.tsx`, and `social-sign-in-button.tsx`.
+
+Reviewed existing Playwright runtime surface and missing scenarios:
+
+- [ ] Add Playwright runtime test for invalid login and duplicate-signup failures.
+- [ ] Add Playwright runtime test for password reset and magic-link recovery flows.
+- [ ] Add Playwright runtime test for unverified-email resend and verification completion.
+- [ ] Add Playwright runtime test for property creation, house-rule creation, and qualification-question creation.
+- [ ] Add Playwright runtime test for lead decline, lead status changes, property assignment, and templated outbound messaging.
+- [ ] Add Playwright runtime test for screening launch, template CRUD, and workflow builder node or edge editing.
+- [ ] Add Playwright runtime test for teammate invite, workspace switching, password change, and social account linking from settings.
+- [ ] Expand Playwright runtime test for integration connection flows: persisted settings save flows are covered. Inbound webhook-fed lead visibility and missing-provider error states remain.
+
+Reviewed overall coverage map:
+
+- [ ] Add a durable test matrix mapping each reviewed implementation file to direct coverage, transitive coverage, or remaining gap so the backlog stays synchronized with future file additions.
+
 ## First prototype build order
 
 If the goal is to start implementation immediately, do the next tasks in exactly this order:
@@ -541,59 +629,59 @@ These are not part of the original narrow launch slice, but they are now broken 
 
 ## Phase 20: integrations expansion
 
-- [ ] Build a unified integration connection model with provider type, auth state, mapping config, health state, and sync history.
-- [ ] Expand `/app/settings/integrations` into a real integrations hub with setup wizards and health monitoring.
-- [ ] Add generic inbound webhook ingestion configuration UI.
-- [ ] Add CSV import flow with field mapping and validation preview.
-- [ ] Add CSV export for leads, messages, and activity.
-- [ ] Add Meta Lead Ads ingestion.
-- [ ] Add WhatsApp provider integrations.
-- [ ] Add Instagram messaging integration.
-- [ ] Add Zillow feed or listing sync path.
-- [ ] Add Apartments.com feed or listing sync path.
-- [ ] Add Slack notification integration.
-- [ ] Add outbound automation webhooks for Zapier, Make, and n8n-style consumers.
-- [ ] Add S3-compatible file storage integration for future attachments.
+- [x] Build a unified integration connection model with provider type, auth state, mapping config, health state, and sync history.
+- [x] Expand `/app/settings/integrations` into a real integrations hub with setup wizards and health monitoring.
+- [x] Add generic inbound webhook ingestion configuration UI.
+- [x] Add CSV import flow with field mapping and validation preview.
+- [x] Add CSV export for leads, messages, and activity.
+- [x] Add Meta Lead Ads ingestion.
+- [x] Add WhatsApp provider integrations.
+- [x] Add Instagram messaging integration.
+- [x] Add Zillow feed or listing sync path.
+- [x] Add Apartments.com feed or listing sync path.
+- [x] Add Slack notification integration.
+- [x] Add outbound automation webhooks for Zapier, Make, and n8n-style consumers.
+- [x] Add S3-compatible file storage integration for future attachments.
 
 ## Phase 21: external portals and public acquisition flows
 
-- [ ] Build `/features` with detailed product capability sections.
-- [ ] Build `/how-it-works` with the lead funnel walkthrough.
-- [ ] Expand `/pricing` to reflect Personal vs Org packaging.
-- [ ] Build branded scheduling page for external prospect self-booking.
-- [ ] Build branded house-rules acknowledgment page.
-- [ ] Build prospect status page with lightweight next-step visibility.
-- [ ] Build waitlist signup page for unavailable inventory.
-- [ ] Build public lead capture form with secure workspace routing.
-- [ ] Build embedded qualification form for use on external sites.
-- [ ] Build public AI-tool landing pages as acquisition funnels.
-- [ ] Build prospect portal shell for invites, appointments, and acknowledgments.
+- [x] Build `/features` with detailed product capability sections.
+- [x] Build `/how-it-works` with the lead funnel walkthrough.
+- [x] Expand `/pricing` to reflect Personal vs Org packaging.
+- [x] Build branded scheduling page for external prospect self-booking.
+- [x] Build branded house-rules acknowledgment page.
+- [x] Build prospect status page with lightweight next-step visibility.
+- [x] Build waitlist signup page for unavailable inventory.
+- [x] Build public lead capture form with secure workspace routing.
+- [x] Build embedded qualification form for use on external sites.
+- [x] Build public AI-tool landing pages as acquisition funnels.
+- [x] Build prospect portal shell for invites, appointments, and acknowledgments.
 
 ## Phase 22: Org and team collaboration
 
-- [ ] Build multi-user invite and membership-management flows.
-- [ ] Expand role and permission system from current v1 checks into Org-grade management tooling.
-- [ ] Add lead, review-item, and task assignment to specific teammates.
-- [ ] Add shared inbox ownership and triage controls.
-- [ ] Add internal comments on leads and messages distinct from external communications.
-- [ ] Add first-class task model with due dates and assignees.
-- [ ] Add SLA timer model and overdue highlighting for lead response and review.
-- [ ] Build `/app/settings/team` for memberships, roles, and invite status.
-- [ ] Add property-level permission scoping for larger teams.
-- [ ] Build `/app/audit` for sensitive-action history and filters.
-- [ ] Add activity log views by user.
+- [x] Build multi-user invite and membership-management flows.
+- [x] Expand role and permission system from current v1 checks into Org-grade management tooling.
+- [x] Add lead, review-item, and task assignment to specific teammates.
+- [x] Add shared inbox ownership and triage controls.
+- [x] Add internal comments on leads and messages distinct from external communications.
+- [x] Add first-class task model with due dates and assignees.
+- [x] Add SLA timer model and overdue highlighting for lead response and review.
+- [x] Build `/app/settings/team` for memberships, roles, and invite status.
+- [x] Add property-level permission scoping for larger teams.
+- [x] Build `/app/audit` for sensitive-action history and filters.
+- [x] Add activity log views by user.
 
 ## Phase 23: analytics and reporting expansion
 
-- [ ] Build `/app/analytics` with funnel, source, property, and stale-lead views.
-- [ ] Add inquiry-to-qualified, inquiry-to-tour, and inquiry-to-application funnel charts.
-- [ ] Add source-quality comparison views across listing channels and campaigns.
-- [ ] Add rule-friction analytics showing which rules or questions most often block progression.
-- [ ] Add property-performance comparisons across lead volume, fit rate, and conversion.
-- [ ] Add team-performance metrics for Org workspaces.
-- [ ] Add AI-usage analytics showing suggestion volume and acceptance rate.
-- [ ] Add integration-health analytics for connected systems.
-- [ ] Add saved report filters and time windows.
+- [x] Build `/app/analytics` with funnel, source, property, and stale-lead views.
+- [x] Add inquiry-to-qualified, inquiry-to-tour, and inquiry-to-application funnel charts.
+- [x] Add source-quality comparison views across listing channels and campaigns.
+- [x] Add rule-friction analytics showing which rules or questions most often block progression.
+- [x] Add property-performance comparisons across lead volume, fit rate, and conversion.
+- [x] Add team-performance metrics for Org workspaces.
+- [x] Add AI-usage analytics showing suggestion volume and acceptance rate.
+- [x] Add integration-health analytics for connected systems.
+- [x] Add saved report filters and time windows.
 
 ## Phase 24: billing and monetization
 

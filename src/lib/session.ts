@@ -12,21 +12,40 @@ export type ActiveSessionRecord = {
   userId: string;
 };
 
-export const getServerSession = cache(async () => {
+type ServerSession = Awaited<ReturnType<typeof auth.api.getSession>>;
+type RawActiveSessionRecord = Awaited<ReturnType<typeof auth.api.listSessions>>[number];
+
+export type SessionDependencies = {
+  getRequestHeaders: typeof headers;
+  getSession: (options: { headers: Awaited<ReturnType<typeof headers>> }) => Promise<ServerSession>;
+  listSessions: (options: { headers: Awaited<ReturnType<typeof headers>> }) => Promise<RawActiveSessionRecord[]>;
+};
+
+const defaultSessionDependencies: SessionDependencies = {
+  getRequestHeaders: headers,
+  getSession: (options) => auth.api.getSession(options),
+  listSessions: (options) => auth.api.listSessions(options),
+};
+
+export async function loadServerSession(
+  dependencies: SessionDependencies = defaultSessionDependencies,
+): Promise<ServerSession> {
   try {
-    return await auth.api.getSession({
-      headers: await headers(),
+    return await dependencies.getSession({
+      headers: await dependencies.getRequestHeaders(),
     });
   } catch (error) {
     console.error("Failed to fetch server session (database might be down):", error);
     return null;
   }
-});
+}
 
-export const getActiveSessions = cache(async (): Promise<ActiveSessionRecord[]> => {
+export async function loadActiveSessions(
+  dependencies: SessionDependencies = defaultSessionDependencies,
+): Promise<ActiveSessionRecord[]> {
   try {
-    const activeSessions = await auth.api.listSessions({
-      headers: await headers(),
+    const activeSessions = await dependencies.listSessions({
+      headers: await dependencies.getRequestHeaders(),
     });
 
     return activeSessions.map((activeSession) => ({
@@ -42,4 +61,8 @@ export const getActiveSessions = cache(async (): Promise<ActiveSessionRecord[]> 
     console.error("Failed to fetch active sessions:", error);
     return [];
   }
-});
+}
+
+export const getServerSession = cache(async () => loadServerSession());
+
+export const getActiveSessions = cache(async (): Promise<ActiveSessionRecord[]> => loadActiveSessions());

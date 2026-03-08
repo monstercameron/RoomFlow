@@ -2,7 +2,12 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import {
   CalendarSyncProvider,
+  IntegrationAuthState,
+  IntegrationHealthState,
+  IntegrationProvider,
+  IntegrationSyncStatus,
   LeadStatus,
+  LeadSourceType,
   MessageChannel,
   PropertyLifecycleStatus,
   QualificationFit,
@@ -10,8 +15,10 @@ import {
   ScreeningConnectionAuthState,
   ScreeningProvider,
   ScreeningRequestStatus,
+  TaskStatus,
   TemplateType,
   TourEventStatus,
+  WebhookDeliveryStatus,
   WorkspaceCapability,
   WorkspacePlanType,
 } from "@/generated/prisma/client";
@@ -62,6 +69,21 @@ import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
 import { formatPropertyListingSyncStatus } from "@/lib/property-listing-sync";
 import { formatPropertyLifecycleStatus } from "@/lib/property-lifecycle";
 import { formatQuietHours, resolveEffectiveQuietHours } from "@/lib/quiet-hours";
+import {
+  buildStorageManifestPreview,
+  formatIntegrationConnectionSummary,
+  integrationCatalog,
+  parseInboundWebhookIntegrationConfig,
+  parseListingFeedIntegrationConfig,
+  parseMessagingChannelIntegrationConfig,
+  parseMetaLeadAdsIntegrationConfig,
+  parseOutboundWebhookIntegrationConfig,
+  parseIntegrationFieldMappings,
+  parseS3CompatibleIntegrationConfig,
+  parseSlackIntegrationConfig,
+  resolveIntegrationHealthState,
+  resolveIntegrationSetupState,
+} from "@/lib/integrations";
 import {
   formatScreeningConnectionSummary,
   parseScreeningPackageConfig,
@@ -233,12 +255,145 @@ function formatRelativeTime(value: Date | null) {
   return formatDate(value);
 }
 
+async function resolveScopedPropertyIdsForMembership(params: {
+  membershipId: string;
+  membershipRole: Awaited<ReturnType<typeof getCurrentWorkspaceMembership>>["role"];
+}) {
+  if (
+    params.membershipRole === "OWNER" ||
+    params.membershipRole === "ADMIN"
+  ) {
+    return null;
+  }
+
+  const propertyScopes = await prisma.membershipPropertyScope.findMany({
+    where: {
+      membershipId: params.membershipId,
+    },
+    select: {
+      propertyId: true,
+    },
+  });
+
+  return propertyScopes.length > 0
+    ? propertyScopes.map((propertyScope) => propertyScope.propertyId)
+    : null;
+}
+
+function buildScopedLeadAccessFilter(scopedPropertyIds: string[] | null) {
+  if (!scopedPropertyIds) {
+    return {};
+  }
+
+  return {
+    OR: [
+      {
+        propertyId: null,
+      },
+      {
+        propertyId: {
+          in: scopedPropertyIds,
+        },
+      },
+    ],
+  };
+}
+
+function buildScopedPropertyAccessFilter(scopedPropertyIds: string[] | null) {
+  if (!scopedPropertyIds) {
+    return {};
+  }
+
+  return {
+    id: {
+      in: scopedPropertyIds,
+    },
+  };
+}
+
+function resolveLeadSlaSummary(params: {
+  createdAt: Date;
+  isReviewQueueItem: boolean;
+  lastActivityAt: Date | null;
+  leadReviewSlaMinutes: number;
+  leadResponseSlaMinutes: number;
+  status: LeadStatus;
+  updatedAt: Date;
+}) {
+  const baseTimestamp = params.lastActivityAt ?? params.updatedAt ?? params.createdAt;
+  const responseStatuses = new Set<LeadStatus>([
+    LeadStatus.NEW,
+    LeadStatus.AWAITING_RESPONSE,
+    LeadStatus.INCOMPLETE,
+  ]);
+  const responseSlaApplies = responseStatuses.has(params.status);
+  const reviewSlaApplies = params.isReviewQueueItem;
+
+  if (!responseSlaApplies && !reviewSlaApplies) {
+    return null;
+  }
+
+  const minutes = reviewSlaApplies
+    ? params.leadReviewSlaMinutes
+    : params.leadResponseSlaMinutes;
+  const dueAt = new Date(baseTimestamp.getTime() + minutes * 60 * 1000);
+  const isOverdue = dueAt.getTime() < Date.now();
+
+  return {
+    dueAt,
+    isOverdue,
+    label: reviewSlaApplies ? "Review SLA" : "Response SLA",
+    queue: reviewSlaApplies ? "review" : "response",
+  };
+}
+
+function resolveTaskIsOverdue(dueAt: Date | null, status: TaskStatus) {
+  if (!dueAt) {
+    return false;
+  }
+
+  if (status === TaskStatus.COMPLETED || status === TaskStatus.CANCELED) {
+    return false;
+  }
+
+  return dueAt.getTime() < Date.now();
+}
+
 function formatEnumLabel(value: string) {
   return value
     .toLowerCase()
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function hasStructuredIntegrationMappingConfig(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return Object.keys(value).length > 0;
+}
+
+function resolveCalendarIntegrationProvider(provider: CalendarSyncProvider) {
+  return provider === CalendarSyncProvider.GOOGLE
+    ? IntegrationProvider.GOOGLE_CALENDAR
+    : IntegrationProvider.OUTLOOK_CALENDAR;
+}
+
+function resolveScreeningIntegrationProvider(provider: ScreeningProvider) {
+  switch (provider) {
+    case ScreeningProvider.CHECKR:
+      return IntegrationProvider.CHECKR;
+    case ScreeningProvider.TRANSUNION:
+      return IntegrationProvider.TRANSUNION;
+    case ScreeningProvider.ZUMPER:
+      return IntegrationProvider.ZUMPER;
+  }
 }
 
 function formatAiArtifactView<T>(
@@ -979,6 +1134,817 @@ export const getDashboardViewData = cache(async () => {
   };
 });
 
+const analyticsTimeWindowOptions = [
+  {
+    value: "7d",
+    label: "Last 7 days",
+    days: 7,
+  },
+  {
+    value: "30d",
+    label: "Last 30 days",
+    days: 30,
+  },
+  {
+    value: "90d",
+    label: "Last 90 days",
+    days: 90,
+  },
+  {
+    value: "all",
+    label: "All time",
+    days: null,
+  },
+] as const;
+
+const analyticsReportPresets = [
+  {
+    value: "overview",
+    label: "Overview",
+    description: "Portfolio-wide funnel, property, and stale lead health.",
+  },
+  {
+    value: "sources",
+    label: "Source quality",
+    description: "Compare listing channels and campaigns by fit and conversion.",
+  },
+  {
+    value: "friction",
+    label: "Rule friction",
+    description: "Surface the rules and required questions that most often slow progression.",
+  },
+  {
+    value: "team",
+    label: "Team ops",
+    description: "Review ownership, workload, AI usage, and integration health in one pass.",
+  },
+] as const;
+
+function resolveAnalyticsTimeWindow(value: string | undefined) {
+  const selectedTimeWindow =
+    analyticsTimeWindowOptions.find((timeWindowOption) => timeWindowOption.value === value) ??
+    analyticsTimeWindowOptions[1];
+
+  return {
+    ...selectedTimeWindow,
+    startDate:
+      selectedTimeWindow.days === null
+        ? null
+        : startOfDay(daysAgo(selectedTimeWindow.days)),
+  };
+}
+
+function formatPercentValue(value: number) {
+  return `${Math.round(value)}%`;
+}
+
+function resolveRate(numerator: number, denominator: number) {
+  if (denominator === 0) {
+    return 0;
+  }
+
+  return (numerator / denominator) * 100;
+}
+
+function buildScopedTaskAccessFilter(scopedPropertyIds: string[] | null) {
+  if (!scopedPropertyIds) {
+    return {};
+  }
+
+  return {
+    OR: [
+      {
+        propertyId: null,
+      },
+      {
+        propertyId: {
+          in: scopedPropertyIds,
+        },
+      },
+    ],
+  };
+}
+
+function resolveAuditPayloadObject(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function resolvePayloadNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function resolvePayloadString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+export const getAnalyticsViewData = cache(async (timeWindowValue = "30d") => {
+  const membership = await getCurrentWorkspaceMembership();
+  const hasAdvancedAnalytics = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.ADVANCED_ANALYTICS,
+  );
+  const hasAiAssist = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.AI_ASSIST,
+  );
+  const canViewTeamMetrics = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.ORG_MEMBERS,
+  );
+  const timeWindow = resolveAnalyticsTimeWindow(timeWindowValue);
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
+  const scopedLeadAccessFilter = buildScopedLeadAccessFilter(scopedPropertyIds);
+  const scopedPropertyAccessFilter = buildScopedPropertyAccessFilter(scopedPropertyIds);
+  const scopedTaskAccessFilter = buildScopedTaskAccessFilter(scopedPropertyIds);
+
+  const [
+    accessibleProperties,
+    leads,
+    memberships,
+    tasks,
+    auditEvents,
+    integrationConnections,
+    latestUsageSnapshot,
+    staleLeads,
+  ] = await Promise.all([
+    prisma.property.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+        ...scopedPropertyAccessFilter,
+      },
+      select: {
+        id: true,
+        name: true,
+        lifecycleStatus: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
+    }),
+    prisma.lead.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+        ...scopedLeadAccessFilter,
+        ...(timeWindow.startDate
+          ? {
+              createdAt: {
+                gte: timeWindow.startDate,
+              },
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        fullName: true,
+        createdAt: true,
+        status: true,
+        fitResult: true,
+        declineReason: true,
+        isStale: true,
+        staleAt: true,
+        applicationInviteSentAt: true,
+        assignedMembershipId: true,
+        propertyId: true,
+        property: {
+          select: {
+            name: true,
+          },
+        },
+        leadSource: {
+          select: {
+            name: true,
+            type: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+    prisma.membership.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+      select: {
+        id: true,
+        role: true,
+        userId: true,
+        user: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+    }),
+    prisma.task.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+        ...scopedTaskAccessFilter,
+      },
+      select: {
+        assignedMembershipId: true,
+        completedAt: true,
+        createdAt: true,
+        dueAt: true,
+        status: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+    prisma.auditEvent.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+        ...(timeWindow.startDate
+          ? {
+              createdAt: {
+                gte: timeWindow.startDate,
+              },
+            }
+          : {}),
+      },
+      select: {
+        actorUserId: true,
+        createdAt: true,
+        eventType: true,
+        payload: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+    prisma.integrationConnection.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+      select: {
+        authState: true,
+        displayName: true,
+        enabled: true,
+        healthMessage: true,
+        healthState: true,
+        lastSyncAt: true,
+        lastSyncMessage: true,
+        provider: true,
+        syncStatus: true,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+    }),
+    prisma.workspaceUsageSnapshot.findFirst({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+      orderBy: {
+        snapshotDate: "desc",
+      },
+    }),
+    prisma.lead.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+        ...scopedLeadAccessFilter,
+        isStale: true,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        staleAt: true,
+        status: true,
+        property: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        staleAt: "desc",
+      },
+      take: 8,
+    }),
+  ]);
+
+  const accessiblePropertyIds = accessibleProperties.map((property) => property.id);
+  const leadIds = leads.map((lead) => lead.id);
+
+  const [tourEvents, propertyRules, requiredQuestions, answers] = await Promise.all([
+    leadIds.length > 0
+      ? prisma.tourEvent.findMany({
+          where: {
+            workspaceId: membership.workspaceId,
+            leadId: {
+              in: leadIds,
+            },
+          },
+          select: {
+            leadId: true,
+          },
+          distinct: ["leadId"],
+        })
+      : Promise.resolve([]),
+    accessiblePropertyIds.length > 0
+      ? prisma.propertyRule.findMany({
+          where: {
+            propertyId: {
+              in: accessiblePropertyIds,
+            },
+          },
+          select: {
+            id: true,
+            label: true,
+            propertyId: true,
+          },
+        })
+      : Promise.resolve([]),
+    accessiblePropertyIds.length > 0
+      ? prisma.qualificationQuestion.findMany({
+          where: {
+            required: true,
+            questionSet: {
+              propertyId: {
+                in: accessiblePropertyIds,
+              },
+            },
+          },
+          select: {
+            id: true,
+            label: true,
+            questionSet: {
+              select: {
+                propertyId: true,
+              },
+            },
+          },
+        })
+      : Promise.resolve([]),
+    leadIds.length > 0
+      ? prisma.qualificationAnswer.findMany({
+          where: {
+            leadId: {
+              in: leadIds,
+            },
+          },
+          select: {
+            leadId: true,
+            questionId: true,
+          },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const qualifiedStatuses = new Set<LeadStatus>([
+    LeadStatus.QUALIFIED,
+    LeadStatus.TOUR_SCHEDULED,
+    LeadStatus.APPLICATION_SENT,
+  ]);
+  const activeOwnershipStatuses = new Set<LeadStatus>([
+    LeadStatus.NEW,
+    LeadStatus.AWAITING_RESPONSE,
+    LeadStatus.INCOMPLETE,
+    LeadStatus.UNDER_REVIEW,
+    LeadStatus.QUALIFIED,
+    LeadStatus.CAUTION,
+    LeadStatus.TOUR_SCHEDULED,
+    LeadStatus.APPLICATION_SENT,
+  ]);
+  const leadIdsWithTours = new Set(tourEvents.map((tourEvent) => tourEvent.leadId));
+  const propertyNameById = new Map(accessibleProperties.map((property) => [property.id, property.name]));
+  const propertyRuleLabelById = new Map(propertyRules.map((propertyRule) => [propertyRule.id, propertyRule.label]));
+  const questionAnswersKey = new Set(answers.map((answer) => `${answer.leadId}:${answer.questionId}`));
+  const requiredQuestionsByPropertyId = new Map<
+    string,
+    Array<(typeof requiredQuestions)[number]>
+  >();
+
+  for (const requiredQuestion of requiredQuestions) {
+    const propertyId = requiredQuestion.questionSet.propertyId;
+
+    if (!requiredQuestionsByPropertyId.has(propertyId)) {
+      requiredQuestionsByPropertyId.set(propertyId, []);
+    }
+
+    requiredQuestionsByPropertyId.get(propertyId)?.push(requiredQuestion);
+  }
+
+  const inquiryCount = leads.length;
+  const qualifiedLeadCount = leads.filter((lead) => qualifiedStatuses.has(lead.status)).length;
+  const touredLeadCount = leads.filter((lead) => leadIdsWithTours.has(lead.id)).length;
+  const applicationLeadCount = leads.filter(
+    (lead) => Boolean(lead.applicationInviteSentAt) || lead.status === LeadStatus.APPLICATION_SENT,
+  ).length;
+  const staleLeadCount = staleLeads.length;
+
+  const sourceRows = [...leads.reduce((sourceMap, lead) => {
+    const sourceLabel = resolveSourceSummaryLabel(lead.leadSource?.name);
+    const existingRow = sourceMap.get(sourceLabel) ?? {
+      label: sourceLabel,
+      sourceTypeLabel: lead.leadSource?.type ? formatEnumLabel(lead.leadSource.type) : "Other",
+      inquiries: 0,
+      qualifiedCount: 0,
+      touredCount: 0,
+      applicationCount: 0,
+      mismatchCount: 0,
+      cautionCount: 0,
+    };
+
+    existingRow.inquiries += 1;
+
+    if (qualifiedStatuses.has(lead.status)) {
+      existingRow.qualifiedCount += 1;
+    }
+
+    if (leadIdsWithTours.has(lead.id)) {
+      existingRow.touredCount += 1;
+    }
+
+    if (lead.applicationInviteSentAt || lead.status === LeadStatus.APPLICATION_SENT) {
+      existingRow.applicationCount += 1;
+    }
+
+    if (lead.fitResult === QualificationFit.MISMATCH) {
+      existingRow.mismatchCount += 1;
+    }
+
+    if (lead.fitResult === QualificationFit.CAUTION) {
+      existingRow.cautionCount += 1;
+    }
+
+    sourceMap.set(sourceLabel, existingRow);
+    return sourceMap;
+  }, new Map<string, {
+    label: string;
+    sourceTypeLabel: string;
+    inquiries: number;
+    qualifiedCount: number;
+    touredCount: number;
+    applicationCount: number;
+    mismatchCount: number;
+    cautionCount: number;
+  }>()).values()]
+    .map((sourceRow) => ({
+      ...sourceRow,
+      applicationRate: formatPercentValue(resolveRate(sourceRow.applicationCount, sourceRow.inquiries)),
+      qualifiedRate: formatPercentValue(resolveRate(sourceRow.qualifiedCount, sourceRow.inquiries)),
+      touredRate: formatPercentValue(resolveRate(sourceRow.touredCount, sourceRow.inquiries)),
+    }))
+    .sort((leftSourceRow, rightSourceRow) => rightSourceRow.inquiries - leftSourceRow.inquiries);
+
+  const propertyRows = accessibleProperties
+    .map((property) => {
+      const propertyLeads = leads.filter((lead) => lead.propertyId === property.id);
+      const propertyInquiryCount = propertyLeads.length;
+      const propertyQualifiedCount = propertyLeads.filter((lead) => qualifiedStatuses.has(lead.status)).length;
+      const propertyTourCount = propertyLeads.filter((lead) => leadIdsWithTours.has(lead.id)).length;
+      const propertyApplicationCount = propertyLeads.filter(
+        (lead) => Boolean(lead.applicationInviteSentAt) || lead.status === LeadStatus.APPLICATION_SENT,
+      ).length;
+      const propertyStaleCount = propertyLeads.filter((lead) => lead.isStale).length;
+
+      return {
+        id: property.id,
+        inquiries: propertyInquiryCount,
+        lifecycleStatus: formatPropertyLifecycleStatus(property.lifecycleStatus),
+        name: property.name,
+        qualificationRate: formatPercentValue(resolveRate(propertyQualifiedCount, propertyInquiryCount)),
+        staleCount: propertyStaleCount,
+        topSource:
+          sourceRows.find((sourceRow) =>
+            propertyLeads.some((lead) => resolveSourceSummaryLabel(lead.leadSource?.name) === sourceRow.label),
+          )?.label ?? "No attributed source",
+        tourRate: formatPercentValue(resolveRate(propertyTourCount, propertyInquiryCount)),
+        applicationRate: formatPercentValue(resolveRate(propertyApplicationCount, propertyInquiryCount)),
+      };
+    })
+    .sort((leftPropertyRow, rightPropertyRow) => rightPropertyRow.inquiries - leftPropertyRow.inquiries);
+
+  const triggeredRuleRowsMap = new Map<string, {
+    label: string;
+    categoryLabel: string;
+    modeLabel: string;
+    explanation: string;
+    count: number;
+  }>();
+  let missingRequiredQuestionEvaluationCount = 0;
+
+  for (const auditEvent of auditEvents) {
+    if (auditEvent.eventType !== "fit_computed") {
+      continue;
+    }
+
+    const payload = resolveAuditPayloadObject(auditEvent.payload);
+    const missingRequiredQuestionCount = resolvePayloadNumber(payload?.missingRequiredQuestionCount);
+
+    if (missingRequiredQuestionCount && missingRequiredQuestionCount > 0) {
+      missingRequiredQuestionEvaluationCount += 1;
+    }
+
+    const ruleEvaluation = resolveAuditPayloadObject(payload?.ruleEvaluation);
+    const issues = Array.isArray(ruleEvaluation?.issues) ? ruleEvaluation.issues : [];
+
+    for (const issueValue of issues) {
+      const issue = resolveAuditPayloadObject(issueValue);
+
+      if (!issue || issue.triggered !== true) {
+        continue;
+      }
+
+      const ruleId = resolvePayloadString(issue.ruleId) ?? `${resolvePayloadString(issue.category) ?? "unknown"}:${resolvePayloadString(issue.mode) ?? "unknown"}`;
+      const nextRow = triggeredRuleRowsMap.get(ruleId) ?? {
+        label:
+          (resolvePayloadString(issue.ruleId) && propertyRuleLabelById.get(resolvePayloadString(issue.ruleId) as string)) ??
+          resolvePayloadString(issue.explanation) ??
+          "Triggered rule",
+        categoryLabel: formatEnumLabel(resolvePayloadString(issue.category) ?? "general"),
+        modeLabel: formatEnumLabel(resolvePayloadString(issue.mode) ?? "warning_only"),
+        explanation: resolvePayloadString(issue.explanation) ?? "No explanation recorded.",
+        count: 0,
+      };
+
+      nextRow.count += 1;
+      triggeredRuleRowsMap.set(ruleId, nextRow);
+    }
+  }
+
+  const missingQuestionRowsMap = new Map<string, {
+    label: string;
+    propertyName: string;
+    count: number;
+  }>();
+
+  for (const lead of leads) {
+    if (!lead.propertyId) {
+      continue;
+    }
+
+    const propertyQuestions = requiredQuestionsByPropertyId.get(lead.propertyId) ?? [];
+
+    for (const requiredQuestion of propertyQuestions) {
+      if (questionAnswersKey.has(`${lead.id}:${requiredQuestion.id}`)) {
+        continue;
+      }
+
+      const questionKey = `${lead.propertyId}:${requiredQuestion.id}`;
+      const questionRow = missingQuestionRowsMap.get(questionKey) ?? {
+        label: requiredQuestion.label,
+        propertyName: propertyNameById.get(lead.propertyId) ?? "Unknown property",
+        count: 0,
+      };
+
+      questionRow.count += 1;
+      missingQuestionRowsMap.set(questionKey, questionRow);
+    }
+  }
+
+  const teamRows = memberships
+    .map((workspaceMembership) => {
+      const ownedLeads = leads.filter(
+        (lead) =>
+          lead.assignedMembershipId === workspaceMembership.id &&
+          activeOwnershipStatuses.has(lead.status),
+      ).length;
+      const openTasks = tasks.filter(
+        (task) =>
+          task.assignedMembershipId === workspaceMembership.id &&
+          task.status !== TaskStatus.COMPLETED &&
+          task.status !== TaskStatus.CANCELED,
+      );
+      const completedTasks = tasks.filter(
+        (task) =>
+          task.assignedMembershipId === workspaceMembership.id &&
+          task.completedAt &&
+          (!timeWindow.startDate || task.completedAt >= timeWindow.startDate),
+      ).length;
+      const actionsLogged = auditEvents.filter(
+        (auditEvent) => auditEvent.actorUserId === workspaceMembership.userId,
+      ).length;
+
+      return {
+        id: workspaceMembership.id,
+        actionsLogged,
+        completedTasks,
+        name: workspaceMembership.user.name,
+        openTasks: openTasks.length,
+        overdueTasks: openTasks.filter((task) => resolveTaskIsOverdue(task.dueAt, task.status)).length,
+        ownedLeads,
+        roleLabel: formatEnumLabel(workspaceMembership.role),
+      };
+    })
+    .sort(
+      (leftTeamRow, rightTeamRow) =>
+        rightTeamRow.ownedLeads + rightTeamRow.openTasks + rightTeamRow.actionsLogged -
+        (leftTeamRow.ownedLeads + leftTeamRow.openTasks + leftTeamRow.actionsLogged),
+    );
+
+  const aiUsageByKindMap = new Map<string, {
+    appliedCount: number;
+    failedCount: number;
+    generatedCount: number;
+    readyCount: number;
+  }>();
+  let generatedAiArtifactCount = 0;
+  let readyAiArtifactCount = 0;
+  let failedAiArtifactCount = 0;
+  let appliedAiArtifactCount = 0;
+
+  for (const auditEvent of auditEvents) {
+    if (auditEvent.eventType !== "ai_artifact_generated" && auditEvent.eventType !== "ai_artifact_applied") {
+      continue;
+    }
+
+    const payload = resolveAuditPayloadObject(auditEvent.payload);
+    const artifactKind = resolvePayloadString(payload?.artifactKind) ?? "unknown";
+    const nextRow = aiUsageByKindMap.get(artifactKind) ?? {
+      appliedCount: 0,
+      failedCount: 0,
+      generatedCount: 0,
+      readyCount: 0,
+    };
+
+    if (auditEvent.eventType === "ai_artifact_applied") {
+      nextRow.appliedCount += 1;
+      appliedAiArtifactCount += 1;
+    } else {
+      generatedAiArtifactCount += 1;
+      nextRow.generatedCount += 1;
+
+      if (payload?.status === "failed") {
+        failedAiArtifactCount += 1;
+        nextRow.failedCount += 1;
+      }
+
+      if (payload?.status === "ready") {
+        readyAiArtifactCount += 1;
+        nextRow.readyCount += 1;
+      }
+    }
+
+    aiUsageByKindMap.set(artifactKind, nextRow);
+  }
+
+  const integrationRows = integrationConnections
+    .map((integrationConnection) => ({
+      displayName: integrationConnection.displayName,
+      healthLabel: formatEnumLabel(integrationConnection.healthState),
+      providerLabel: formatEnumLabel(integrationConnection.provider),
+      setupSummary: formatIntegrationConnectionSummary({
+        authState: integrationConnection.authState,
+        enabled: integrationConnection.enabled,
+        healthMessage: integrationConnection.healthMessage,
+        lastSyncMessage: integrationConnection.lastSyncMessage,
+        syncStatus: integrationConnection.syncStatus,
+      }),
+      syncLabel: formatEnumLabel(integrationConnection.syncStatus),
+      updatedAtLabel: formatRelativeTime(integrationConnection.lastSyncAt),
+    }))
+    .sort((leftIntegrationRow, rightIntegrationRow) =>
+      leftIntegrationRow.providerLabel.localeCompare(rightIntegrationRow.providerLabel),
+    );
+
+  const healthyIntegrationCount = integrationConnections.filter(
+    (integrationConnection) => integrationConnection.healthState === IntegrationHealthState.HEALTHY,
+  ).length;
+  const degradedIntegrationCount = integrationConnections.filter(
+    (integrationConnection) => integrationConnection.healthState === IntegrationHealthState.DEGRADED,
+  ).length;
+  const errorIntegrationCount = integrationConnections.filter(
+    (integrationConnection) => integrationConnection.healthState === IntegrationHealthState.ERROR,
+  ).length;
+  const setupNeededIntegrationCount = integrationConnections.filter(
+    (integrationConnection) =>
+      integrationConnection.authState === IntegrationAuthState.NOT_CONNECTED ||
+      integrationConnection.enabled === false,
+  ).length;
+
+  return {
+    currentWindowLabel: timeWindow.label,
+    hasAdvancedAnalytics,
+    hasAiAssist,
+    canViewTeamMetrics,
+    timeWindow: {
+      label: timeWindow.label,
+      value: timeWindow.value,
+    },
+    timeWindowOptions: analyticsTimeWindowOptions.map((timeWindowOption) => ({
+      label: timeWindowOption.label,
+      value: timeWindowOption.value,
+    })),
+    reportPresets: analyticsReportPresets,
+    summaryCards: [
+      {
+        label: "Inquiries",
+        value: String(inquiryCount),
+        detail: `${timeWindow.label} lead volume`,
+      },
+      {
+        label: "Qualified rate",
+        value: formatPercentValue(resolveRate(qualifiedLeadCount, inquiryCount)),
+        detail: `${qualifiedLeadCount} leads moved into qualified stages`,
+      },
+      {
+        label: "Tour conversion",
+        value: formatPercentValue(resolveRate(touredLeadCount, inquiryCount)),
+        detail: `${touredLeadCount} leads reached scheduling`,
+      },
+      {
+        label: "Application conversion",
+        value: formatPercentValue(resolveRate(applicationLeadCount, inquiryCount)),
+        detail: `${applicationLeadCount} leads reached application handoff`,
+      },
+      {
+        label: "Current stale leads",
+        value: String(staleLeadCount),
+        detail: staleLeadCount === 0 ? "No leads are flagged stale" : "Visible across the current workspace scope",
+      },
+      {
+        label: "Top source",
+        value: sourceRows[0]?.label ?? "None",
+        detail: sourceRows[0] ? `${sourceRows[0].inquiries} inquiries in ${timeWindow.label.toLowerCase()}` : "No attributed sources yet",
+      },
+    ],
+    funnelSteps: [
+      {
+        label: "Inquiries",
+        count: inquiryCount,
+        rateLabel: formatPercentValue(resolveRate(inquiryCount, inquiryCount || 1)),
+      },
+      {
+        label: "Qualified",
+        count: qualifiedLeadCount,
+        rateLabel: formatPercentValue(resolveRate(qualifiedLeadCount, inquiryCount)),
+      },
+      {
+        label: "Tour reached",
+        count: touredLeadCount,
+        rateLabel: formatPercentValue(resolveRate(touredLeadCount, inquiryCount)),
+      },
+      {
+        label: "Application sent",
+        count: applicationLeadCount,
+        rateLabel: formatPercentValue(resolveRate(applicationLeadCount, inquiryCount)),
+      },
+    ],
+    sourceRows,
+    ruleFriction: {
+      evaluationsWithMissingQuestions: missingRequiredQuestionEvaluationCount,
+      topRules: [...triggeredRuleRowsMap.values()]
+        .sort((leftRuleRow, rightRuleRow) => rightRuleRow.count - leftRuleRow.count)
+        .slice(0, 6),
+      topMissingQuestions: [...missingQuestionRowsMap.values()]
+        .sort((leftQuestionRow, rightQuestionRow) => rightQuestionRow.count - leftQuestionRow.count)
+        .slice(0, 6),
+    },
+    propertyRows,
+    staleLeadRows: staleLeads.map((lead) => ({
+      id: lead.id,
+      name: lead.fullName,
+      propertyName: lead.property?.name ?? "Unassigned",
+      staleAtLabel: formatRelativeTime(lead.staleAt),
+      statusLabel: formatStatusLabel(lead.status),
+    })),
+    teamRows,
+    aiUsage: {
+      acceptanceRateLabel: formatPercentValue(resolveRate(appliedAiArtifactCount, readyAiArtifactCount)),
+      appliedCount: appliedAiArtifactCount,
+      failedCount: failedAiArtifactCount,
+      generatedCount: generatedAiArtifactCount,
+      readyCount: readyAiArtifactCount,
+      rows: [...aiUsageByKindMap.entries()]
+        .map(([artifactKind, usageRow]) => ({
+          artifactKindLabel: formatEnumLabel(artifactKind),
+          ...usageRow,
+          acceptanceRateLabel: formatPercentValue(resolveRate(usageRow.appliedCount, usageRow.readyCount)),
+        }))
+        .sort((leftUsageRow, rightUsageRow) => rightUsageRow.generatedCount - leftUsageRow.generatedCount),
+    },
+    integrationHealth: {
+      degradedCount: degradedIntegrationCount,
+      errorCount: errorIntegrationCount,
+      healthyCount: healthyIntegrationCount,
+      rows: integrationRows,
+      setupNeededCount: setupNeededIntegrationCount,
+    },
+    latestUsageSnapshot: latestUsageSnapshot
+      ? {
+          activeProperties: latestUsageSnapshot.activeProperties,
+          automationSends: latestUsageSnapshot.automationSends,
+          monthlyLeads: latestUsageSnapshot.monthlyLeads,
+          seats: latestUsageSnapshot.seats,
+          snapshotDateLabel: formatDate(latestUsageSnapshot.snapshotDate),
+        }
+      : null,
+  };
+});
+
 export const getWorkspacePlanUsageData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
 
@@ -1043,11 +2009,25 @@ export const getWorkspaceBillingOwnerTransferData = cache(async () => {
 
 export const getLeadListViewData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
   const leads = await prisma.lead.findMany({
     where: {
       workspaceId: membership.workspaceId,
+      ...buildScopedLeadAccessFilter(scopedPropertyIds),
     },
     include: {
+      assignedMembership: {
+        select: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
       property: {
         select: {
           name: true,
@@ -1070,6 +2050,7 @@ export const getLeadListViewData = cache(async () => {
   });
 
   return leads.map((lead) => ({
+    assignedTo: lead.assignedMembership?.user.name ?? "Unassigned",
     id: lead.id,
     name: lead.fullName,
     source: lead.leadSource?.name ?? "Manual",
@@ -1081,11 +2062,37 @@ export const getLeadListViewData = cache(async () => {
     fit: formatFitLabel(lead.fitResult),
     fitValue: lead.fitResult,
     lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt),
+    slaSummary: (() => {
+      const slaSummary = resolveLeadSlaSummary({
+        createdAt: lead.createdAt,
+        isReviewQueueItem:
+          lead.fitResult === QualificationFit.CAUTION ||
+          lead.fitResult === QualificationFit.MISMATCH ||
+          lead.status === LeadStatus.UNDER_REVIEW,
+        lastActivityAt: lead.lastActivityAt,
+        leadReviewSlaMinutes: membership.workspace.leadReviewSlaMinutes,
+        leadResponseSlaMinutes: membership.workspace.leadResponseSlaMinutes,
+        status: lead.status,
+        updatedAt: lead.updatedAt,
+      });
+
+      return slaSummary
+        ? {
+            dueAt: formatRelativeTime(slaSummary.dueAt),
+            isOverdue: slaSummary.isOverdue,
+            label: slaSummary.label,
+          }
+        : null;
+    })(),
   }));
 });
 
 export const getLeadDetailViewData = cache(async (leadId: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
   const hasAiAssist = workspaceHasCapability(
     membership.workspace.enabledCapabilities,
     WorkspaceCapability.AI_ASSIST,
@@ -1097,6 +2104,14 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
   const lead = await getLeadWorkflowContext(membership.workspaceId, leadId);
 
   if (!lead) {
+    return null;
+  }
+
+  if (
+    scopedPropertyIds &&
+    lead.propertyId &&
+    !scopedPropertyIds.includes(lead.propertyId)
+  ) {
     return null;
   }
 
@@ -1390,6 +2405,34 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
   const assignedMembershipIds = orderedTours
     .map((tour) => tour.assignedMembershipId)
     .filter((value): value is string => typeof value === "string" && value.length > 0);
+  if (lead.assignedMembershipId) {
+    assignedMembershipIds.push(lead.assignedMembershipId);
+  }
+  const leadTasks = await prisma.task.findMany({
+    where: {
+      leadId: lead.id,
+      workspaceId: membership.workspaceId,
+    },
+    include: {
+      assignedMembership: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: [
+      {
+        dueAt: "asc",
+      },
+      {
+        createdAt: "desc",
+      },
+    ],
+  });
   const assignedMemberships = assignedMembershipIds.length
     ? await prisma.membership.findMany({
         where: {
@@ -1432,6 +2475,24 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
         },
       })
     : [];
+  const isReviewQueueItem =
+    lead.fitResult === QualificationFit.CAUTION ||
+    lead.fitResult === QualificationFit.MISMATCH ||
+    lead.status === LeadStatus.UNDER_REVIEW ||
+    lead.auditEvents.some(
+      (auditEvent) =>
+        auditEvent.eventType === "possible_duplicate_flagged" ||
+        auditEvent.eventType === "lead_conflict_detected",
+    );
+  const slaSummary = resolveLeadSlaSummary({
+    createdAt: lead.createdAt,
+    isReviewQueueItem,
+    lastActivityAt: lead.lastActivityAt,
+    leadReviewSlaMinutes: membership.workspace.leadReviewSlaMinutes,
+    leadResponseSlaMinutes: membership.workspace.leadResponseSlaMinutes,
+    status: lead.status,
+    updatedAt: lead.updatedAt,
+  });
   const screeningRequests = lead.screeningRequests.map((screeningRequest) => ({
     attachmentReferences: screeningRequest.attachmentReferences.map((attachmentReference) => ({
       contentType: attachmentReference.contentType ?? null,
@@ -1534,6 +2595,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       where: {
         workspaceId: membership.workspaceId,
         lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
+        ...buildScopedPropertyAccessFilter(scopedPropertyIds),
       },
       orderBy: {
         name: "asc",
@@ -1543,6 +2605,32 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
         name: true,
       },
     }),
+    leadOwner: {
+      assignedMembershipId: lead.assignedMembershipId ?? null,
+      assignedTo: lead.assignedMembershipId
+        ? assignedMembershipLabelById.get(lead.assignedMembershipId) ?? "Team member"
+        : "Unassigned",
+    },
+    leadAssignmentOptions: [
+      {
+        label: "Unassigned",
+        summary: "Shared inbox ownership remains open",
+        value: "unassigned",
+      },
+      ...assignableMemberships.map((workspaceMembership) => ({
+        label: workspaceMembership.user.name ?? "Team member",
+        summary: formatEnumLabel(workspaceMembership.role),
+        value: workspaceMembership.id,
+      })),
+    ],
+    slaSummary: slaSummary
+      ? {
+          dueAt: formatDateTime(slaSummary.dueAt),
+          dueAtRelative: formatRelativeTime(slaSummary.dueAt),
+          isOverdue: slaSummary.isOverdue,
+          label: slaSummary.label,
+        }
+      : null,
     status: formatStatusLabel(lead.status),
     statusValue: lead.status,
     upcomingTour: activeScheduledTour
@@ -1636,6 +2724,18 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       outcome: formatEnumLabel(issue.outcome),
     })),
     recommendedStatus: formatStatusLabel(evaluation.recommendedStatus),
+    tasks: leadTasks.map((task) => ({
+      assignedTo: task.assignedMembership?.user.name ?? "Unassigned",
+      assignedMembershipId: task.assignedMembershipId ?? null,
+      description: task.description ?? null,
+      dueAt: formatDateTime(task.dueAt),
+      dueAtInputValue: formatDateTimeInputValue(task.dueAt),
+      id: task.id,
+      isOverdue: resolveTaskIsOverdue(task.dueAt, task.status),
+      status: formatEnumLabel(task.status),
+      statusValue: task.status,
+      title: task.title,
+    })),
     qualificationAnswers: answers,
     automationSuppressionSummaries,
     sharedThread,
@@ -1721,6 +2821,10 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
 
 export const getInboxViewData = cache(async (queueFilter?: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
   const hasAiAssist = workspaceHasCapability(
     membership.workspace.enabledCapabilities,
     WorkspaceCapability.AI_ASSIST,
@@ -1737,8 +2841,19 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
   const threads = await prisma.lead.findMany({
     where: {
       workspaceId: membership.workspaceId,
+      ...buildScopedLeadAccessFilter(scopedPropertyIds),
     },
     include: {
+      assignedMembership: {
+        select: {
+          id: true,
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
       workspace: {
         select: {
           channelPriority: true,
@@ -1910,6 +3025,7 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
     where: {
       workspaceId: membership.workspaceId,
       lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
+      ...buildScopedPropertyAccessFilter(scopedPropertyIds),
     },
     orderBy: {
       name: "asc",
@@ -1922,6 +3038,26 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
   const roleActionPermissions = getLeadActionPermissionsForMembershipRole(
     membership.role,
   );
+  const assignableMemberships = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.ORG_MEMBERS,
+  )
+    ? await prisma.membership.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      })
+    : [];
   const manualOnlyModeEnabled = isManualOnlyAutomationModeEnabled(
     process.env.ROOMFLOW_MANUAL_ONLY_MODE,
   );
@@ -1980,23 +3116,48 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
         lead.status === LeadStatus.DECLINED ||
         lead.status === LeadStatus.ARCHIVED ||
         lead.status === LeadStatus.CLOSED;
+      const isReviewQueueItem =
+        lead.fitResult === QualificationFit.CAUTION ||
+        lead.fitResult === QualificationFit.MISMATCH ||
+        lead.status === LeadStatus.UNDER_REVIEW ||
+        lead.auditEvents.some(
+          (auditEvent) =>
+            auditEvent.eventType === "possible_duplicate_flagged" ||
+            auditEvent.eventType === "lead_conflict_detected",
+        );
+      const slaSummary = resolveLeadSlaSummary({
+        createdAt: lead.createdAt,
+        isReviewQueueItem,
+        lastActivityAt: lead.lastActivityAt,
+        leadReviewSlaMinutes: membership.workspace.leadReviewSlaMinutes,
+        leadResponseSlaMinutes: membership.workspace.leadResponseSlaMinutes,
+        status: lead.status,
+        updatedAt: lead.updatedAt,
+      });
 
       return {
+        assignedMembershipId: lead.assignedMembership?.id ?? null,
+        assignedTo: lead.assignedMembership?.user.name ?? "Unassigned",
+        assignmentOptions: [
+          {
+            label: "Unassigned",
+            summary: "Shared inbox ownership remains open",
+            value: "unassigned",
+          },
+          ...assignableMemberships.map((workspaceMembership) => ({
+            label: workspaceMembership.user.name ?? "Team member",
+            summary: formatEnumLabel(workspaceMembership.role),
+            value: workspaceMembership.id,
+          })),
+        ],
         canRequestInfo:
           qualificationAutomationGateResult.canRunAutomation &&
           !leadStatusIsInactive &&
           !qualificationCompleted &&
           !missingInfoPromptIsThrottled &&
           roleActionPermissions.requestInfo,
-        isReviewQueueItem:
-          lead.fitResult === QualificationFit.CAUTION ||
-          lead.fitResult === QualificationFit.MISMATCH ||
-          lead.status === LeadStatus.UNDER_REVIEW ||
-          lead.auditEvents.some(
-            (auditEvent) =>
-              auditEvent.eventType === "possible_duplicate_flagged" ||
-              auditEvent.eventType === "lead_conflict_detected",
-          ),
+        canAssignOwner: roleActionPermissions.assignProperty,
+        isReviewQueueItem,
         reviewFlags: {
           caution: lead.fitResult === QualificationFit.CAUTION,
           mismatch: lead.fitResult === QualificationFit.MISMATCH,
@@ -2007,6 +3168,13 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
             (auditEvent) => auditEvent.eventType === "lead_conflict_detected",
           ),
         },
+        slaSummary: slaSummary
+          ? {
+              dueAt: formatRelativeTime(slaSummary.dueAt),
+              isOverdue: slaSummary.isOverdue,
+              label: slaSummary.label,
+            }
+          : null,
       };
       })(),
       automationSuppressionSummaries,
@@ -2087,6 +3255,20 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
     return mappedThreads.filter((thread) => thread.isReviewQueueItem);
   }
 
+  if (queueFilter === "mine") {
+    return mappedThreads.filter(
+      (thread) => thread.assignedMembershipId === membership.id,
+    );
+  }
+
+  if (queueFilter === "unassigned") {
+    return mappedThreads.filter((thread) => !thread.assignedMembershipId);
+  }
+
+  if (queueFilter === "overdue") {
+    return mappedThreads.filter((thread) => thread.slaSummary?.isOverdue);
+  }
+
   if (queueFilter === "duplicate") {
     return mappedThreads.filter((thread) => thread.reviewFlags.duplicate);
   }
@@ -2112,8 +3294,119 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
   };
 });
 
+export const getTasksViewData = cache(async () => {
+  const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
+  const tasks = await prisma.task.findMany({
+    where: {
+      workspaceId: membership.workspaceId,
+      ...(scopedPropertyIds
+        ? {
+            OR: [
+              {
+                propertyId: null,
+              },
+              {
+                propertyId: {
+                  in: scopedPropertyIds,
+                },
+              },
+            ],
+          }
+        : {}),
+    },
+    include: {
+      assignedMembership: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+      lead: {
+        select: {
+          fullName: true,
+          id: true,
+        },
+      },
+      property: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: [
+      {
+        dueAt: "asc",
+      },
+      {
+        createdAt: "desc",
+      },
+    ],
+  });
+  const assignableMemberships = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.ORG_MEMBERS,
+  )
+    ? await prisma.membership.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      })
+    : [];
+
+  return {
+    taskStatusOptions: [TaskStatus.OPEN, TaskStatus.IN_PROGRESS, TaskStatus.COMPLETED, TaskStatus.CANCELED].map((taskStatus) => ({
+      label: formatEnumLabel(taskStatus),
+      value: taskStatus,
+    })),
+    tasks: tasks.map((task) => ({
+      assignedTo: task.assignedMembership?.user.name ?? "Unassigned",
+      dueAt: formatDateTime(task.dueAt),
+      id: task.id,
+      isOverdue: resolveTaskIsOverdue(task.dueAt, task.status),
+      leadId: task.lead?.id ?? null,
+      leadName: task.lead?.fullName ?? null,
+      propertyName: task.property?.name ?? null,
+      status: formatEnumLabel(task.status),
+      statusValue: task.status,
+      title: task.title,
+    })),
+    teammateOptions: [
+      {
+        label: "Unassigned",
+        value: "unassigned",
+      },
+      ...assignableMemberships.map((workspaceMembership) => ({
+        label: workspaceMembership.user.name ?? "Team member",
+        value: workspaceMembership.id,
+      })),
+    ],
+  };
+});
+
 export const getPropertyQuestionsViewData = cache(async (propertyId: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
   const hasAiAssist = workspaceHasCapability(
     membership.workspace.enabledCapabilities,
     WorkspaceCapability.AI_ASSIST,
@@ -2122,6 +3415,7 @@ export const getPropertyQuestionsViewData = cache(async (propertyId: string) => 
     where: {
       id: propertyId,
       workspaceId: membership.workspaceId,
+      ...buildScopedPropertyAccessFilter(scopedPropertyIds),
     },
     include: {
       questionSets: {
@@ -2190,6 +3484,10 @@ export const getPropertyQuestionsViewData = cache(async (propertyId: string) => 
 
 export const getPropertyDetailViewData = cache(async (propertyId: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
   const hasAiAssist = workspaceHasCapability(
     membership.workspace.enabledCapabilities,
     WorkspaceCapability.AI_ASSIST,
@@ -2204,6 +3502,7 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
     where: {
       id: propertyId,
       workspaceId: membership.workspaceId,
+      ...buildScopedPropertyAccessFilter(scopedPropertyIds),
     },
     include: {
       workspace: {
@@ -2455,6 +3754,10 @@ export const getPropertyDetailViewData = cache(async (propertyId: string) => {
 
 export const getPropertiesViewData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
   const qualifiedStatuses = new Set<LeadStatus>([
     LeadStatus.QUALIFIED,
     LeadStatus.TOUR_SCHEDULED,
@@ -2463,6 +3766,7 @@ export const getPropertiesViewData = cache(async () => {
   const properties = await prisma.property.findMany({
     where: {
       workspaceId: membership.workspaceId,
+      ...buildScopedPropertyAccessFilter(scopedPropertyIds),
     },
     include: {
       _count: {
@@ -2537,10 +3841,15 @@ export const getPropertiesViewData = cache(async () => {
 
 export const getPropertyRulesViewData = cache(async (propertyId: string) => {
   const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
   const property = await prisma.property.findFirst({
     where: {
       id: propertyId,
       workspaceId: membership.workspaceId,
+      ...buildScopedPropertyAccessFilter(scopedPropertyIds),
     },
     include: {
       rules: {
@@ -2574,10 +3883,28 @@ export const getPropertyRulesViewData = cache(async (propertyId: string) => {
 
 export const getCalendarViewData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
   const scheduledTours = await prisma.tourEvent.findMany({
     where: {
       workspaceId: membership.workspaceId,
       status: TourEventStatus.SCHEDULED,
+      ...(scopedPropertyIds
+        ? {
+            OR: [
+              {
+                propertyId: null,
+              },
+              {
+                propertyId: {
+                  in: scopedPropertyIds,
+                },
+              },
+            ],
+          }
+        : {}),
     },
     orderBy: [
       {
@@ -2625,6 +3952,7 @@ export const getCalendarViewData = cache(async () => {
       schedulingUrl: {
         not: null,
       },
+      ...buildScopedPropertyAccessFilter(scopedPropertyIds),
     },
     orderBy: {
       name: "asc",
@@ -2664,6 +3992,7 @@ export const getCalendarViewData = cache(async () => {
       workspaceId: membership.workspaceId,
       lifecycleStatus: PropertyLifecycleStatus.ACTIVE,
       schedulingUrl: null,
+      ...buildScopedPropertyAccessFilter(scopedPropertyIds),
     },
     orderBy: {
       name: "asc",
@@ -2850,22 +4179,78 @@ export const getTemplatesViewData = cache(async () => {
 
 export const getMessagingSettingsViewData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
-  const properties = await prisma.property.findMany({
-    where: {
-      workspaceId: membership.workspaceId,
-    },
-    orderBy: {
-      name: "asc",
-    },
-    select: {
-      id: true,
-      name: true,
-      schedulingAvailability: true,
-      quietHoursStartLocal: true,
-      quietHoursEndLocal: true,
-      quietHoursTimeZone: true,
-    },
-  });
+  const [
+    properties,
+    leadSources,
+    integrationConnections,
+    outboundWebhookPendingCount,
+    outboundWebhookFailureCount,
+  ] = await Promise.all([
+    prisma.property.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+        schedulingAvailability: true,
+        quietHoursStartLocal: true,
+        quietHoursEndLocal: true,
+        quietHoursTimeZone: true,
+      },
+    }),
+    prisma.leadSource.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+      },
+    }),
+    prisma.integrationConnection.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+      include: {
+        syncHistory: {
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 1,
+        },
+      },
+      orderBy: [
+        {
+          category: "asc",
+        },
+        {
+          provider: "asc",
+        },
+      ],
+    }),
+    prisma.outboundWebhookDelivery.count({
+      where: {
+        workspaceId: membership.workspaceId,
+        status: WebhookDeliveryStatus.PENDING,
+      },
+    }),
+    prisma.outboundWebhookDelivery.count({
+      where: {
+        workspaceId: membership.workspaceId,
+        status: {
+          in: [WebhookDeliveryStatus.FAILED, WebhookDeliveryStatus.DEAD_LETTER],
+        },
+      },
+    }),
+  ]);
 
   const operatorSchedulingAvailability = parseAvailabilityWindowConfig(
     membership.schedulingAvailability,
@@ -2914,6 +4299,352 @@ export const getMessagingSettingsViewData = cache(async () => {
         },
       })
     : [];
+  const integrationConnectionByProvider = new Map(
+    integrationConnections.map((integrationConnection) => [
+      integrationConnection.provider,
+      integrationConnection,
+    ]),
+  );
+  const screeningConnectionByProvider = new Map<
+    IntegrationProvider,
+    (typeof screeningConnections)[number]
+  >(
+    screeningConnections.map((screeningConnection) => [
+      resolveScreeningIntegrationProvider(screeningConnection.provider),
+      screeningConnection,
+    ]),
+  );
+  const inboundWebhookIntegrationConfig = parseInboundWebhookIntegrationConfig(
+    integrationConnectionByProvider.get(IntegrationProvider.GENERIC_INBOUND_WEBHOOK)?.config,
+  );
+  const metaLeadAdsIntegrationConnection = integrationConnectionByProvider.get(
+    IntegrationProvider.META_LEAD_ADS,
+  );
+  const metaLeadAdsIntegrationConfig = parseMetaLeadAdsIntegrationConfig(
+    metaLeadAdsIntegrationConnection?.config,
+  );
+  const outboundWebhookIntegrationConnection = integrationConnectionByProvider.get(
+    IntegrationProvider.OUTBOUND_WEBHOOK,
+  );
+  const outboundWebhookIntegrationConfig = parseOutboundWebhookIntegrationConfig(
+    outboundWebhookIntegrationConnection?.config,
+  );
+  const whatsappIntegrationConnection = integrationConnectionByProvider.get(
+    IntegrationProvider.WHATSAPP,
+  );
+  const whatsappIntegrationConfig = parseMessagingChannelIntegrationConfig(
+    whatsappIntegrationConnection?.config,
+  );
+  const instagramIntegrationConnection = integrationConnectionByProvider.get(
+    IntegrationProvider.INSTAGRAM,
+  );
+  const instagramIntegrationConfig = parseMessagingChannelIntegrationConfig(
+    instagramIntegrationConnection?.config,
+  );
+  const zillowIntegrationConnection = integrationConnectionByProvider.get(IntegrationProvider.ZILLOW);
+  const zillowIntegrationConfig = parseListingFeedIntegrationConfig(zillowIntegrationConnection?.config);
+  const apartmentsIntegrationConnection = integrationConnectionByProvider.get(
+    IntegrationProvider.APARTMENTS_COM,
+  );
+  const apartmentsIntegrationConfig = parseListingFeedIntegrationConfig(
+    apartmentsIntegrationConnection?.config,
+  );
+  const slackIntegrationConnection = integrationConnectionByProvider.get(IntegrationProvider.SLACK);
+  const slackIntegrationConfig = parseSlackIntegrationConfig(slackIntegrationConnection?.config);
+  const s3IntegrationConnection = integrationConnectionByProvider.get(
+    IntegrationProvider.S3_COMPATIBLE,
+  );
+  const s3IntegrationConfig = parseS3CompatibleIntegrationConfig(s3IntegrationConnection?.config);
+  const csvImportIntegrationConnection = integrationConnectionByProvider.get(
+    IntegrationProvider.CSV_IMPORT,
+  );
+  const csvImportConfig =
+    csvImportIntegrationConnection?.config &&
+    typeof csvImportIntegrationConnection.config === "object" &&
+    !Array.isArray(csvImportIntegrationConnection.config)
+      ? (csvImportIntegrationConnection.config as {
+          defaultLeadSourceId?: string | null;
+          sourceLabel?: string | null;
+        })
+      : null;
+  const csvImportPreviewMetadata =
+    csvImportIntegrationConnection?.metadata &&
+    typeof csvImportIntegrationConnection.metadata === "object" &&
+    !Array.isArray(csvImportIntegrationConnection.metadata) &&
+    "preview" in csvImportIntegrationConnection.metadata &&
+    csvImportIntegrationConnection.metadata.preview &&
+    typeof csvImportIntegrationConnection.metadata.preview === "object"
+      ? (csvImportIntegrationConnection.metadata.preview as {
+          headerFields?: string[];
+          invalidRowCount?: number;
+          rows?: Array<{
+            email?: string | null;
+            errors?: string[];
+            fullName?: string | null;
+            phone?: string | null;
+            rowNumber?: number;
+            status?: "valid" | "invalid";
+          }>;
+          sampleRowCount?: number;
+          validRowCount?: number;
+        })
+      : null;
+  const integrationHubConnections = integrationCatalog.map((integrationDefinition) => {
+    const storedConnection = integrationConnectionByProvider.get(integrationDefinition.provider);
+    const latestSyncEvent = storedConnection?.syncHistory[0] ?? null;
+
+    if (storedConnection) {
+      const setupState = resolveIntegrationSetupState({
+        authState: storedConnection.authState,
+        enabled: storedConnection.enabled,
+        hasMappingConfig: hasStructuredIntegrationMappingConfig(storedConnection.mappingConfig),
+        healthState: storedConnection.healthState,
+        provider: storedConnection.provider,
+      });
+
+      return {
+        authState: formatEnumLabel(storedConnection.authState),
+        authStateValue: storedConnection.authState,
+        category: formatEnumLabel(integrationDefinition.category),
+        currentSetupLabel: setupState.label,
+        currentSetupStep: setupState.currentStep,
+        description: integrationDefinition.description,
+        enabled: storedConnection.enabled,
+        healthMessage: storedConnection.healthMessage ?? null,
+        healthState: formatEnumLabel(storedConnection.healthState),
+        healthStateValue: storedConnection.healthState,
+        id: storedConnection.id,
+        label: storedConnection.displayName,
+        lastSyncAt: formatDateTime(storedConnection.lastSyncAt),
+        latestSyncSummary: latestSyncEvent?.summary ?? storedConnection.lastSyncMessage ?? null,
+        provider: storedConnection.provider,
+        summary: formatIntegrationConnectionSummary({
+          authState: storedConnection.authState,
+          enabled: storedConnection.enabled,
+          healthMessage: storedConnection.healthMessage,
+          lastSyncMessage: storedConnection.lastSyncMessage,
+          syncStatus: storedConnection.syncStatus,
+        }),
+        syncStatus: formatEnumLabel(storedConnection.syncStatus),
+        syncStatusValue: storedConnection.syncStatus,
+        totalSetupSteps: setupState.totalSteps,
+      };
+    }
+
+    if (
+      integrationDefinition.provider === IntegrationProvider.GOOGLE_CALENDAR ||
+      integrationDefinition.provider === IntegrationProvider.OUTLOOK_CALENDAR
+    ) {
+      const calendarProvider =
+        integrationDefinition.provider === IntegrationProvider.GOOGLE_CALENDAR
+          ? CalendarSyncProvider.GOOGLE
+          : CalendarSyncProvider.OUTLOOK;
+      const calendarConnection = calendarConnections[calendarProvider];
+      const authState =
+        calendarConnection.status === "DISCONNECTED"
+          ? IntegrationAuthState.NOT_CONNECTED
+          : calendarConnection.status === "ACTIVE"
+            ? IntegrationAuthState.ACTIVE
+            : calendarConnection.status === "ERROR"
+              ? IntegrationAuthState.ERROR
+              : IntegrationAuthState.CONFIGURED;
+      const syncStatus =
+        authState === IntegrationAuthState.ERROR
+          ? IntegrationSyncStatus.FAILED
+          : authState === IntegrationAuthState.ACTIVE && calendarConnection.syncEnabled
+            ? IntegrationSyncStatus.SUCCESS
+            : IntegrationSyncStatus.IDLE;
+      const healthState = resolveIntegrationHealthState({
+        authState,
+        enabled: calendarConnection.syncEnabled,
+        healthMessage: calendarConnection.errorMessage,
+        syncStatus,
+      });
+      const setupState = resolveIntegrationSetupState({
+        authState,
+        enabled: calendarConnection.syncEnabled,
+        hasMappingConfig: calendarConnection.syncEnabled,
+        healthState,
+        provider: integrationDefinition.provider,
+      });
+
+      return {
+        authState: formatEnumLabel(authState),
+        authStateValue: authState,
+        category: formatEnumLabel(integrationDefinition.category),
+        currentSetupLabel: setupState.label,
+        currentSetupStep: setupState.currentStep,
+        description: integrationDefinition.description,
+        enabled: calendarConnection.syncEnabled,
+        healthMessage: calendarConnection.errorMessage,
+        healthState: formatEnumLabel(healthState),
+        healthStateValue: healthState,
+        id: integrationDefinition.provider,
+        label: integrationDefinition.label,
+        lastSyncAt: "Not synced yet",
+        latestSyncSummary: null,
+        provider: integrationDefinition.provider,
+        summary: formatCalendarConnectionSummary(calendarConnection),
+        syncStatus: formatEnumLabel(syncStatus),
+        syncStatusValue: syncStatus,
+        totalSetupSteps: setupState.totalSteps,
+      };
+    }
+
+    const screeningConnection = screeningConnectionByProvider.get(integrationDefinition.provider);
+
+    if (screeningConnection) {
+      const authState =
+        screeningConnection.authState === ScreeningConnectionAuthState.DISCONNECTED
+          ? IntegrationAuthState.NOT_CONNECTED
+          : screeningConnection.authState === ScreeningConnectionAuthState.ACTIVE
+            ? IntegrationAuthState.ACTIVE
+            : screeningConnection.authState === ScreeningConnectionAuthState.ERROR
+              ? IntegrationAuthState.ERROR
+              : IntegrationAuthState.CONFIGURED;
+      const syncStatus =
+        authState === IntegrationAuthState.ERROR
+          ? IntegrationSyncStatus.FAILED
+          : authState === IntegrationAuthState.ACTIVE
+            ? IntegrationSyncStatus.SUCCESS
+            : IntegrationSyncStatus.IDLE;
+      const healthState = resolveIntegrationHealthState({
+        authState,
+        enabled: authState !== IntegrationAuthState.NOT_CONNECTED,
+        healthMessage: screeningConnection.lastError,
+        syncStatus,
+      });
+      const setupState = resolveIntegrationSetupState({
+        authState,
+        enabled: authState !== IntegrationAuthState.NOT_CONNECTED,
+        hasMappingConfig: Boolean(screeningConnection.packageConfig),
+        healthState,
+        provider: integrationDefinition.provider,
+      });
+
+      return {
+        authState: formatEnumLabel(authState),
+        authStateValue: authState,
+        category: formatEnumLabel(integrationDefinition.category),
+        currentSetupLabel: setupState.label,
+        currentSetupStep: setupState.currentStep,
+        description: integrationDefinition.description,
+        enabled: authState !== IntegrationAuthState.NOT_CONNECTED,
+        healthMessage: screeningConnection.lastError ?? null,
+        healthState: formatEnumLabel(healthState),
+        healthStateValue: healthState,
+        id: integrationDefinition.provider,
+        label: integrationDefinition.label,
+        lastSyncAt: formatDateTime(screeningConnection.lastSyncAt),
+        latestSyncSummary: null,
+        provider: integrationDefinition.provider,
+        summary: formatScreeningConnectionSummary({
+          authState: screeningConnection.authState,
+          connectedAccount: screeningConnection.connectedAccount,
+          defaultPackageLabel: screeningConnection.defaultPackageLabel,
+          lastError: screeningConnection.lastError,
+        }),
+        syncStatus: formatEnumLabel(syncStatus),
+        syncStatusValue: syncStatus,
+        totalSetupSteps: setupState.totalSteps,
+      };
+    }
+
+    if (integrationDefinition.provider === IntegrationProvider.OUTBOUND_WEBHOOK) {
+      const syncStatus =
+        outboundWebhookFailureCount > 0
+          ? IntegrationSyncStatus.FAILED
+          : outboundWebhookPendingCount > 0
+            ? IntegrationSyncStatus.PENDING
+            : IntegrationSyncStatus.IDLE;
+      const healthState =
+        outboundWebhookFailureCount > 0
+          ? IntegrationHealthState.ERROR
+          : outboundWebhookPendingCount > 0
+            ? IntegrationHealthState.DEGRADED
+            : IntegrationHealthState.UNKNOWN;
+      const setupState = resolveIntegrationSetupState({
+        authState: IntegrationAuthState.NOT_CONNECTED,
+        enabled: false,
+        hasMappingConfig: false,
+        healthState,
+        provider: integrationDefinition.provider,
+      });
+
+      return {
+        authState: formatEnumLabel(IntegrationAuthState.NOT_CONNECTED),
+        authStateValue: IntegrationAuthState.NOT_CONNECTED,
+        category: formatEnumLabel(integrationDefinition.category),
+        currentSetupLabel: setupState.label,
+        currentSetupStep: setupState.currentStep,
+        description: integrationDefinition.description,
+        enabled: outboundWebhookPendingCount > 0 || outboundWebhookFailureCount > 0,
+        healthMessage:
+          outboundWebhookFailureCount > 0
+            ? `${outboundWebhookFailureCount} webhook deliveries failed.`
+            : outboundWebhookPendingCount > 0
+              ? `${outboundWebhookPendingCount} webhook deliveries pending retry.`
+              : null,
+        healthState: formatEnumLabel(healthState),
+        healthStateValue: healthState,
+        id: integrationDefinition.provider,
+        label: integrationDefinition.label,
+        lastSyncAt: "Not delivered yet",
+        latestSyncSummary: null,
+        provider: integrationDefinition.provider,
+        summary:
+          outboundWebhookFailureCount > 0
+            ? `${outboundWebhookFailureCount} failed deliveries need attention.`
+            : outboundWebhookPendingCount > 0
+              ? `${outboundWebhookPendingCount} deliveries are queued.`
+              : "No outbound webhook destination configured.",
+        syncStatus: formatEnumLabel(syncStatus),
+        syncStatusValue: syncStatus,
+        totalSetupSteps: setupState.totalSteps,
+      };
+    }
+
+    const setupState = resolveIntegrationSetupState({
+      authState: IntegrationAuthState.NOT_CONNECTED,
+      enabled: false,
+      hasMappingConfig: false,
+      healthState: IntegrationHealthState.UNKNOWN,
+      provider: integrationDefinition.provider,
+    });
+
+    return {
+      authState: formatEnumLabel(IntegrationAuthState.NOT_CONNECTED),
+      authStateValue: IntegrationAuthState.NOT_CONNECTED,
+      category: formatEnumLabel(integrationDefinition.category),
+      currentSetupLabel: setupState.label,
+      currentSetupStep: setupState.currentStep,
+      description: integrationDefinition.description,
+      enabled: false,
+      healthMessage: null,
+      healthState: formatEnumLabel(IntegrationHealthState.UNKNOWN),
+      healthStateValue: IntegrationHealthState.UNKNOWN,
+      id: integrationDefinition.provider,
+      label: integrationDefinition.label,
+      lastSyncAt: "Not configured",
+      latestSyncSummary: null,
+      provider: integrationDefinition.provider,
+      summary: "Not set up",
+      syncStatus: formatEnumLabel(IntegrationSyncStatus.IDLE),
+      syncStatusValue: IntegrationSyncStatus.IDLE,
+      totalSetupSteps: setupState.totalSteps,
+    };
+  });
+  const integrationHealthOverview = {
+    connected:
+      integrationHubConnections.filter((connection) => connection.enabled).length,
+    degraded: integrationHubConnections.filter(
+      (connection) => connection.healthStateValue === IntegrationHealthState.DEGRADED,
+    ).length,
+    errors: integrationHubConnections.filter(
+      (connection) => connection.healthStateValue === IntegrationHealthState.ERROR,
+    ).length,
+    total: integrationHubConnections.length,
+  };
 
   return {
     dailyAutomatedSendCap: membership.workspace.dailyAutomatedSendCap,
@@ -2939,6 +4670,145 @@ export const getMessagingSettingsViewData = cache(async () => {
       membership.workspace.enabledCapabilities,
       WorkspaceCapability.INSTAGRAM_MESSAGING,
     ),
+    csvImportIntegration: {
+      defaultLeadSourceId: csvImportConfig?.defaultLeadSourceId ?? null,
+      fieldMappings: parseIntegrationFieldMappings(csvImportIntegrationConnection?.mappingConfig),
+      preview:
+        csvImportPreviewMetadata
+          ? {
+              headerFields: csvImportPreviewMetadata.headerFields ?? [],
+              invalidRowCount: csvImportPreviewMetadata.invalidRowCount ?? 0,
+              rows: (csvImportPreviewMetadata.rows ?? []).map((row) => ({
+                email: row.email ?? null,
+                errors: row.errors ?? [],
+                fullName: row.fullName ?? null,
+                phone: row.phone ?? null,
+                rowNumber: row.rowNumber ?? 0,
+                status: row.status ?? "invalid",
+              })),
+              sampleRowCount: csvImportPreviewMetadata.sampleRowCount ?? 0,
+              validRowCount: csvImportPreviewMetadata.validRowCount ?? 0,
+            }
+          : null,
+      sourceLabel: csvImportConfig?.sourceLabel ?? "CSV import",
+      summary: csvImportIntegrationConnection?.lastSyncMessage ?? "CSV mapping not configured.",
+      webhookEnabled: csvImportIntegrationConnection?.enabled ?? false,
+    },
+    inboundWebhookIntegration: {
+      defaultLeadSourceId: inboundWebhookIntegrationConfig.defaultLeadSourceId,
+      defaultLeadSourceType: inboundWebhookIntegrationConfig.defaultLeadSourceType,
+      defaultMessageChannel: inboundWebhookIntegrationConfig.defaultMessageChannel,
+      fieldMappings: inboundWebhookIntegrationConfig.fieldMappings,
+      secretHint: inboundWebhookIntegrationConfig.secretHint,
+      signingHeader: inboundWebhookIntegrationConfig.signingHeader,
+      sourceLabel: inboundWebhookIntegrationConfig.sourceLabel,
+      webhookEnabled:
+        integrationConnectionByProvider.get(IntegrationProvider.GENERIC_INBOUND_WEBHOOK)
+          ?.enabled ?? false,
+    },
+    metaLeadAdsIntegration: {
+      appSecret: metaLeadAdsIntegrationConfig.appSecret,
+      campaignTag: metaLeadAdsIntegrationConfig.campaignTag,
+      defaultLeadSourceId: metaLeadAdsIntegrationConfig.defaultLeadSourceId,
+      fieldMappings: metaLeadAdsIntegrationConfig.fieldMappings,
+      formId: metaLeadAdsIntegrationConfig.formId,
+      pageId: metaLeadAdsIntegrationConfig.pageId,
+      sourceLabel: metaLeadAdsIntegrationConfig.sourceLabel,
+      summary:
+        metaLeadAdsIntegrationConnection?.lastSyncMessage ?? "Meta Lead Ads not configured.",
+      verifyToken: metaLeadAdsIntegrationConfig.verifyToken,
+      webhookEnabled: metaLeadAdsIntegrationConnection?.enabled ?? false,
+    },
+    outboundWebhookIntegration: {
+      destinations: outboundWebhookIntegrationConfig.destinations,
+      eventTypes: outboundWebhookIntegrationConfig.eventTypes,
+      failedDeliveryCount: outboundWebhookFailureCount,
+      pendingDeliveryCount: outboundWebhookPendingCount,
+      secretHint: outboundWebhookIntegrationConfig.secretHint,
+      summary:
+        outboundWebhookIntegrationConnection?.lastSyncMessage ??
+        (outboundWebhookIntegrationConfig.destinations.length > 0
+          ? `${outboundWebhookIntegrationConfig.destinations.filter((destination) => destination.enabled).length} outbound destination${outboundWebhookIntegrationConfig.destinations.filter((destination) => destination.enabled).length === 1 ? "" : "s"} configured.`
+          : "No outbound webhook destination configured."),
+      webhookEnabled: outboundWebhookIntegrationConnection?.enabled ?? false,
+    },
+    whatsappIntegration: {
+      accountLabel: whatsappIntegrationConfig.accountLabel,
+      allowInboundSync: whatsappIntegrationConfig.allowInboundSync,
+      allowOutboundSend: whatsappIntegrationConfig.allowOutboundSend,
+      defaultLeadSourceId: whatsappIntegrationConfig.defaultLeadSourceId,
+      senderIdentifier: whatsappIntegrationConfig.senderIdentifier,
+      summary:
+        whatsappIntegrationConnection?.lastSyncMessage ?? "WhatsApp provider not configured.",
+      verifyToken: whatsappIntegrationConfig.verifyToken,
+      webhookEnabled: whatsappIntegrationConnection?.enabled ?? false,
+    },
+    instagramIntegration: {
+      accountLabel: instagramIntegrationConfig.accountLabel,
+      allowInboundSync: instagramIntegrationConfig.allowInboundSync,
+      allowOutboundSend: instagramIntegrationConfig.allowOutboundSend,
+      defaultLeadSourceId: instagramIntegrationConfig.defaultLeadSourceId,
+      senderIdentifier: instagramIntegrationConfig.senderIdentifier,
+      summary:
+        instagramIntegrationConnection?.lastSyncMessage ??
+        "Instagram provider not configured.",
+      verifyToken: instagramIntegrationConfig.verifyToken,
+      webhookEnabled: instagramIntegrationConnection?.enabled ?? false,
+    },
+    zillowListingFeedIntegration: {
+      destinationName: zillowIntegrationConfig.destinationName,
+      destinationPath: zillowIntegrationConfig.destinationPath,
+      feedLabel: zillowIntegrationConfig.feedLabel,
+      includeOnlyActiveProperties: zillowIntegrationConfig.includeOnlyActiveProperties,
+      propertyCount: properties.length,
+      summary:
+        zillowIntegrationConnection?.lastSyncMessage ?? "Zillow feed not configured.",
+      webhookEnabled: zillowIntegrationConnection?.enabled ?? false,
+    },
+    apartmentsListingFeedIntegration: {
+      destinationName: apartmentsIntegrationConfig.destinationName,
+      destinationPath: apartmentsIntegrationConfig.destinationPath,
+      feedLabel: apartmentsIntegrationConfig.feedLabel,
+      includeOnlyActiveProperties: apartmentsIntegrationConfig.includeOnlyActiveProperties,
+      propertyCount: properties.length,
+      summary:
+        apartmentsIntegrationConnection?.lastSyncMessage ??
+        "Apartments.com feed not configured.",
+      webhookEnabled: apartmentsIntegrationConnection?.enabled ?? false,
+    },
+    slackIntegration: {
+      channelLabel: slackIntegrationConfig.channelLabel,
+      notifyOnApplicationInviteStale: slackIntegrationConfig.notifyOnApplicationInviteStale,
+      notifyOnNewLead: slackIntegrationConfig.notifyOnNewLead,
+      notifyOnReviewAlerts: slackIntegrationConfig.notifyOnReviewAlerts,
+      notifyOnTourScheduled: slackIntegrationConfig.notifyOnTourScheduled,
+      summary: slackIntegrationConnection?.lastSyncMessage ?? "Slack notifications not configured.",
+      webhookEnabled: slackIntegrationConnection?.enabled ?? false,
+      webhookUrl: slackIntegrationConfig.webhookUrl,
+    },
+    s3Integration: {
+      accessKeyIdHint: s3IntegrationConfig.accessKeyIdHint,
+      basePath: s3IntegrationConfig.basePath,
+      bucket: s3IntegrationConfig.bucket,
+      endpointUrl: s3IntegrationConfig.endpointUrl,
+      manifestPreview: buildStorageManifestPreview({
+        basePath: s3IntegrationConfig.basePath,
+        workspaceSlug: membership.workspace.slug,
+      }),
+      region: s3IntegrationConfig.region,
+      secretAccessKeyHint: s3IntegrationConfig.secretAccessKeyHint,
+      summary:
+        s3IntegrationConnection?.lastSyncMessage ?? "S3-compatible storage not configured.",
+      webhookEnabled: s3IntegrationConnection?.enabled ?? false,
+    },
+    integrationHealthOverview,
+    integrationHubConnections,
+    leadSources: leadSources.map((leadSource) => ({
+      id: leadSource.id,
+      label: `${leadSource.name} · ${formatEnumLabel(leadSource.type)}`,
+      name: leadSource.name,
+      type: leadSource.type,
+    })),
     missingInfoPromptThrottleMinutes:
       membership.workspace.missingInfoPromptThrottleMinutes,
     operatorSchedulingAvailabilitySummary: formatAvailabilityWindow(

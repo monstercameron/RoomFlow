@@ -15,8 +15,27 @@ function isMembershipRole(value: string): value is MembershipRole {
   return Object.values(MembershipRole).includes(value as MembershipRole);
 }
 
-export async function POST(request: Request) {
-  const session = await getServerSession();
+type CreateWorkspaceInviteRouteDependencies = {
+  createWorkspaceInvite: typeof createWorkspaceInvite;
+  getCurrentWorkspaceMembership: typeof getCurrentWorkspaceMembership;
+  getServerSession: typeof getServerSession;
+  revalidatePath: typeof revalidatePath;
+  workspaceHasCapability: typeof workspaceHasCapability;
+};
+
+const defaultCreateWorkspaceInviteRouteDependencies: CreateWorkspaceInviteRouteDependencies = {
+  createWorkspaceInvite,
+  getCurrentWorkspaceMembership,
+  getServerSession,
+  revalidatePath,
+  workspaceHasCapability,
+};
+
+export async function handleCreateWorkspaceInvitePost(
+  request: Request,
+  dependencies: CreateWorkspaceInviteRouteDependencies = defaultCreateWorkspaceInviteRouteDependencies,
+) {
+  const session = await dependencies.getServerSession();
 
   if (!session?.user.id || !session.user.email) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -34,10 +53,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "A valid workspace role is required." }, { status: 400 });
   }
 
-  const currentWorkspaceMembership = await getCurrentWorkspaceMembership();
+  const currentWorkspaceMembership = await dependencies.getCurrentWorkspaceMembership();
 
   if (
-    !workspaceHasCapability(
+    !dependencies.workspaceHasCapability(
       currentWorkspaceMembership.workspace.enabledCapabilities,
       WorkspaceCapability.ORG_MEMBERS,
     )
@@ -53,15 +72,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    await createWorkspaceInvite({
+    await dependencies.createWorkspaceInvite({
       invitedEmailAddress,
       invitedRole: requestedRole,
       inviterUserId: session.user.id,
       workspaceId: currentWorkspaceMembership.workspaceId,
     });
 
-    revalidatePath("/app/settings");
-    revalidatePath("/app/settings/members");
+    dependencies.revalidatePath("/app/settings");
+    dependencies.revalidatePath("/app/settings/members");
 
     return NextResponse.json({ status: true });
   } catch (error) {
@@ -78,4 +97,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ message: "Unable to create workspace invite." }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  return handleCreateWorkspaceInvitePost(request);
 }

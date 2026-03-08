@@ -30,6 +30,11 @@ import {
   sendManualOutboundMessageAction,
   updateLeadChannelOptOutAction,
 } from "@/lib/lead-actions";
+import {
+  assignLeadOwnerAction,
+  createTaskAction,
+  updateTaskStatusAction,
+} from "@/lib/collaboration-actions";
 
 type LeadDetailPageProps = {
   params: Promise<{
@@ -110,6 +115,163 @@ export default async function LeadDetailPage({
           {workflowErrorMessage}
         </div>
       ) : null}
+      <section className="mb-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="text-lg font-semibold">Ownership and review SLA</div>
+            <div className="mt-2 text-sm text-[var(--color-muted)]">
+              Current owner: {lead.leadOwner.assignedTo}
+            </div>
+            {lead.slaSummary ? (
+              <div className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs ${lead.slaSummary.isOverdue ? "border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] text-[var(--color-accent-strong)]" : "border-[var(--color-line)] bg-[var(--color-panel-strong)] text-[var(--color-muted)]"}`}>
+                {lead.slaSummary.label} due {lead.slaSummary.dueAtRelative}
+              </div>
+            ) : null}
+          </div>
+
+          <form
+            action={assignLeadOwnerAction.bind(null, lead.id)}
+            className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+          >
+            <div className="text-sm font-medium">Assign lead owner</div>
+            <select
+              className="mt-3 min-w-64 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+              defaultValue={lead.leadOwner.assignedMembershipId ?? "unassigned"}
+              disabled={!lead.actions.assignProperty}
+              name="assignedMembershipId"
+            >
+              {lead.leadAssignmentOptions.map((assignmentOption) => (
+                <option key={assignmentOption.value} value={assignmentOption.value}>
+                  {assignmentOption.label} | {assignmentOption.summary}
+                </option>
+              ))}
+            </select>
+            <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+            <button
+              className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!lead.actions.assignProperty}
+              type="submit"
+            >
+              Save owner
+            </button>
+          </form>
+        </div>
+
+        <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+          <form action={createTaskAction} className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5">
+            <div className="text-sm font-medium">Create follow-up task</div>
+            <label className="mt-3 block text-sm text-[var(--color-muted)]">
+              Title
+              <input
+                className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                name="title"
+                placeholder="Review duplicate risk before next reply"
+                required
+                type="text"
+              />
+            </label>
+            <label className="mt-3 block text-sm text-[var(--color-muted)]">
+              Description
+              <textarea
+                className="mt-2 min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                name="description"
+                placeholder="Optional extra context for the assigned teammate."
+              />
+            </label>
+            <label className="mt-3 block text-sm text-[var(--color-muted)]">
+              Due at
+              <input
+                className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                name="dueAt"
+                type="datetime-local"
+              />
+            </label>
+            <label className="mt-3 block text-sm text-[var(--color-muted)]">
+              Assign to
+              <select
+                className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={lead.leadOwner.assignedMembershipId ?? "unassigned"}
+                disabled={!lead.actions.assignProperty}
+                name="assignedMembershipId"
+              >
+                {lead.leadAssignmentOptions.map((assignmentOption) => (
+                  <option key={`${lead.id}-${assignmentOption.value}`} value={assignmentOption.value}>
+                    {assignmentOption.label} | {assignmentOption.summary}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <input type="hidden" name="leadId" value={lead.id} />
+            <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+            <button
+              className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+              type="submit"
+            >
+              Create task
+            </button>
+          </form>
+
+          <div className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5">
+            <div className="text-sm font-medium">Open tasks</div>
+            {lead.tasks.length === 0 ? (
+              <div className="mt-4 text-sm text-[var(--color-muted)]">
+                No follow-up tasks on this lead yet.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {lead.tasks.map((task) => (
+                  <form
+                    action={updateTaskStatusAction.bind(null, task.id)}
+                    className="rounded-2xl border border-[var(--color-line)] bg-white p-4"
+                    key={task.id}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium">{task.title}</div>
+                        <div className="mt-1 text-sm text-[var(--color-muted)]">
+                          {task.assignedTo} {task.dueAt !== "Not set" ? `| due ${task.dueAt}` : "| no due date"}
+                        </div>
+                        {task.description ? (
+                          <div className="mt-2 text-sm text-[var(--color-muted)]">
+                            {task.description}
+                          </div>
+                        ) : null}
+                      </div>
+                      {task.isOverdue ? (
+                        <div className="rounded-full border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] px-3 py-1 text-xs text-[var(--color-accent-strong)]">
+                          Overdue
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-end gap-3">
+                      <label className="space-y-2 text-sm font-medium">
+                        <span>Status</span>
+                        <select
+                          className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 outline-none"
+                          defaultValue={task.statusValue}
+                          name="status"
+                        >
+                          <option value="OPEN">Open</option>
+                          <option value="IN_PROGRESS">In Progress</option>
+                          <option value="COMPLETED">Completed</option>
+                          <option value="CANCELED">Canceled</option>
+                        </select>
+                      </label>
+                      <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                      <button
+                        className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium"
+                        type="submit"
+                      >
+                        Save task
+                      </button>
+                    </div>
+                  </form>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
       {lead.automationSuppressionSummaries.length > 0 ? (
         <div className="mb-5 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-5 shadow-[var(--shadow-panel)]">
           <div className="text-sm font-semibold">Automation suppression reasons</div>

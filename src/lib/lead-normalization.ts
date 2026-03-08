@@ -9,7 +9,6 @@ import {
   NotificationType,
   type Prisma,
   QualificationFit,
-  WebhookDeliveryStatus,
 } from "@/generated/prisma/client";
 import { serializeDeliveryStatus } from "@/lib/delivery-status";
 import {
@@ -26,6 +25,7 @@ import {
   buildLeadChannelOptOutUpdate,
   formatMessageChannelLabel,
 } from "@/lib/lead-channel-opt-outs";
+import { queueOutboundWorkflowWebhook } from "@/lib/lead-workflow";
 import { prisma } from "@/lib/prisma";
 import { workflowEventTypes } from "@/lib/workflow-events";
 
@@ -395,6 +395,100 @@ export function normalizeInboundCsvImportPayload(input: unknown) {
     externalMessageId: payload.rowId ?? null,
     externalThreadId: payload.threadId ?? null,
     receivedAt: payload.importedAt ?? new Date(),
+    metadata: payload.metadata ?? {},
+  });
+}
+
+export function normalizeInboundMetaLeadPayload(input: unknown) {
+  const payload = z
+    .object({
+      workspaceId: z.string().min(1),
+      propertyId: z.string().min(1).optional(),
+      sourceName: z.string().min(1).optional(),
+      fullName: z.string().optional(),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
+      subject: z.string().optional(),
+      body: z.string().optional(),
+      notes: z.string().optional(),
+      submittedAt: z.coerce.date().optional(),
+      submissionId: z.string().optional(),
+      threadId: z.string().optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+    })
+    .parse(input);
+
+  const normalizedEmailAddress = normalizeEmail(payload.email);
+  const normalizedPhoneNumber = normalizePhone(payload.phone);
+  const resolvedBodyText =
+    payload.body?.trim() || payload.notes?.trim() || "Meta lead captured";
+
+  return normalizedLeadPayloadSchema.parse({
+    workspaceId: payload.workspaceId,
+    propertyId: payload.propertyId ?? null,
+    leadSourceName: payload.sourceName ?? "Meta Lead Ads",
+    leadSourceType: LeadSourceType.FACEBOOK,
+    channel: resolveInboundMessageChannel({
+      explicitChannel: null,
+      emailAddress: normalizedEmailAddress,
+      phoneNumber: normalizedPhoneNumber,
+    }),
+    fullName: inferFullName(payload.fullName ?? normalizedEmailAddress ?? normalizedPhoneNumber),
+    email: normalizedEmailAddress,
+    phone: normalizedPhoneNumber,
+    subject: payload.subject ?? null,
+    body: resolvedBodyText,
+    externalMessageId: payload.submissionId ?? null,
+    externalThreadId: payload.threadId ?? null,
+    receivedAt: payload.submittedAt ?? new Date(),
+    metadata: payload.metadata ?? {},
+  });
+}
+
+export function normalizeInboundDirectMessagePayload(input: unknown) {
+  const payload = z
+    .object({
+      workspaceId: z.string().min(1),
+      propertyId: z.string().min(1).optional(),
+      sourceName: z.string().min(1).optional(),
+      leadSourceType: z.nativeEnum(LeadSourceType).optional(),
+      channel: z.nativeEnum(MessageChannel),
+      fromIdentifier: z.string().min(1),
+      fromName: z.string().optional(),
+      body: z.string().min(1),
+      subject: z.string().optional(),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
+      receivedAt: z.coerce.date().optional(),
+      messageId: z.string().optional(),
+      threadId: z.string().optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+    })
+    .parse(input);
+
+  const inferredEmailAddress = payload.channel === MessageChannel.INSTAGRAM
+    ? normalizeEmail(payload.email)
+    : normalizeEmail(payload.email ?? (payload.fromIdentifier.includes("@") ? payload.fromIdentifier : undefined));
+  const inferredPhoneNumber = payload.channel === MessageChannel.WHATSAPP
+    ? normalizePhone(payload.phone ?? payload.fromIdentifier)
+    : normalizePhone(payload.phone);
+
+  return normalizedLeadPayloadSchema.parse({
+    workspaceId: payload.workspaceId,
+    propertyId: payload.propertyId ?? null,
+    leadSourceName: payload.sourceName ?? formatMessageChannelLabel(payload.channel),
+    leadSourceType: payload.leadSourceType ?? LeadSourceType.OTHER,
+    channel: payload.channel,
+    fullName: inferFullName(
+      payload.fromName ?? inferredEmailAddress ?? inferredPhoneNumber ?? payload.fromIdentifier,
+    ),
+    email: inferredEmailAddress,
+    phone: inferredPhoneNumber,
+    subject: payload.subject ?? null,
+    body: payload.body,
+    externalMessageId: payload.messageId ?? null,
+    externalThreadId: payload.threadId ?? null,
+    receivedAt: payload.receivedAt ?? new Date(),
     metadata: payload.metadata ?? {},
   });
 }
@@ -807,23 +901,16 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
       },
     });
 
-    if (process.env.ROOMFLOW_OUTBOUND_WEBHOOK_URL) {
-      await prisma.outboundWebhookDelivery.create({
-        data: {
-          workspaceId: payload.workspaceId,
-          leadId: lead.id,
-          eventType: "lead.created",
-          destinationUrl: process.env.ROOMFLOW_OUTBOUND_WEBHOOK_URL,
-          payload: {
-            leadId: lead.id,
-            workspaceId: payload.workspaceId,
-            sourceType: payload.leadSourceType,
-          },
-          status: WebhookDeliveryStatus.PENDING,
-          nextAttemptAt: new Date(),
-        },
-      });
-    }
+    await queueOutboundWorkflowWebhook({
+      workspaceId: payload.workspaceId,
+      leadId: lead.id,
+      eventType: "lead.created",
+      payload: {
+        leadId: lead.id,
+        workspaceId: payload.workspaceId,
+        sourceType: payload.leadSourceType,
+      },
+    });
   }
 
   if (lead.contact) {
