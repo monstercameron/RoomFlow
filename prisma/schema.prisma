@@ -229,6 +229,7 @@ model Workspace {
   onboardingCompletedAt DateTime?
   channelPriority       Json?
   dailyAutomatedSendCap Int               @default(3)
+  missingInfoPromptThrottleMinutes Int    @default(60)
   quietHoursStartLocal  String?
   quietHoursEndLocal    String?
   quietHoursTimeZone    String?

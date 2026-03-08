@@ -479,7 +479,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [x] Add branded message formatting for structured invitations and notices.
 - [x] Add delivery/read-state UI where provider data is available.
 - [x] Add quiet-hours configuration per workspace or property.
-- [ ] Add throttling configuration UI and operator-visible suppression reasons.
+- [x] Add throttling configuration UI and operator-visible suppression reasons.
 - [ ] Add opt-out event visibility and channel-specific opt-out controls.
 - [ ] Add WhatsApp conversation support behind integration capability flags.
 - [ ] Add Instagram business messaging support behind integration capability flags.

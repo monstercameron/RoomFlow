@@ -6,6 +6,7 @@ import {
   isManualOnlyAutomationModeEnabled,
   isMissingInfoPromptThrottled,
   isQualificationCompleted,
+  resolveMissingInfoPromptThrottleWindowMinutes,
   resolveMissingRequiredQualificationQuestions,
   resolveMostRecentMissingInfoRequestTimestamp,
   resolveQualificationAutomationGate,
@@ -195,6 +196,18 @@ test("isMissingInfoPromptThrottled applies the configured throttle window", () =
       throttleWindowMinutes: DEFAULT_MISSING_INFO_PROMPT_THROTTLE_MINUTES,
     }),
     false,
+  );
+});
+
+test("resolveMissingInfoPromptThrottleWindowMinutes honors workspace overrides", () => {
+  assert.equal(resolveMissingInfoPromptThrottleWindowMinutes(180), 180);
+  assert.equal(
+    resolveMissingInfoPromptThrottleWindowMinutes(0),
+    DEFAULT_MISSING_INFO_PROMPT_THROTTLE_MINUTES,
+  );
+  assert.equal(
+    resolveMissingInfoPromptThrottleWindowMinutes(null),
+    DEFAULT_MISSING_INFO_PROMPT_THROTTLE_MINUTES,
   );
 });
 

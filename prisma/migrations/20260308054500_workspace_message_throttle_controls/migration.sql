@@ -1,0 +1,2 @@
+ALTER TABLE "Workspace"
+ADD COLUMN IF NOT EXISTS "missingInfoPromptThrottleMinutes" INTEGER NOT NULL DEFAULT 60;

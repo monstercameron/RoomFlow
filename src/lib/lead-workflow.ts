@@ -24,10 +24,10 @@ import {
 import { buildLeadStatusTransitionAuditPayload } from "@/lib/lead-status-transition-audit";
 import { LeadWorkflowError } from "@/lib/lead-workflow-errors";
 import {
-  DEFAULT_MISSING_INFO_PROMPT_THROTTLE_MINUTES,
   isManualOnlyAutomationModeEnabled,
   isMissingInfoPromptThrottled,
   isQualificationCompleted,
+  resolveMissingInfoPromptThrottleWindowMinutes,
   resolveMissingRequiredQualificationQuestions,
   resolveMostRecentMissingInfoRequestTimestamp,
   resolveQualificationAutomationGate,
@@ -63,6 +63,76 @@ import {
 } from "@/lib/workflow-events";
 
 type WorkflowLead = Awaited<ReturnType<typeof getLeadWorkflowContext>>;
+type WorkflowLeadSnapshot = NonNullable<WorkflowLead>;
+type WorkflowPropertySnapshot = NonNullable<WorkflowLeadSnapshot["property"]>;
+type WorkflowAnswerValue = WorkflowLeadSnapshot["answers"][number]["value"];
+type QualificationLeadContext = {
+  property:
+    | {
+        lifecycleStatus: WorkflowPropertySnapshot["lifecycleStatus"];
+        smokingAllowed: WorkflowPropertySnapshot["smokingAllowed"];
+        petsAllowed: WorkflowPropertySnapshot["petsAllowed"];
+        parkingAvailable: WorkflowPropertySnapshot["parkingAvailable"];
+        rules: WorkflowPropertySnapshot["rules"];
+        questionSets: Array<{
+          id: string;
+          questions: Array<{
+            id: string;
+            fieldKey: string;
+            label: string;
+            required: boolean;
+          }>;
+        }>;
+      }
+    | null;
+  answers: Array<{
+    questionId: string;
+    value: WorkflowAnswerValue;
+    question: {
+      fieldKey: string;
+      label: string;
+    };
+  }>;
+};
+type OutboundRoutingLeadContext = {
+  contact: {
+    email: string | null;
+    phone: string | null;
+  } | null;
+  email: string | null;
+  phone: string | null;
+  preferredContactChannel: WorkflowLeadSnapshot["preferredContactChannel"];
+};
+type AutomationSuppressionLeadContext = QualificationLeadContext &
+  OutboundRoutingLeadContext & {
+    propertyId: string | null;
+    auditEvents: Array<{
+      eventType: string;
+      createdAt: Date;
+    }>;
+    automatedSendCount: number;
+    automatedSendCountDate: Date | null;
+    optOutAt: Date | null;
+    status: LeadStatus;
+    property:
+      | (NonNullable<QualificationLeadContext["property"]> & {
+          schedulingUrl: string | null;
+          schedulingEnabled: boolean;
+          channelPriority: WorkflowPropertySnapshot["channelPriority"];
+          quietHoursStartLocal: string | null;
+          quietHoursEndLocal: string | null;
+          quietHoursTimeZone: string | null;
+        })
+      | null;
+    workspace: {
+      channelPriority: WorkflowLeadSnapshot["workspace"]["channelPriority"];
+      dailyAutomatedSendCap: number;
+      missingInfoPromptThrottleMinutes: number;
+      quietHoursStartLocal: string | null;
+      quietHoursEndLocal: string | null;
+      quietHoursTimeZone: string | null;
+    };
+  };
 type TemplateRenderLeadContext = {
   fullName: string;
   moveInDate: Date | null;
@@ -110,21 +180,6 @@ const defaultChannelPriorityOrder: MessageChannel[] = [
   MessageChannel.EMAIL,
 ];
 
-function getMissingInfoPromptThrottleWindowMinutes() {
-  const configuredThrottleWindowMinutes = Number(
-    process.env.MISSING_INFO_PROMPT_THROTTLE_MINUTES,
-  );
-
-  if (
-    Number.isFinite(configuredThrottleWindowMinutes) &&
-    configuredThrottleWindowMinutes > 0
-  ) {
-    return configuredThrottleWindowMinutes;
-  }
-
-  return DEFAULT_MISSING_INFO_PROMPT_THROTTLE_MINUTES;
-}
-
 function resolveWorkflowErrorCodeForQualificationAutomationBlockingReason(
   qualificationAutomationBlockingReason: QualificationAutomationBlockingReason,
 ): "ACTION_REQUIRES_PROPERTY" | "ACTION_REQUIRES_ACTIVE_QUESTION_SET" | "ACTION_REQUIRES_CONTACT_CHANNEL" {
@@ -141,7 +196,7 @@ function resolveWorkflowErrorCodeForQualificationAutomationBlockingReason(
 function resolveOutboundMessageChannelForAction(params: {
   action: Exclude<WorkflowActionName, "evaluate_fit">;
   templateChannel: MessageChannel | null | undefined;
-  lead: NonNullable<WorkflowLead>;
+  lead: OutboundRoutingLeadContext;
   manualOnlyModeEnabled: boolean;
   channelPriorityOrder: MessageChannel[];
 }) {
@@ -222,7 +277,7 @@ function isLeadActiveForAutomation(leadStatus: LeadStatus) {
 
 function isChannelDeliverableForLead(params: {
   outboundMessageChannel: MessageChannel;
-  lead: NonNullable<WorkflowLead>;
+  lead: OutboundRoutingLeadContext;
 }) {
   const resolvedContactEmailAddress = params.lead.contact?.email ?? params.lead.email;
   const resolvedContactPhoneNumber = params.lead.contact?.phone ?? params.lead.phone;
@@ -350,7 +405,7 @@ function toSeverityLabel(severity: RuleSeverity) {
 }
 
 function buildAnswerIndex(
-  lead: NonNullable<WorkflowLead>,
+  lead: QualificationLeadContext,
 ): Map<string, string> {
   const answers = new Map<string, string>();
 
@@ -363,7 +418,7 @@ function buildAnswerIndex(
   return answers;
 }
 
-function resolveMissingRequiredQuestionsForLead(lead: NonNullable<WorkflowLead>) {
+function resolveMissingRequiredQuestionsForLead(lead: QualificationLeadContext) {
   if (!lead.property) {
     return [];
   }
@@ -390,6 +445,7 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
           name: true,
           channelPriority: true,
           dailyAutomatedSendCap: true,
+          missingInfoPromptThrottleMinutes: true,
           quietHoursStartLocal: true,
           quietHoursEndLocal: true,
           quietHoursTimeZone: true,
@@ -477,7 +533,7 @@ export async function getLeadWorkflowContext(workspaceId: string, leadId: string
   });
 }
 
-export function evaluateLeadQualification(lead: NonNullable<WorkflowLead>): EvaluationResult {
+export function evaluateLeadQualification(lead: QualificationLeadContext): EvaluationResult {
   const issues: EvaluationIssue[] = [];
 
   if (!lead.property) {
@@ -1188,7 +1244,9 @@ export async function performLeadWorkflowAction(params: {
     const missingInfoPromptIsThrottled = isMissingInfoPromptThrottled({
       mostRecentMissingInfoRequestAt,
       referenceTime: new Date(),
-      throttleWindowMinutes: getMissingInfoPromptThrottleWindowMinutes(),
+      throttleWindowMinutes: resolveMissingInfoPromptThrottleWindowMinutes(
+        lead.workspace.missingInfoPromptThrottleMinutes,
+      ),
     });
 
     if (missingInfoPromptIsThrottled) {
@@ -1696,7 +1754,9 @@ export function getLeadActionAvailability(
   const missingInfoPromptIsThrottled = isMissingInfoPromptThrottled({
     mostRecentMissingInfoRequestAt,
     referenceTime: new Date(),
-    throttleWindowMinutes: getMissingInfoPromptThrottleWindowMinutes(),
+    throttleWindowMinutes: resolveMissingInfoPromptThrottleWindowMinutes(
+      lead.workspace.missingInfoPromptThrottleMinutes,
+    ),
   });
   const leadStatusIsInactive =
     lead.status === LeadStatus.DECLINED ||
@@ -1773,4 +1833,178 @@ export function getLeadActionAvailability(
       lead.status !== LeadStatus.APPLICATION_SENT &&
       canAutomateOutbound,
   };
+}
+
+export function getLeadAutomationSuppressionSummaries(
+  lead: AutomationSuppressionLeadContext,
+  evaluation: EvaluationResult,
+) {
+  const manualOnlyModeEnabled = isManualOnlyAutomationModeEnabled(
+    process.env.ROOMFLOW_MANUAL_ONLY_MODE,
+  );
+  const qualificationAutomationGateResult = resolveQualificationAutomationGate({
+    leadPropertyId: lead.propertyId,
+    propertyQuestionSets: lead.property?.questionSets ?? [],
+    leadEmailAddress: lead.email,
+    leadPhoneNumber: lead.phone,
+    contactEmailAddress: lead.contact?.email ?? null,
+    contactPhoneNumber: lead.contact?.phone ?? null,
+    manualOnlyModeEnabled,
+  });
+  const missingRequiredQuestions = resolveMissingRequiredQuestionsForLead(lead);
+  const qualificationCompleted = isQualificationCompleted({
+    missingRequiredQuestionCount: missingRequiredQuestions.length,
+    fitResult: evaluation.fitResult,
+    currentLeadStatus: lead.status,
+  });
+  const currentTime = new Date();
+  const mostRecentMissingInfoRequestAt = resolveMostRecentMissingInfoRequestTimestamp(
+    lead.auditEvents.map((auditEvent) => ({
+      eventType: auditEvent.eventType,
+      createdAt: auditEvent.createdAt,
+    })),
+  );
+  const missingInfoPromptThrottleWindowMinutes =
+    resolveMissingInfoPromptThrottleWindowMinutes(
+      lead.workspace.missingInfoPromptThrottleMinutes,
+    );
+  const missingInfoPromptIsThrottled = isMissingInfoPromptThrottled({
+    mostRecentMissingInfoRequestAt,
+    referenceTime: currentTime,
+    throttleWindowMinutes: missingInfoPromptThrottleWindowMinutes,
+  });
+  const leadStatusIsInactive =
+    lead.status === LeadStatus.DECLINED ||
+    lead.status === LeadStatus.ARCHIVED ||
+    lead.status === LeadStatus.CLOSED;
+  const channelPriorityOrder = resolveChannelPriorityOrder(
+    lead.property?.channelPriority ?? lead.workspace.channelPriority,
+  );
+  const defaultOutboundChannel = resolveOutboundMessageChannelForAction({
+    action: "request_info",
+    templateChannel: null,
+    lead,
+    manualOnlyModeEnabled,
+    channelPriorityOrder,
+  });
+  const hasDeliverableDefaultOutboundChannel = isChannelDeliverableForLead({
+    outboundMessageChannel: defaultOutboundChannel,
+    lead,
+  });
+  const dailySendCapReached =
+    lead.automatedSendCountDate &&
+    isSameUtcDay(lead.automatedSendCountDate, currentTime) &&
+    lead.automatedSendCount >= lead.workspace.dailyAutomatedSendCap;
+  const propertyIsActiveForWorkflow =
+    !lead.property || lead.property.lifecycleStatus === PropertyLifecycleStatus.ACTIVE;
+  const effectiveQuietHours = resolveEffectiveQuietHours({
+    workspaceQuietHoursStartLocal: lead.workspace.quietHoursStartLocal,
+    workspaceQuietHoursEndLocal: lead.workspace.quietHoursEndLocal,
+    workspaceQuietHoursTimeZone: lead.workspace.quietHoursTimeZone,
+    propertyQuietHoursStartLocal: lead.property?.quietHoursStartLocal,
+    propertyQuietHoursEndLocal: lead.property?.quietHoursEndLocal,
+    propertyQuietHoursTimeZone: lead.property?.quietHoursTimeZone,
+  });
+  const blockedByQuietHours = effectiveQuietHours
+    ? isWithinQuietHours({
+        quietHours: effectiveQuietHours.config,
+        referenceTime: currentTime,
+      })
+    : false;
+  const commonReasons: string[] = [];
+
+  if (!propertyIsActiveForWorkflow) {
+    commonReasons.push("Assigned property is not active for workflow automation.");
+  }
+
+  if (!qualificationAutomationGateResult.canRunAutomation) {
+    commonReasons.push(
+      qualificationAutomationGateResult.detail ??
+        "Qualification prerequisites are not met.",
+    );
+  }
+
+  if (leadStatusIsInactive) {
+    commonReasons.push("Lead is no longer active for automated outreach.");
+  }
+
+  if (lead.optOutAt) {
+    commonReasons.push("Lead opted out of automated messaging.");
+  }
+
+  if (blockedByQuietHours) {
+    commonReasons.push("Quiet hours are active for this lead's messaging rules.");
+  }
+
+  if (!hasDeliverableDefaultOutboundChannel) {
+    commonReasons.push("No deliverable outbound email or SMS channel is available.");
+  }
+
+  if (dailySendCapReached) {
+    commonReasons.push(
+      `Daily automated send cap (${lead.workspace.dailyAutomatedSendCap}) has been reached.`,
+    );
+  }
+
+  const requestInfoReasons = [...commonReasons];
+
+  if (qualificationCompleted) {
+    requestInfoReasons.push("Qualification is already complete for this lead.");
+  }
+
+  if (missingInfoPromptIsThrottled) {
+    requestInfoReasons.push(
+      `A missing-information prompt was sent within the ${missingInfoPromptThrottleWindowMinutes}-minute throttle window.`,
+    );
+  }
+
+  const scheduleTourReasons = [...commonReasons];
+
+  if (!lead.property?.schedulingUrl || !lead.property?.schedulingEnabled) {
+    scheduleTourReasons.push("Property scheduling handoff is not enabled yet.");
+  }
+
+  if (evaluation.fitResult === QualificationFit.MISMATCH) {
+    scheduleTourReasons.push("Lead currently has a mismatch fit result.");
+  }
+
+  if (evaluation.recommendedStatus === LeadStatus.INCOMPLETE) {
+    scheduleTourReasons.push("Lead is still missing required information.");
+  }
+
+  if (!schedulableLeadStatuses.has(lead.status) || lead.status === LeadStatus.APPLICATION_SENT) {
+    scheduleTourReasons.push("Lead is not in a tour-eligible status yet.");
+  }
+
+  const sendApplicationReasons = [...commonReasons];
+
+  if (evaluation.fitResult === QualificationFit.MISMATCH) {
+    sendApplicationReasons.push("Lead currently has a mismatch fit result.");
+  }
+
+  if (evaluation.recommendedStatus === LeadStatus.INCOMPLETE) {
+    sendApplicationReasons.push("Lead is still missing required information.");
+  }
+
+  if (lead.status === LeadStatus.APPLICATION_SENT) {
+    sendApplicationReasons.push("An application has already been sent for this lead.");
+  }
+
+  return [
+    {
+      actionKey: "request_info",
+      actionLabel: "Request info",
+      reasons: [...new Set(requestInfoReasons)],
+    },
+    {
+      actionKey: "schedule_tour",
+      actionLabel: "Schedule tour",
+      reasons: [...new Set(scheduleTourReasons)],
+    },
+    {
+      actionKey: "send_application",
+      actionLabel: "Send application",
+      reasons: [...new Set(sendApplicationReasons)],
+    },
+  ].filter((summary) => summary.reasons.length > 0);
 }

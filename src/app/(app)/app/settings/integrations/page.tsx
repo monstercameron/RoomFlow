@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/page-header";
 import { updateWorkspaceQuietHoursAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateWorkspaceMessagingThrottleSettingsAction } from "@/app/(app)/app/settings/integrations/actions";
 import { getMessagingSettingsViewData } from "@/lib/app-data";
 import { validateInboundIntegrationConfiguration } from "@/lib/integration-config-validation";
 import { onboardingChannelOptions } from "@/lib/onboarding";
@@ -123,6 +124,46 @@ export default async function IntegrationsSettingsPage() {
               </div>
             ))}
           </div>
+        </div>
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
+          <div className="text-xl font-semibold">Automation throttles</div>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
+            Control how often automated outreach can send and how quickly repeated missing-information prompts are allowed.
+          </p>
+          <form
+            action={updateWorkspaceMessagingThrottleSettingsAction}
+            className="mt-5 grid gap-3 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4 md:grid-cols-2"
+          >
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Daily automated send cap</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={String(messagingSettings.dailyAutomatedSendCap)}
+                min={1}
+                name="dailyAutomatedSendCap"
+                type="number"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Missing-info throttle window (minutes)</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={String(messagingSettings.missingInfoPromptThrottleMinutes)}
+                min={1}
+                name="missingInfoPromptThrottleMinutes"
+                type="number"
+              />
+            </label>
+            <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+            <div className="flex justify-end md:col-span-2">
+              <button
+                className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                type="submit"
+              >
+                Save throttle settings
+              </button>
+            </div>
+          </form>
         </div>
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
           <div className="text-xl font-semibold">Inbound email</div>

@@ -150,6 +150,29 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                     </div>
                   ) : null}
                 </div>
+                {thread.automationSuppressionSummaries.length > 0 ? (
+                  <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+                    <div className="text-sm font-medium">Automation suppression reasons</div>
+                    <div className="mt-3 space-y-3 text-sm text-[var(--color-muted)]">
+                      {thread.automationSuppressionSummaries.map((summary) => (
+                        <div key={`${thread.id}-${summary.actionKey}`}>
+                          <div className="font-medium text-[var(--color-ink)]">
+                            {summary.actionLabel}
+                          </div>
+                          <div className="mt-2 space-y-2">
+                            {summary.reasons.map((reason) => (
+                              <div
+                                key={`${thread.id}-${summary.actionKey}-${reason}`}
+                              >
+                                {reason}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <form
                   action={sendManualOutboundMessageAction.bind(null, thread.id)}
                   className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
@@ -198,7 +221,8 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                 </form>
                 <form action={scheduleTourAction.bind(null, thread.id)}>
                   <button
-                    className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!thread.canScheduleTour}
                     type="submit"
                   >
                     Schedule tour
@@ -206,7 +230,8 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                 </form>
                 <form action={sendApplicationAction.bind(null, thread.id)}>
                   <button
-                    className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!thread.canSendApplication}
                     type="submit"
                   >
                     Send application

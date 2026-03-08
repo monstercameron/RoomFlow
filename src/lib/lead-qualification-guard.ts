@@ -75,6 +75,19 @@ export function isManualOnlyAutomationModeEnabled(
   );
 }
 
+export function resolveMissingInfoPromptThrottleWindowMinutes(
+  configuredThrottleWindowMinutes: number | null | undefined,
+) {
+  if (
+    Number.isFinite(configuredThrottleWindowMinutes) &&
+    (configuredThrottleWindowMinutes ?? 0) > 0
+  ) {
+    return configuredThrottleWindowMinutes as number;
+  }
+
+  return DEFAULT_MISSING_INFO_PROMPT_THROTTLE_MINUTES;
+}
+
 export function resolveQualificationAutomationGate(params: {
   leadPropertyId: string | null;
   propertyQuestionSets: QualificationQuestionSetSnapshot[];

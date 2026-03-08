@@ -97,6 +97,29 @@ export default async function LeadDetailPage({
           {workflowErrorMessage}
         </div>
       ) : null}
+      {lead.automationSuppressionSummaries.length > 0 ? (
+        <div className="mb-5 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-5 shadow-[var(--shadow-panel)]">
+          <div className="text-sm font-semibold">Automation suppression reasons</div>
+          <p className="mt-2 text-sm text-[var(--color-muted)]">
+            Manual outbound remains available, but these automated actions are currently blocked.
+          </p>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {lead.automationSuppressionSummaries.map((summary) => (
+              <div
+                key={summary.actionKey}
+                className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4"
+              >
+                <div className="text-sm font-medium">{summary.actionLabel}</div>
+                <div className="mt-3 space-y-2 text-sm text-[var(--color-muted)]">
+                  {summary.reasons.map((reason) => (
+                    <div key={`${summary.actionKey}-${reason}`}>{reason}</div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <section className="space-y-6">

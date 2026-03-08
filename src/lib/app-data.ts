@@ -13,14 +13,15 @@ import {
   buildLeadTimeline,
   evaluateLeadQualification,
   getLeadActionAvailability,
+  getLeadAutomationSuppressionSummaries,
   getLeadWorkflowContext,
   renderTemplateForLead,
 } from "@/lib/lead-workflow";
 import {
-  DEFAULT_MISSING_INFO_PROMPT_THROTTLE_MINUTES,
   isManualOnlyAutomationModeEnabled,
   isMissingInfoPromptThrottled,
   isQualificationCompleted,
+  resolveMissingInfoPromptThrottleWindowMinutes,
   resolveMissingRequiredQualificationQuestions,
   resolveMostRecentMissingInfoRequestTimestamp,
   resolveQualificationAutomationGate,
@@ -303,21 +304,6 @@ function daysAgo(days: number) {
   const value = new Date();
   value.setDate(value.getDate() - days);
   return value;
-}
-
-function getMissingInfoPromptThrottleWindowMinutes() {
-  const configuredThrottleWindowMinutes = Number(
-    process.env.MISSING_INFO_PROMPT_THROTTLE_MINUTES,
-  );
-
-  if (
-    Number.isFinite(configuredThrottleWindowMinutes) &&
-    configuredThrottleWindowMinutes > 0
-  ) {
-    return configuredThrottleWindowMinutes;
-  }
-
-  return DEFAULT_MISSING_INFO_PROMPT_THROTTLE_MINUTES;
 }
 
 function resolveSourceSummaryLabel(leadSourceName: string | null | undefined) {
@@ -822,6 +808,10 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
 
   const evaluation = evaluateLeadQualification(lead);
   const workflowActionAvailability = getLeadActionAvailability(lead, evaluation);
+  const automationSuppressionSummaries = getLeadAutomationSuppressionSummaries(
+    lead,
+    evaluation,
+  );
   const roleActionPermissions = getLeadActionPermissionsForMembershipRole(
     membership.role,
   );
@@ -971,6 +961,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     })),
     recommendedStatus: formatStatusLabel(evaluation.recommendedStatus),
     qualificationAnswers: answers,
+    automationSuppressionSummaries,
     timeline,
     messages,
     normalizedFieldMetadataRows,
@@ -1012,11 +1003,54 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
       workspaceId: membership.workspaceId,
     },
     include: {
+      workspace: {
+        select: {
+          channelPriority: true,
+          dailyAutomatedSendCap: true,
+          missingInfoPromptThrottleMinutes: true,
+          quietHoursStartLocal: true,
+          quietHoursEndLocal: true,
+          quietHoursTimeZone: true,
+        },
+      },
       contact: true,
       property: {
         select: {
           id: true,
           name: true,
+          lifecycleStatus: true,
+          smokingAllowed: true,
+          petsAllowed: true,
+          parkingAvailable: true,
+          schedulingUrl: true,
+          schedulingEnabled: true,
+          channelPriority: true,
+          quietHoursStartLocal: true,
+          quietHoursEndLocal: true,
+          quietHoursTimeZone: true,
+          rules: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+          questionSets: {
+            include: {
+              questions: {
+                orderBy: {
+                  sortOrder: "asc",
+                },
+                select: {
+                  id: true,
+                  fieldKey: true,
+                  label: true,
+                  required: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
         },
       },
       leadSource: {
@@ -1028,6 +1062,12 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
         select: {
           questionId: true,
           value: true,
+          question: {
+            select: {
+              fieldKey: true,
+              label: true,
+            },
+          },
         },
       },
       auditEvents: {
@@ -1148,10 +1188,21 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
     process.env.ROOMFLOW_MANUAL_ONLY_MODE,
   );
   const missingInfoPromptThrottleWindowMinutes =
-    getMissingInfoPromptThrottleWindowMinutes();
+    resolveMissingInfoPromptThrottleWindowMinutes(
+      membership.workspace.missingInfoPromptThrottleMinutes,
+    );
 
-  const mappedThreads = threads.map((lead) => ({
-    ...(() => {
+  const mappedThreads = threads.map((lead) => {
+    const automationSuppressionSummaries = getLeadAutomationSuppressionSummaries(
+      lead,
+      evaluateLeadQualification(lead),
+    );
+    const blockedAutomationActionKeys = new Set(
+      automationSuppressionSummaries.map((summary) => summary.actionKey),
+    );
+
+    return {
+      ...(() => {
       const propertyQuestionSetsForLead = lead.propertyId
         ? questionSetsByPropertyId.get(lead.propertyId) ?? []
         : [];
@@ -1219,43 +1270,51 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
           ),
         },
       };
-    })(),
-    id: lead.id,
-    name: lead.fullName,
-    source: lead.leadSource?.name ?? "Manual",
-    property: lead.property?.name ?? "Unassigned",
-    status: formatStatusLabel(lead.status),
-    fit: formatFitLabel(lead.fitResult),
-    lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt),
-    latestMessage:
-      lead.conversation?.messages[0]?.body ?? "No messages yet on this lead.",
-    latestMessageDeliveryStatus:
-      lead.conversation?.messages[0]
-        ? buildDeliveryStatusDisplay(lead.conversation.messages[0].deliveryStatus)
-        : null,
-    latestMessageMentions:
-      lead.conversation?.messages[0]?.channel === MessageChannel.INTERNAL_NOTE
-        ? resolveInternalNoteMentions({
-            noteBody: lead.conversation.messages[0].body,
-            workspaceMembers: workspaceMentionMembers,
-          }).mentions.map((mention) => ({
-            userId: mention.userId,
-            name: mention.name,
-            canonicalHandle: mention.canonicalHandle,
-            membershipRole: mention.membershipRole,
-          }))
-        : [],
-    latestMessageDirection: lead.conversation?.messages[0]
-      ? lead.conversation.messages[0].channel === MessageChannel.INTERNAL_NOTE
-        ? "Internal note"
-        : formatEnumLabel(lead.conversation.messages[0].direction)
-      : "No thread",
-    latestMessageIsInternalNote:
-      lead.conversation?.messages[0]?.channel === MessageChannel.INTERNAL_NOTE,
-    availableInternalNoteMentions,
-    needsAssignment: !lead.propertyId && roleActionPermissions.assignProperty,
-    availableProperties: properties,
-  }));
+      })(),
+      automationSuppressionSummaries,
+      canScheduleTour:
+        !blockedAutomationActionKeys.has("schedule_tour") &&
+        roleActionPermissions.scheduleTour,
+      canSendApplication:
+        !blockedAutomationActionKeys.has("send_application") &&
+        roleActionPermissions.sendApplication,
+      id: lead.id,
+      name: lead.fullName,
+      source: lead.leadSource?.name ?? "Manual",
+      property: lead.property?.name ?? "Unassigned",
+      status: formatStatusLabel(lead.status),
+      fit: formatFitLabel(lead.fitResult),
+      lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt),
+      latestMessage:
+        lead.conversation?.messages[0]?.body ?? "No messages yet on this lead.",
+      latestMessageDeliveryStatus:
+        lead.conversation?.messages[0]
+          ? buildDeliveryStatusDisplay(lead.conversation.messages[0].deliveryStatus)
+          : null,
+      latestMessageMentions:
+        lead.conversation?.messages[0]?.channel === MessageChannel.INTERNAL_NOTE
+          ? resolveInternalNoteMentions({
+              noteBody: lead.conversation.messages[0].body,
+              workspaceMembers: workspaceMentionMembers,
+            }).mentions.map((mention) => ({
+              userId: mention.userId,
+              name: mention.name,
+              canonicalHandle: mention.canonicalHandle,
+              membershipRole: mention.membershipRole,
+            }))
+          : [],
+      latestMessageDirection: lead.conversation?.messages[0]
+        ? lead.conversation.messages[0].channel === MessageChannel.INTERNAL_NOTE
+          ? "Internal note"
+          : formatEnumLabel(lead.conversation.messages[0].direction)
+        : "No thread",
+      latestMessageIsInternalNote:
+        lead.conversation?.messages[0]?.channel === MessageChannel.INTERNAL_NOTE,
+      availableInternalNoteMentions,
+      needsAssignment: !lead.propertyId && roleActionPermissions.assignProperty,
+      availableProperties: properties,
+    };
+  });
 
   if (!queueFilter || queueFilter === "all") {
     return mappedThreads;
@@ -1860,6 +1919,9 @@ export const getMessagingSettingsViewData = cache(async () => {
   });
 
   return {
+    dailyAutomatedSendCap: membership.workspace.dailyAutomatedSendCap,
+    missingInfoPromptThrottleMinutes:
+      membership.workspace.missingInfoPromptThrottleMinutes,
     workspaceQuietHoursStartLocal: membership.workspace.quietHoursStartLocal,
     workspaceQuietHoursEndLocal: membership.workspace.quietHoursEndLocal,
     workspaceQuietHoursTimeZone: membership.workspace.quietHoursTimeZone,

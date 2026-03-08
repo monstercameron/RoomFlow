@@ -19,6 +19,21 @@ function parseOptionalQuietHoursText(value: FormDataEntryValue | null) {
   return normalizedValue.length > 0 ? normalizedValue : null;
 }
 
+function parsePositiveInteger(value: FormDataEntryValue | null, fieldLabel: string) {
+  if (typeof value !== "string") {
+    throw new Error(`${fieldLabel} is required.`);
+  }
+
+  const normalizedValue = value.trim();
+  const parsedValue = Number.parseInt(normalizedValue, 10);
+
+  if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+    throw new Error(`${fieldLabel} must be a positive whole number.`);
+  }
+
+  return parsedValue;
+}
+
 export async function updateWorkspaceQuietHoursAction(formData: FormData) {
   const workspaceMembership = await getCurrentWorkspaceMembership();
   const workspaceState = await getCurrentWorkspaceState();
@@ -75,6 +90,55 @@ export async function updateWorkspaceQuietHoursAction(formData: FormData) {
   revalidatePath("/app/properties");
   revalidatePath("/app/leads");
   revalidatePath("/app/inbox");
+
+  const redirectTarget =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : "/app/settings/integrations";
+
+  redirect(redirectTarget);
+}
+
+export async function updateWorkspaceMessagingThrottleSettingsAction(
+  formData: FormData,
+) {
+  const workspaceMembership = await getCurrentWorkspaceMembership();
+  const workspaceState = await getCurrentWorkspaceState();
+  const redirectTargetValue = formData.get("redirectTo");
+  const dailyAutomatedSendCap = parsePositiveInteger(
+    formData.get("dailyAutomatedSendCap"),
+    "Daily automated send cap",
+  );
+  const missingInfoPromptThrottleMinutes = parsePositiveInteger(
+    formData.get("missingInfoPromptThrottleMinutes"),
+    "Missing-info throttle window",
+  );
+
+  await prisma.workspace.update({
+    where: {
+      id: workspaceMembership.workspaceId,
+    },
+    data: {
+      dailyAutomatedSendCap,
+      missingInfoPromptThrottleMinutes,
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      workspaceId: workspaceMembership.workspaceId,
+      actorUserId: workspaceState.user.id,
+      eventType: "workspace_messaging_throttle_settings_updated",
+      payload: {
+        dailyAutomatedSendCap,
+        missingInfoPromptThrottleMinutes,
+      },
+    },
+  });
+
+  revalidatePath("/app/settings/integrations");
+  revalidatePath("/app/inbox");
+  revalidatePath("/app/leads");
 
   const redirectTarget =
     typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
