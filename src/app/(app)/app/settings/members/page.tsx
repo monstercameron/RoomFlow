@@ -3,6 +3,7 @@ import { WorkspaceCapability } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import { WorkspaceMembersPanel } from "@/components/workspace-members-panel";
 import { getCurrentWorkspaceMembership, getCurrentWorkspaceState } from "@/lib/app-data";
+import { formatAvailabilityWindow, parseAvailabilityWindowConfig } from "@/lib/availability-windows";
 import { prisma } from "@/lib/prisma";
 import { workspaceHasCapability } from "@/lib/workspace-plan";
 import {
@@ -10,6 +11,7 @@ import {
   getAssignableWorkspaceInviteRoles,
   getWorkspaceInviteStatus,
 } from "@/lib/workspace-invites";
+import { updateMemberSharedTourCoverageAction } from "@/app/(app)/app/settings/members/actions";
 
 export default async function MemberSettingsPage() {
   const workspaceState = await getCurrentWorkspaceState();
@@ -107,6 +109,56 @@ export default async function MemberSettingsPage() {
           status: getWorkspaceInviteStatus(workspaceInvite),
         }))}
       />
+
+      <section className="mt-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+        <div className="text-xl font-semibold">Shared tour coverage</div>
+        <p className="mt-2 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
+          Shared coverage determines which teammates can receive manual team assignments and round-robin tour distribution. Individual operators still control their own availability windows from the integrations page.
+        </p>
+        <div className="mt-5 space-y-3">
+          {workspaceMemberships.map((workspaceMembership) => (
+            <form
+              action={updateMemberSharedTourCoverageAction.bind(null, workspaceMembership.id)}
+              className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+              key={`${workspaceMembership.id}-coverage`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium">{workspaceMembership.user.name}</div>
+                  <div className="mt-1 text-sm text-[var(--color-muted)]">
+                    {workspaceMembership.user.email} · {workspaceMembership.role.toLowerCase()}
+                  </div>
+                  <div className="mt-2 text-sm text-[var(--color-muted)]">
+                    Availability: {formatAvailabilityWindow(parseAvailabilityWindowConfig(workspaceMembership.schedulingAvailability))}
+                  </div>
+                  <div className="mt-1 text-sm text-[var(--color-muted)]">
+                    Last assignment: {workspaceMembership.lastTourAssignedAt ? workspaceMembership.lastTourAssignedAt.toLocaleString() : "Not assigned yet"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input
+                      defaultChecked={workspaceMembership.sharedTourCoverageEnabled}
+                      disabled={!canMembershipRoleManageWorkspaceInvites(currentWorkspaceMembership.role)}
+                      name="sharedTourCoverageEnabled"
+                      type="checkbox"
+                    />
+                    Shared coverage pool
+                  </label>
+                  <input type="hidden" name="redirectTo" value="/app/settings/members" />
+                  <button
+                    className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!canMembershipRoleManageWorkspaceInvites(currentWorkspaceMembership.role)}
+                    type="submit"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </form>
+          ))}
+        </div>
+      </section>
 
       <div className="mt-6 text-sm text-[var(--color-muted)]">
         Need account-level security instead? {" "}

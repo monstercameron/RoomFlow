@@ -131,8 +131,26 @@ enum RuleMode {
 enum TourEventStatus {
   SCHEDULED
   COMPLETED
+  NO_SHOW
   CANCELED
   RESCHEDULED
+}
+
+enum CalendarSyncProvider {
+  GOOGLE
+  OUTLOOK
+}
+
+enum CalendarSyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+}
+
+enum TourSchedulingMode {
+  DIRECT
+  TEAM_MANUAL
+  ROUND_ROBIN
 }
 
 enum PropertyLifecycleStatus {
@@ -295,6 +313,9 @@ model Workspace {
   channelPriority       Json?
   dailyAutomatedSendCap Int               @default(3)
   missingInfoPromptThrottleMinutes Int    @default(60)
+  calendarConnections   Json?
+  tourSchedulingMode    TourSchedulingMode @default(DIRECT)
+  tourReminderSequence  Json?
   quietHoursStartLocal  String?
   quietHoursEndLocal    String?
   quietHoursTimeZone    String?
@@ -324,8 +345,11 @@ model Membership {
   workspaceId String
   role        MembershipRole @default(OWNER)
   schedulingAvailability Json?
+  sharedTourCoverageEnabled Boolean @default(false)
+  lastTourAssignedAt DateTime?
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignedTours TourEvent[]  @relation("AssignedTourMembership")
   createdAt   DateTime       @default(now())
 
   @@unique([userId, workspaceId])
@@ -709,21 +733,34 @@ model TourEvent {
   workspaceId        String
   leadId             String
   propertyId         String?
+  assignedMembershipId String?
   status             TourEventStatus @default(SCHEDULED)
   scheduledAt        DateTime?
+  completedAt        DateTime?
   canceledAt         DateTime?
   cancelReason       String?
+  operatorCancelReason String?
+  operatorRescheduleReason String?
+  operatorNoShowReason String?
   externalCalendarId String?
+  calendarSyncProvider CalendarSyncProvider?
+  calendarSyncStatus CalendarSyncStatus?
+  calendarSyncedAt   DateTime?
+  calendarSyncError  String?
+  prospectNotificationSentAt DateTime?
+  reminderSequenceState Json?
   previousTourEventId String?
   workspace          Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   lead               Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
   property           Property?       @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  assignedMembership Membership?     @relation("AssignedTourMembership", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
   @@index([workspaceId, status, createdAt])
   @@index([leadId, createdAt])
   @@index([propertyId, createdAt])
+  @@index([assignedMembershipId, createdAt])
 }
 
 model NotificationEvent {

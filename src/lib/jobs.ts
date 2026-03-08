@@ -4,6 +4,7 @@ import {
   MessageOrigin,
   NotificationType,
   PropertyLifecycleStatus,
+  TourEventStatus,
   WebhookDeliveryStatus,
 } from "@/generated/prisma/client";
 import { processNormalizedInboundLead, type NormalizedLeadPayload } from "@/lib/lead-normalization";
@@ -14,6 +15,8 @@ import {
   sendQueuedMessage,
 } from "@/lib/message-delivery";
 import { prisma } from "@/lib/prisma";
+import { sendTourReminderNotification } from "@/lib/tour-communications";
+import { markTourReminderSent, parseTourReminderState } from "@/lib/tour-scheduling";
 import { workflowEventTypes } from "@/lib/workflow-events";
 
 declare global {
@@ -35,6 +38,10 @@ type OutboundMessageJob = {
 type ReminderJob = {
   leadId: string;
   templateType?: string | null;
+  reminderLabel?: string | null;
+  reminderStepId?: string | null;
+  scheduledFor?: string | null;
+  tourEventId?: string | null;
 };
 
 type DelayedFollowUpJob = {
@@ -169,6 +176,92 @@ async function processOutboundMessageJobs(
 async function processReminderJobs(jobs: JobWithMetadata<ReminderJob>[]) {
   for (const job of jobs) {
     console.log("[pg-boss] reminder-send", job.data);
+
+    if (job.data.tourEventId && job.data.reminderStepId && job.data.scheduledFor) {
+      const scheduledReminderAt = new Date(job.data.scheduledFor);
+
+      if (!Number.isNaN(scheduledReminderAt.getTime()) && scheduledReminderAt > new Date()) {
+        continue;
+      }
+
+      const tour = await prisma.tourEvent.findFirst({
+        where: {
+          id: job.data.tourEventId,
+          leadId: job.data.leadId,
+          status: TourEventStatus.SCHEDULED,
+        },
+        include: {
+          lead: {
+            select: {
+              id: true,
+            },
+          },
+          property: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      });
+
+      if (!tour?.property?.name) {
+        continue;
+      }
+
+      const reminderState = parseTourReminderState(tour.reminderSequenceState);
+      const matchingReminderState = reminderState.find(
+        (entry) => entry.id === job.data.reminderStepId,
+      );
+
+      if (matchingReminderState?.sentAt) {
+        continue;
+      }
+
+      const reminderSent = await sendTourReminderNotification({
+        leadId: tour.lead.id,
+        propertyName: tour.property.name,
+        reminderLabel: job.data.reminderLabel ?? "Before the tour",
+        scheduledAt: tour.scheduledAt ?? tour.createdAt,
+      });
+
+      if (!reminderSent) {
+        continue;
+      }
+
+      const sentAt = new Date();
+
+      await prisma.tourEvent.update({
+        where: {
+          id: tour.id,
+        },
+        data: {
+          prospectNotificationSentAt: sentAt,
+          reminderSequenceState: markTourReminderSent({
+            reminderState,
+            reminderStepId: job.data.reminderStepId,
+            sentAt,
+          }),
+        },
+      });
+
+      await prisma.auditEvent.create({
+        data: {
+          workspaceId: tour.workspaceId,
+          leadId: tour.leadId,
+          propertyId: tour.propertyId,
+          eventType: workflowEventTypes.reminderSent,
+          payload: {
+            reminderLabel: job.data.reminderLabel ?? null,
+            reminderStepId: job.data.reminderStepId,
+            scheduledFor: job.data.scheduledFor,
+            tourEventId: tour.id,
+          },
+        },
+      });
+
+      continue;
+    }
+
     const staleNoResponseDays = Number(process.env.STALE_NO_RESPONSE_DAYS ?? "7");
     const staleArchiveDays = Number(process.env.STALE_AUTO_ARCHIVE_DAYS ?? "30");
     const staleCutoffDate = new Date();

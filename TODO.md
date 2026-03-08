@@ -520,13 +520,13 @@ These are not part of the original narrow launch slice, but they are now broken 
 
 - [x] Add manual tour creation UI separate from automated scheduling handoff.
 - [x] Add availability-window configuration by user and property.
-- [ ] Add Google Calendar integration for event sync.
-- [ ] Add Outlook calendar integration for event sync.
-- [ ] Add reschedule and cancel flows with operator-facing reasons and prospect notifications.
-- [ ] Add team scheduling support for Org workspaces.
-- [ ] Add round-robin scheduling option for shared lead coverage.
-- [ ] Add no-show tracking as a structured tour outcome.
-- [ ] Add reminder-message sequencing tied to scheduled tours.
+- [x] Add Google Calendar integration for event sync.
+- [x] Add Outlook calendar integration for event sync.
+- [x] Add reschedule and cancel flows with operator-facing reasons and prospect notifications.
+- [x] Add team scheduling support for Org workspaces.
+- [x] Add round-robin scheduling option for shared lead coverage.
+- [x] Add no-show tracking as a structured tour outcome.
+- [x] Add reminder-message sequencing tied to scheduled tours.
 
 ## Phase 19: screening and verification orchestration
 

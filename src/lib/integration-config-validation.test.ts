@@ -4,6 +4,10 @@ import { validateInboundIntegrationConfiguration } from "./integration-config-va
 
 test("validateInboundIntegrationConfiguration reports missing required provider config", () => {
   const issues = validateInboundIntegrationConfiguration({
+    googleClientId: undefined,
+    googleClientSecret: undefined,
+    microsoftClientId: undefined,
+    microsoftClientSecret: undefined,
     resendApiKey: undefined,
     resendFromEmail: undefined,
     twilioAccountSid: "replace-me",
@@ -21,6 +25,10 @@ test("validateInboundIntegrationConfiguration reports missing required provider 
 
 test("validateInboundIntegrationConfiguration returns no issues when all required values are set", () => {
   const issues = validateInboundIntegrationConfiguration({
+    googleClientId: "google-client-id",
+    googleClientSecret: "google-client-secret",
+    microsoftClientId: "microsoft-client-id",
+    microsoftClientSecret: "microsoft-client-secret",
     resendApiKey: "re_xxx",
     resendFromEmail: "noreply@example.com",
     twilioAccountSid: "AC123",

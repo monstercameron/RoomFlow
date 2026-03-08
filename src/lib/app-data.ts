@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
 import {
+  CalendarSyncProvider,
   LeadStatus,
   MessageChannel,
   PropertyLifecycleStatus,
@@ -9,6 +10,7 @@ import {
   TemplateType,
   TourEventStatus,
   WorkspaceCapability,
+  WorkspacePlanType,
 } from "@/generated/prisma/client";
 import {
   buildLeadTimeline,
@@ -57,6 +59,14 @@ import { deriveWorkflowKpis } from "@/lib/kpi-derivation";
 import { formatPropertyListingSyncStatus } from "@/lib/property-listing-sync";
 import { formatPropertyLifecycleStatus } from "@/lib/property-lifecycle";
 import { formatQuietHours, resolveEffectiveQuietHours } from "@/lib/quiet-hours";
+import {
+  formatCalendarConnectionSummary,
+  formatTourReminderSequenceSummary,
+  formatTourSchedulingMode,
+  parseCalendarConnectionsConfig,
+  parseTourReminderState,
+  parseTourReminderSequence,
+} from "@/lib/tour-scheduling";
 import { getServerSession } from "@/lib/session";
 import { workspaceHasCapability } from "@/lib/workspace-plan";
 import { activeWorkspaceCookieName, ensureWorkspaceForUser } from "@/lib/workspaces";
@@ -114,6 +124,49 @@ function formatDateTimeInputValue(value: Date | null) {
   const localValue = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
 
   return localValue.toISOString().slice(0, 16);
+}
+
+function formatCalendarSyncSummary(params: {
+  calendarSyncError: string | null;
+  calendarSyncProvider: CalendarSyncProvider | null;
+  calendarSyncStatus: string | null;
+}) {
+  if (!params.calendarSyncProvider && !params.calendarSyncStatus) {
+    return "Manual scheduling";
+  }
+
+  const providerLabel = params.calendarSyncProvider
+    ? formatEnumLabel(params.calendarSyncProvider)
+    : "Calendar sync";
+
+  if (params.calendarSyncStatus === "FAILED") {
+    return params.calendarSyncError
+      ? `${providerLabel} sync failed: ${params.calendarSyncError}`
+      : `${providerLabel} sync failed`;
+  }
+
+  if (params.calendarSyncStatus) {
+    return `${providerLabel} ${params.calendarSyncStatus.toLowerCase()}`;
+  }
+
+  return providerLabel;
+}
+
+function formatTourReminderStateSummary(value: unknown) {
+  const reminderState = parseTourReminderState(value);
+
+  if (reminderState.length === 0) {
+    return "No reminders configured";
+  }
+
+  const sentCount = reminderState.filter((entry) => Boolean(entry.sentAt)).length;
+  const nextPendingReminder = reminderState.find((entry) => !entry.sentAt);
+
+  if (!nextPendingReminder) {
+    return `All ${reminderState.length} reminders sent`;
+  }
+
+  return `${sentCount}/${reminderState.length} sent · next ${formatDateTime(new Date(nextPendingReminder.scheduledFor))}`;
 }
 
 function formatRelativeTime(value: Date | null) {
@@ -1249,16 +1302,75 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
   const propertySchedulingAvailability = parseAvailabilityWindowConfig(
     lead.property?.schedulingAvailability,
   );
+  const assignedMembershipIds = orderedTours
+    .map((tour) => tour.assignedMembershipId)
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  const assignedMemberships = assignedMembershipIds.length
+    ? await prisma.membership.findMany({
+        where: {
+          id: {
+            in: assignedMembershipIds,
+          },
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      })
+    : [];
+  const assignedMembershipLabelById = new Map(
+    assignedMemberships.map((assignedMembership) => [
+      assignedMembership.id,
+      assignedMembership.user.name ?? "Team member",
+    ]),
+  );
+  const assignableMemberships = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.ORG_MEMBERS,
+  )
+    ? await prisma.membership.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      })
+    : [];
   const tourHistory = orderedTours
     .filter((tour) => tour.id !== activeScheduledTour?.id)
     .map((tour) => ({
+      assignedMembershipId: tour.assignedMembershipId ?? null,
+      assignedTo:
+        (tour.assignedMembershipId
+          ? assignedMembershipLabelById.get(tour.assignedMembershipId)
+          : null) ?? "Unassigned",
+      calendarSyncSummary: formatCalendarSyncSummary({
+        calendarSyncError: tour.calendarSyncError,
+        calendarSyncProvider: tour.calendarSyncProvider,
+        calendarSyncStatus: tour.calendarSyncStatus,
+      }),
       id: tour.id,
       scheduledAt: formatDateTime(tour.scheduledAt ?? tour.createdAt),
       status: formatEnumLabel(tour.status),
       statusValue: tour.status,
       canceledAt: formatDateTime(tour.canceledAt),
       cancelReason: tour.cancelReason ?? null,
+      operatorCancelReason: tour.operatorCancelReason ?? null,
+      operatorNoShowReason: tour.operatorNoShowReason ?? null,
+      operatorRescheduleReason: tour.operatorRescheduleReason ?? null,
       externalCalendarId: tour.externalCalendarId ?? null,
+      reminderSummary: formatTourReminderStateSummary(tour.reminderSequenceState),
       createdAt: formatRelativeTime(tour.createdAt),
     }));
 
@@ -1285,7 +1397,27 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     statusValue: lead.status,
     upcomingTour: activeScheduledTour
       ? {
+          assignedMembershipId: activeScheduledTour.assignedMembershipId ?? null,
+          assignedTo:
+            (activeScheduledTour.assignedMembershipId
+              ? assignedMembershipLabelById.get(activeScheduledTour.assignedMembershipId)
+              : null) ?? "Unassigned",
+          calendarSyncError: activeScheduledTour.calendarSyncError ?? null,
+          calendarSyncStatus: activeScheduledTour.calendarSyncStatus
+            ? formatEnumLabel(activeScheduledTour.calendarSyncStatus)
+            : "Manual",
+          calendarSyncSummary: formatCalendarSyncSummary({
+            calendarSyncError: activeScheduledTour.calendarSyncError,
+            calendarSyncProvider: activeScheduledTour.calendarSyncProvider,
+            calendarSyncStatus: activeScheduledTour.calendarSyncStatus,
+          }),
           id: activeScheduledTour.id,
+          prospectNotificationSentAt: formatDateTime(
+            activeScheduledTour.prospectNotificationSentAt,
+          ),
+          reminderSummary: formatTourReminderStateSummary(
+            activeScheduledTour.reminderSequenceState,
+          ),
           scheduledAt: formatDateTime(
             activeScheduledTour.scheduledAt ?? activeScheduledTour.createdAt,
           ),
@@ -1296,6 +1428,28 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
           externalCalendarId: activeScheduledTour.externalCalendarId ?? null,
         }
       : null,
+    tourAssignmentOptions: [
+      {
+        label: "Current operator",
+        summary: "Current operator",
+        value: membership.id,
+      },
+      ...assignableMemberships
+        .filter((workspaceMembership) => workspaceMembership.id !== membership.id)
+        .map((workspaceMembership) => ({
+          label: workspaceMembership.user.name ?? "Team member",
+          summary: workspaceMembership.sharedTourCoverageEnabled
+            ? "Shared coverage enabled"
+            : "Manual assignment",
+          value: workspaceMembership.id,
+        })),
+    ],
+    tourReminderSequenceSummary: formatTourReminderSequenceSummary(
+      parseTourReminderSequence(membership.workspace.tourReminderSequence),
+    ),
+    tourSchedulingModeSummary: formatTourSchedulingMode(
+      membership.workspace.tourSchedulingMode,
+    ),
     tourHistory,
     operatorSchedulingAvailabilitySummary: formatAvailabilityWindow(
       operatorSchedulingAvailability,
@@ -2244,6 +2398,15 @@ export const getCalendarViewData = cache(async () => {
       },
     ],
     include: {
+      assignedMembership: {
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
       lead: {
         select: {
           id: true,
@@ -2323,6 +2486,12 @@ export const getCalendarViewData = cache(async () => {
 
   return {
     scheduledTours: scheduledTours.map((tour) => ({
+      assignedTo: tour.assignedMembership?.user.name ?? "Unassigned",
+      calendarSyncSummary: formatCalendarSyncSummary({
+        calendarSyncError: tour.calendarSyncError,
+        calendarSyncProvider: tour.calendarSyncProvider,
+        calendarSyncStatus: tour.calendarSyncStatus,
+      }),
       id: tour.id,
       leadId: tour.lead.id,
       leadName: tour.lead.fullName,
@@ -2340,6 +2509,7 @@ export const getCalendarViewData = cache(async () => {
       lastActivity: formatRelativeTime(
         tour.lead.lastActivityAt ?? tour.lead.updatedAt,
       ),
+      reminderSummary: formatTourReminderStateSummary(tour.reminderSequenceState),
     })),
     properties: properties.map((property) => ({
       calendarTargetName: property.calendarTargetName,
@@ -2510,9 +2680,50 @@ export const getMessagingSettingsViewData = cache(async () => {
   const operatorSchedulingAvailability = parseAvailabilityWindowConfig(
     membership.schedulingAvailability,
   );
+  const calendarConnections = parseCalendarConnectionsConfig(
+    membership.workspace.calendarConnections,
+  );
+  const tourReminderSequence = parseTourReminderSequence(
+    membership.workspace.tourReminderSequence,
+  );
+  const sharedCoverageMemberships = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.ORG_MEMBERS,
+  )
+    ? await prisma.membership.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: [
+          {
+            lastTourAssignedAt: "asc",
+          },
+          {
+            createdAt: "asc",
+          },
+        ],
+      })
+    : [];
 
   return {
     dailyAutomatedSendCap: membership.workspace.dailyAutomatedSendCap,
+    canUseCalendarSync: workspaceHasCapability(
+      membership.workspace.enabledCapabilities,
+      WorkspaceCapability.CALENDAR_SYNC,
+    ),
+    canUseTeamScheduling:
+      membership.workspace.planType === WorkspacePlanType.ORG &&
+      workspaceHasCapability(
+        membership.workspace.enabledCapabilities,
+        WorkspaceCapability.ORG_MEMBERS,
+      ),
     hasWhatsAppMessagingCapability: workspaceHasCapability(
       membership.workspace.enabledCapabilities,
       WorkspaceCapability.WHATSAPP_MESSAGING,
@@ -2534,6 +2745,45 @@ export const getMessagingSettingsViewData = cache(async () => {
       operatorSchedulingAvailability?.timeZone ?? null,
     operatorSchedulingAvailabilityDays:
       operatorSchedulingAvailability?.days ?? [],
+    googleCalendarConnectionSummary: formatCalendarConnectionSummary(
+      calendarConnections[CalendarSyncProvider.GOOGLE],
+    ),
+    googleCalendarConnectedAccount:
+      calendarConnections[CalendarSyncProvider.GOOGLE].connectedAccount,
+    googleCalendarConnectionStatus:
+      calendarConnections[CalendarSyncProvider.GOOGLE].status,
+    googleCalendarConnectionSyncEnabled:
+      calendarConnections[CalendarSyncProvider.GOOGLE].syncEnabled,
+    googleCalendarConnectionError:
+      calendarConnections[CalendarSyncProvider.GOOGLE].errorMessage,
+    outlookCalendarConnectionSummary: formatCalendarConnectionSummary(
+      calendarConnections[CalendarSyncProvider.OUTLOOK],
+    ),
+    outlookCalendarConnectedAccount:
+      calendarConnections[CalendarSyncProvider.OUTLOOK].connectedAccount,
+    outlookCalendarConnectionStatus:
+      calendarConnections[CalendarSyncProvider.OUTLOOK].status,
+    outlookCalendarConnectionSyncEnabled:
+      calendarConnections[CalendarSyncProvider.OUTLOOK].syncEnabled,
+    outlookCalendarConnectionError:
+      calendarConnections[CalendarSyncProvider.OUTLOOK].errorMessage,
+    tourSchedulingMode: membership.workspace.tourSchedulingMode,
+    tourSchedulingModeSummary: formatTourSchedulingMode(
+      membership.workspace.tourSchedulingMode,
+    ),
+    tourReminderSequence,
+    tourReminderSequenceSummary: formatTourReminderSequenceSummary(
+      tourReminderSequence,
+    ),
+    sharedCoverageMemberships: sharedCoverageMemberships.map((workspaceMembership) => ({
+      id: workspaceMembership.id,
+      name: workspaceMembership.user.name,
+      sharedTourCoverageEnabled: workspaceMembership.sharedTourCoverageEnabled,
+      schedulingAvailabilitySummary: formatAvailabilityWindow(
+        parseAvailabilityWindowConfig(workspaceMembership.schedulingAvailability),
+      ),
+      lastTourAssignedAt: formatRelativeTime(workspaceMembership.lastTourAssignedAt),
+    })),
     workspaceQuietHoursStartLocal: membership.workspace.quietHoursStartLocal,
     workspaceQuietHoursEndLocal: membership.workspace.quietHoursEndLocal,
     workspaceQuietHoursTimeZone: membership.workspace.quietHoursTimeZone,

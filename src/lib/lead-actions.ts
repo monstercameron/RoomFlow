@@ -13,7 +13,9 @@ import {
   NotificationType,
   PropertyLifecycleStatus,
   QualificationFit,
+  TourSchedulingMode,
   TourEventStatus,
+  WorkspaceCapability,
 } from "@/generated/prisma/client";
 import {
   getCurrentWorkspaceMembership,
@@ -35,6 +37,7 @@ import {
   markMessageProviderUnresolved,
   sendQueuedMessage,
 } from "@/lib/message-delivery";
+import { scheduleReminderSend } from "@/lib/jobs";
 import {
   isLeadWorkflowError,
   LeadWorkflowError,
@@ -56,6 +59,20 @@ import { resolveInternalNoteMentions } from "@/lib/internal-note-mentions";
 import { propertyAcceptsNewLeads } from "@/lib/property-lifecycle";
 import { prisma } from "@/lib/prisma";
 import { assertLeadStatusTransitionIsAllowed } from "@/lib/lead-status-machine";
+import {
+  sendTourCanceledNotification,
+  sendTourRescheduledNotification,
+  sendTourScheduledConfirmation,
+} from "@/lib/tour-communications";
+import {
+  buildCalendarSyncState,
+  buildInitialTourReminderState,
+  parseCalendarConnectionsConfig,
+  parseTourReminderSequence,
+  resolveAssignedTourMembershipId,
+  resolveTourReminderDelays,
+} from "@/lib/tour-scheduling";
+import { workspaceHasCapability } from "@/lib/workspace-plan";
 import { workflowEventTypes } from "@/lib/workflow-events";
 import { appendWorkflowErrorCodeToPath } from "@/lib/workflow-error-routing";
 
@@ -221,6 +238,10 @@ export async function createManualTourAction(leadId: string, formData: FormData)
     });
 
     const scheduledAt = parseScheduledAtFromFormValue(formData.get("scheduledAt"));
+    const explicitAssignedMembershipId = parseAssignedMembershipIdFromFormValue(
+      formData.get("assignedMembershipId"),
+    );
+    const notifyProspect = formData.get("notifyProspect") === "on";
     const workspaceMembership = await getCurrentWorkspaceMembership();
     const lead = await getLeadWorkflowContext(actionContext.workspaceId, leadId);
 
@@ -268,6 +289,35 @@ export async function createManualTourAction(leadId: string, formData: FormData)
       );
     }
 
+    const propertyCalendarSettings = await prisma.property.findFirst({
+      where: {
+        id: lead.propertyId,
+        workspaceId: actionContext.workspaceId,
+      },
+      select: {
+        calendarTargetExternalId: true,
+        calendarTargetProvider: true,
+      },
+    });
+    const eligibleTourCoverageMemberships = workspaceHasCapability(
+      workspaceMembership.workspace.enabledCapabilities,
+      WorkspaceCapability.ORG_MEMBERS,
+    )
+      ? await getEligibleTourCoverageMemberships(actionContext.workspaceId)
+      : [];
+    const assignedMembershipId = resolveAssignedTourMembershipId({
+      currentMembershipId: workspaceMembership.id,
+      eligibleMemberships: eligibleTourCoverageMemberships,
+      explicitAssignedMembershipId,
+      workspaceSchedulingMode: workspaceMembership.workspace.tourSchedulingMode,
+    });
+    const reminderSequence = parseTourReminderSequence(
+      workspaceMembership.workspace.tourReminderSequence,
+    );
+    const reminderSequenceState = buildInitialTourReminderState({
+      reminderSequence,
+      scheduledAt,
+    });
     assertScheduledAtWithinAvailabilityWindow({
       availabilityWindow: parseAvailabilityWindowConfig(
         workspaceMembership.schedulingAvailability,
@@ -297,16 +347,51 @@ export async function createManualTourAction(leadId: string, formData: FormData)
     assertLeadStatusTransitionIsAllowed(lead.status, LeadStatus.TOUR_SCHEDULED);
 
     const now = new Date();
-    const nextTour = await prisma.$transaction(async (transactionClient) => {
+    const { nextTour, calendarSyncState } = await prisma.$transaction(async (transactionClient) => {
       const createdTour = await transactionClient.tourEvent.create({
         data: {
+          assignedMembershipId,
           workspaceId: actionContext.workspaceId,
           leadId: lead.id,
           propertyId: lead.propertyId,
+          reminderSequenceState,
           status: TourEventStatus.SCHEDULED,
           scheduledAt,
         },
       });
+      const calendarSyncState = buildCalendarSyncState({
+        propertyCalendarTargetExternalId:
+          propertyCalendarSettings?.calendarTargetExternalId ?? null,
+        propertyCalendarTargetProvider: propertyCalendarSettings?.calendarTargetProvider ?? null,
+        tourEventId: createdTour.id,
+        workspaceCalendarConnections: parseCalendarConnectionsConfig(
+          workspaceMembership.workspace.calendarConnections,
+        ),
+      });
+
+      await transactionClient.tourEvent.update({
+        where: {
+          id: createdTour.id,
+        },
+        data: {
+          calendarSyncError: calendarSyncState.calendarSyncError,
+          calendarSyncProvider: calendarSyncState.calendarSyncProvider,
+          calendarSyncStatus: calendarSyncState.calendarSyncStatus,
+          calendarSyncedAt: calendarSyncState.calendarSyncedAt,
+          externalCalendarId: calendarSyncState.externalCalendarId,
+        },
+      });
+
+      if (assignedMembershipId) {
+        await transactionClient.membership.update({
+          where: {
+            id: assignedMembershipId,
+          },
+          data: {
+            lastTourAssignedAt: now,
+          },
+        });
+      }
 
       await transactionClient.lead.update({
         where: {
@@ -336,6 +421,8 @@ export async function createManualTourAction(leadId: string, formData: FormData)
           actorType: AuditActorType.USER,
           eventType: workflowEventTypes.tourScheduled,
           payload: {
+            assignedMembershipId,
+            calendarSyncStatus: calendarSyncState.calendarSyncStatus,
             scheduledAt: scheduledAt.toISOString(),
             schedulingMethod: "manual",
             source: "operator",
@@ -343,8 +430,41 @@ export async function createManualTourAction(leadId: string, formData: FormData)
         },
       });
 
-      return createdTour;
+      return {
+        calendarSyncState,
+        nextTour: createdTour,
+      };
     });
+
+    try {
+      await scheduleTourReminderJobs({
+        leadId: lead.id,
+        reminderSequence,
+        scheduledAt,
+        tourEventId: nextTour.id,
+      });
+    } catch {
+      // Reminder enqueue is best-effort and should not block tour scheduling.
+    }
+
+    if (notifyProspect) {
+      const prospectNotificationSent = await sendTourScheduledConfirmation({
+        leadId: lead.id,
+        propertyName: lead.property.name,
+        scheduledAt,
+      });
+
+      if (prospectNotificationSent) {
+        await prisma.tourEvent.update({
+          where: {
+            id: nextTour.id,
+          },
+          data: {
+            prospectNotificationSentAt: new Date(),
+          },
+        });
+      }
+    }
 
     await appendNotificationEvent({
       workspaceId: actionContext.workspaceId,
@@ -353,6 +473,8 @@ export async function createManualTourAction(leadId: string, formData: FormData)
       title: "Manual tour scheduled",
       body: `${lead.fullName} is scheduled for ${lead.property.name} on ${scheduledAt.toLocaleString()}.`,
       payload: {
+        assignedMembershipId,
+        calendarSyncStatus: calendarSyncState.calendarSyncStatus,
         leadId: lead.id,
         tourEventId: nextTour.id,
         scheduledAt: scheduledAt.toISOString(),
@@ -365,6 +487,8 @@ export async function createManualTourAction(leadId: string, formData: FormData)
       eventType: "tour.scheduled",
       signingSecret: lead.workspace.webhookSigningSecret,
       payload: {
+        assignedMembershipId,
+        calendarSyncStatus: calendarSyncState.calendarSyncStatus,
         leadId: lead.id,
         workspaceId: actionContext.workspaceId,
         scheduledAt: scheduledAt.toISOString(),
@@ -664,6 +788,66 @@ function parseScheduledAtFromFormValue(value: FormDataEntryValue | null) {
   }
 
   return scheduledAt;
+}
+
+function parseOptionalFormText(value: FormDataEntryValue | null) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+
+  return normalizedValue.length > 0 ? normalizedValue : null;
+}
+
+function parseAssignedMembershipIdFromFormValue(value: FormDataEntryValue | null) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+async function getEligibleTourCoverageMemberships(workspaceId: string) {
+  const workspaceMemberships = await prisma.membership.findMany({
+    where: {
+      workspaceId,
+    },
+    include: {
+      user: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  return workspaceMemberships.filter((workspaceMembership) =>
+    canMembershipRolePerformLeadAction(workspaceMembership.role, "scheduleTour"),
+  );
+}
+
+async function scheduleTourReminderJobs(params: {
+  leadId: string;
+  reminderSequence: ReturnType<typeof parseTourReminderSequence>;
+  scheduledAt: Date;
+  tourEventId: string;
+}) {
+  const reminderDelays = resolveTourReminderDelays({
+    reminderSequence: params.reminderSequence,
+    scheduledAt: params.scheduledAt,
+  });
+
+  await Promise.all(
+    reminderDelays.map((reminderDelay) =>
+      scheduleReminderSend(
+        {
+          leadId: params.leadId,
+          reminderLabel: reminderDelay.label,
+          reminderStepId: reminderDelay.id,
+          scheduledFor: reminderDelay.sendAt.toISOString(),
+          tourEventId: params.tourEventId,
+        },
+        reminderDelay.delaySeconds,
+      ),
+    ),
+  );
 }
 
 function assertScheduledAtWithinAvailabilityWindow(params: {
@@ -1361,11 +1545,10 @@ export async function declineLeadAction(leadId: string, formData: FormData) {
 
 export async function cancelTourAction(leadId: string, formData: FormData) {
   const actionContext = await getActionContext(leadId);
-  const cancelReasonValue = formData.get("cancelReason");
-  const normalizedCancelReason =
-    typeof cancelReasonValue === "string" && cancelReasonValue.trim().length > 0
-      ? cancelReasonValue.trim()
-      : "Canceled by operator";
+  const operatorCancelReason =
+    parseOptionalFormText(formData.get("operatorCancelReason")) ?? "Canceled by operator";
+  const notifyProspect = formData.get("notifyProspect") === "on";
+  const prospectMessage = parseOptionalFormText(formData.get("prospectMessage"));
   const routeToStatus = parseLeadStatusFromFormValue(formData.get("routeToStatus"));
   const redirectTargetValue = formData.get("redirectTo");
   const fallbackRedirectPath = getLeadDetailPath(leadId);
@@ -1380,12 +1563,26 @@ export async function cancelTourAction(leadId: string, formData: FormData) {
       leadActionPermissionKey: "scheduleTour",
     });
 
+    const workspaceMembership = await getCurrentWorkspaceMembership();
+
     const lead = await prisma.lead.findFirst({
       where: {
         id: leadId,
         workspaceId: actionContext.workspaceId,
       },
       include: {
+        property: {
+          select: {
+            calendarTargetExternalId: true,
+            calendarTargetProvider: true,
+            name: true,
+          },
+        },
+        workspace: {
+          select: {
+            webhookSigningSecret: true,
+          },
+        },
         tours: {
           where: {
             status: "SCHEDULED",
@@ -1420,15 +1617,30 @@ export async function cancelTourAction(leadId: string, formData: FormData) {
 
     assertLeadStatusTransitionIsAllowed(lead.status, targetStatus);
 
+    const calendarSyncState = buildCalendarSyncState({
+      existingExternalCalendarId: activeTour.externalCalendarId,
+      propertyCalendarTargetExternalId: lead.property?.calendarTargetExternalId ?? null,
+      propertyCalendarTargetProvider: lead.property?.calendarTargetProvider ?? null,
+      tourEventId: activeTour.id,
+      workspaceCalendarConnections: parseCalendarConnectionsConfig(
+        workspaceMembership.workspace.calendarConnections,
+      ),
+    });
+
     await prisma.$transaction(async (transactionClient) => {
       await transactionClient.tourEvent.update({
         where: {
           id: activeTour.id,
         },
         data: {
+          calendarSyncError: calendarSyncState.calendarSyncError,
+          calendarSyncProvider: calendarSyncState.calendarSyncProvider,
+          calendarSyncStatus: calendarSyncState.calendarSyncStatus,
+          calendarSyncedAt: calendarSyncState.calendarSyncedAt,
           status: "CANCELED",
           canceledAt: new Date(),
-          cancelReason: normalizedCancelReason,
+          cancelReason: operatorCancelReason,
+          operatorCancelReason,
         },
       });
 
@@ -1461,11 +1673,45 @@ export async function cancelTourAction(leadId: string, formData: FormData) {
           eventType: workflowEventTypes.tourCanceled,
           payload: {
             tourEventId: activeTour.id,
-            cancelReason: normalizedCancelReason,
+            cancelReason: operatorCancelReason,
+            notifyProspect,
             reroutedStatus: targetStatus,
           },
         },
       });
+    });
+
+    if (notifyProspect && lead.property?.name) {
+      const prospectNotificationSent = await sendTourCanceledNotification({
+        leadId: lead.id,
+        propertyName: lead.property.name,
+        prospectMessage,
+      });
+
+      if (prospectNotificationSent) {
+        await prisma.tourEvent.update({
+          where: {
+            id: activeTour.id,
+          },
+          data: {
+            prospectNotificationSentAt: new Date(),
+          },
+        });
+      }
+    }
+
+    await queueOutboundWorkflowWebhook({
+      workspaceId: actionContext.workspaceId,
+      leadId: lead.id,
+      eventType: "tour.canceled",
+      signingSecret: lead.workspace?.webhookSigningSecret ?? null,
+      payload: {
+        leadId: lead.id,
+        operatorCancelReason,
+        reroutedStatus: targetStatus,
+        tourEventId: activeTour.id,
+        workspaceId: actionContext.workspaceId,
+      },
     });
   } catch (error) {
     if (isLeadWorkflowError(error)) {
@@ -1482,6 +1728,14 @@ export async function cancelTourAction(leadId: string, formData: FormData) {
 export async function rescheduleTourAction(leadId: string, formData: FormData) {
   const actionContext = await getActionContext(leadId);
   const redirectTargetValue = formData.get("redirectTo");
+  const explicitAssignedMembershipId = parseAssignedMembershipIdFromFormValue(
+    formData.get("assignedMembershipId"),
+  );
+  const notifyProspect = formData.get("notifyProspect") === "on";
+  const prospectMessage = parseOptionalFormText(formData.get("prospectMessage"));
+  const operatorRescheduleReason =
+    parseOptionalFormText(formData.get("operatorRescheduleReason")) ??
+    "Rescheduled by operator";
   const fallbackRedirectPath = getLeadDetailPath(leadId);
   const redirectPath =
     typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
@@ -1496,6 +1750,9 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
 
     const scheduledAtDate = parseScheduledAtFromFormValue(formData.get("scheduledAt"));
     const workspaceMembership = await getCurrentWorkspaceMembership();
+    const reminderSequence = parseTourReminderSequence(
+      workspaceMembership.workspace.tourReminderSequence,
+    );
 
     const lead = await prisma.lead.findFirst({
       where: {
@@ -1503,6 +1760,19 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
         workspaceId: actionContext.workspaceId,
       },
       include: {
+        property: {
+          select: {
+            calendarTargetExternalId: true,
+            calendarTargetProvider: true,
+            name: true,
+            schedulingAvailability: true,
+          },
+        },
+        workspace: {
+          select: {
+            webhookSigningSecret: true,
+          },
+        },
         tours: {
           where: {
             status: TourEventStatus.SCHEDULED,
@@ -1553,19 +1823,37 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
 
     assertScheduledAtWithinAvailabilityWindow({
       availabilityWindow: parseAvailabilityWindowConfig(
-        propertyAvailability?.schedulingAvailability,
+        propertyAvailability?.schedulingAvailability ?? lead.property?.schedulingAvailability,
       ),
       label: "Property",
       scheduledAt: scheduledAtDate,
     });
 
-    await prisma.$transaction(async (transactionClient) => {
+    const eligibleTourCoverageMemberships = workspaceHasCapability(
+      workspaceMembership.workspace.enabledCapabilities,
+      WorkspaceCapability.ORG_MEMBERS,
+    )
+      ? await getEligibleTourCoverageMemberships(actionContext.workspaceId)
+      : [];
+    const assignedMembershipId = resolveAssignedTourMembershipId({
+      currentMembershipId: workspaceMembership.id,
+      eligibleMemberships: eligibleTourCoverageMemberships,
+      explicitAssignedMembershipId,
+      workspaceSchedulingMode: workspaceMembership.workspace.tourSchedulingMode,
+    });
+    const reminderSequenceState = buildInitialTourReminderState({
+      reminderSequence,
+      scheduledAt: scheduledAtDate,
+    });
+
+    const { calendarSyncState, nextTourEvent } = await prisma.$transaction(async (transactionClient) => {
       if (previousTourEvent) {
         await transactionClient.tourEvent.update({
           where: {
             id: previousTourEvent.id,
           },
           data: {
+            operatorRescheduleReason,
             status: "RESCHEDULED",
           },
         });
@@ -1573,14 +1861,51 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
 
       const nextTourEvent = await transactionClient.tourEvent.create({
         data: {
+          assignedMembershipId,
+          operatorRescheduleReason,
           workspaceId: actionContext.workspaceId,
           leadId: lead.id,
           propertyId: lead.propertyId,
+          reminderSequenceState,
           status: "SCHEDULED",
           scheduledAt: scheduledAtDate,
           previousTourEventId: previousTourEvent?.id ?? null,
         },
       });
+      const calendarSyncState = buildCalendarSyncState({
+        existingExternalCalendarId: previousTourEvent?.externalCalendarId ?? null,
+        propertyCalendarTargetExternalId:
+          lead.property?.calendarTargetExternalId ?? null,
+        propertyCalendarTargetProvider: lead.property?.calendarTargetProvider ?? null,
+        tourEventId: nextTourEvent.id,
+        workspaceCalendarConnections: parseCalendarConnectionsConfig(
+          workspaceMembership.workspace.calendarConnections,
+        ),
+      });
+
+      await transactionClient.tourEvent.update({
+        where: {
+          id: nextTourEvent.id,
+        },
+        data: {
+          calendarSyncError: calendarSyncState.calendarSyncError,
+          calendarSyncProvider: calendarSyncState.calendarSyncProvider,
+          calendarSyncStatus: calendarSyncState.calendarSyncStatus,
+          calendarSyncedAt: calendarSyncState.calendarSyncedAt,
+          externalCalendarId: calendarSyncState.externalCalendarId,
+        },
+      });
+
+      if (assignedMembershipId) {
+        await transactionClient.membership.update({
+          where: {
+            id: assignedMembershipId,
+          },
+          data: {
+            lastTourAssignedAt: new Date(),
+          },
+        });
+      }
 
       await transactionClient.auditEvent.create({
         data: {
@@ -1591,10 +1916,256 @@ export async function rescheduleTourAction(leadId: string, formData: FormData) {
           actorType: AuditActorType.USER,
           eventType: workflowEventTypes.tourRescheduled,
           payload: {
+            assignedMembershipId,
+            calendarSyncStatus: calendarSyncState.calendarSyncStatus,
+            notifyProspect,
+            operatorRescheduleReason,
             previousTourEventId: previousTourEvent?.id ?? null,
             nextTourEventId: nextTourEvent.id,
             scheduledAt: scheduledAtDate.toISOString(),
           },
+        },
+      });
+
+      return {
+        calendarSyncState,
+        nextTourEvent,
+      };
+    });
+
+    try {
+      await scheduleTourReminderJobs({
+        leadId: lead.id,
+        reminderSequence,
+        scheduledAt: scheduledAtDate,
+        tourEventId: nextTourEvent.id,
+      });
+    } catch {
+      // Reminder enqueue is best-effort and should not block tour rescheduling.
+    }
+
+    if (notifyProspect && lead.property?.name) {
+      const prospectNotificationSent = await sendTourRescheduledNotification({
+        leadId: lead.id,
+        propertyName: lead.property.name,
+        prospectMessage,
+        scheduledAt: scheduledAtDate,
+      });
+
+      if (prospectNotificationSent) {
+        await prisma.tourEvent.update({
+          where: {
+            id: nextTourEvent.id,
+          },
+          data: {
+            prospectNotificationSentAt: new Date(),
+          },
+        });
+      }
+    }
+
+    await queueOutboundWorkflowWebhook({
+      workspaceId: actionContext.workspaceId,
+      leadId: lead.id,
+      eventType: "tour.rescheduled",
+      signingSecret: lead.workspace?.webhookSigningSecret ?? null,
+      payload: {
+        assignedMembershipId,
+        calendarSyncStatus: calendarSyncState.calendarSyncStatus,
+        leadId: lead.id,
+        nextTourEventId: nextTourEvent.id,
+        operatorRescheduleReason,
+        scheduledAt: scheduledAtDate.toISOString(),
+        workspaceId: actionContext.workspaceId,
+      },
+    });
+  } catch (error) {
+    if (isLeadWorkflowError(error)) {
+      redirectToWorkflowErrorPath(redirectPath, error.code);
+    }
+
+    throw error;
+  }
+
+  refreshLeadWorkflow(leadId);
+  redirect(redirectPath);
+}
+
+export async function completeTourAction(leadId: string, formData: FormData) {
+  const actionContext = await getActionContext(leadId);
+  const redirectTargetValue = formData.get("redirectTo");
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : getLeadDetailPath(leadId);
+
+  try {
+    await assertLeadActionPermission({
+      ...actionContext,
+      leadActionPermissionKey: "scheduleTour",
+    });
+
+    const lead = await prisma.lead.findFirst({
+      where: {
+        id: leadId,
+        workspaceId: actionContext.workspaceId,
+      },
+      include: {
+        tours: {
+          where: {
+            status: TourEventStatus.SCHEDULED,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 1,
+        },
+      },
+    });
+
+    if (!lead) {
+      throw new LeadWorkflowError("LEAD_NOT_FOUND", `Lead ${leadId} was not found.`);
+    }
+
+    const activeTour = lead.tours[0] ?? null;
+
+    if (!activeTour) {
+      throw new LeadWorkflowError(
+        "ACTION_REQUIRES_QUALIFIED_LEAD",
+        "No active scheduled tour exists for this lead.",
+      );
+    }
+
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.tourEvent.update({
+        where: {
+          id: activeTour.id,
+        },
+        data: {
+          completedAt: new Date(),
+          status: TourEventStatus.COMPLETED,
+        },
+      });
+
+      await transactionClient.lead.update({
+        where: {
+          id: lead.id,
+        },
+        data: {
+          lastActivityAt: new Date(),
+          status: LeadStatus.QUALIFIED,
+        },
+      });
+
+      await transactionClient.auditEvent.create({
+        data: {
+          actorType: AuditActorType.USER,
+          actorUserId: actionContext.actorUserId,
+          eventType: "tour_completed",
+          leadId: lead.id,
+          payload: {
+            leadId: lead.id,
+            tourEventId: activeTour.id,
+          },
+          propertyId: lead.propertyId,
+          workspaceId: actionContext.workspaceId,
+        },
+      });
+    });
+  } catch (error) {
+    if (isLeadWorkflowError(error)) {
+      redirectToWorkflowErrorPath(redirectPath, error.code);
+    }
+
+    throw error;
+  }
+
+  refreshLeadWorkflow(leadId);
+  redirect(redirectPath);
+}
+
+export async function markTourNoShowAction(leadId: string, formData: FormData) {
+  const actionContext = await getActionContext(leadId);
+  const redirectTargetValue = formData.get("redirectTo");
+  const operatorNoShowReason =
+    parseOptionalFormText(formData.get("operatorNoShowReason")) ?? "Prospect did not attend.";
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : getLeadDetailPath(leadId);
+
+  try {
+    await assertLeadActionPermission({
+      ...actionContext,
+      leadActionPermissionKey: "scheduleTour",
+    });
+
+    const lead = await prisma.lead.findFirst({
+      where: {
+        id: leadId,
+        workspaceId: actionContext.workspaceId,
+      },
+      include: {
+        tours: {
+          where: {
+            status: TourEventStatus.SCHEDULED,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 1,
+        },
+      },
+    });
+
+    if (!lead) {
+      throw new LeadWorkflowError("LEAD_NOT_FOUND", `Lead ${leadId} was not found.`);
+    }
+
+    const activeTour = lead.tours[0] ?? null;
+
+    if (!activeTour) {
+      throw new LeadWorkflowError(
+        "ACTION_REQUIRES_QUALIFIED_LEAD",
+        "No active scheduled tour exists for this lead.",
+      );
+    }
+
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.tourEvent.update({
+        where: {
+          id: activeTour.id,
+        },
+        data: {
+          completedAt: new Date(),
+          operatorNoShowReason,
+          status: TourEventStatus.NO_SHOW,
+        },
+      });
+
+      await transactionClient.lead.update({
+        where: {
+          id: lead.id,
+        },
+        data: {
+          lastActivityAt: new Date(),
+          status: LeadStatus.UNDER_REVIEW,
+        },
+      });
+
+      await transactionClient.auditEvent.create({
+        data: {
+          actorType: AuditActorType.USER,
+          actorUserId: actionContext.actorUserId,
+          eventType: "tour_no_show_recorded",
+          leadId: lead.id,
+          payload: {
+            leadId: lead.id,
+            operatorNoShowReason,
+            tourEventId: activeTour.id,
+          },
+          propertyId: lead.propertyId,
+          workspaceId: actionContext.workspaceId,
         },
       });
     });

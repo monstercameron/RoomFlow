@@ -1,11 +1,15 @@
 import { PageHeader } from "@/components/page-header";
+import { CalendarSyncProvider } from "@/generated/prisma/client";
 import { updateWorkspaceQuietHoursAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateWorkspaceMessagingThrottleSettingsAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateOperatorSchedulingAvailabilityAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateWorkspaceCalendarConnectionAction } from "@/app/(app)/app/settings/integrations/actions";
+import { updateWorkspaceTourSchedulingSettingsAction } from "@/app/(app)/app/settings/integrations/actions";
 import { getMessagingSettingsViewData } from "@/lib/app-data";
 import { availabilityDayOptions } from "@/lib/availability-windows";
 import { validateInboundIntegrationConfiguration } from "@/lib/integration-config-validation";
 import { onboardingChannelOptions } from "@/lib/onboarding";
+import { calendarConnectionStatusOptions, tourSchedulingModeOptions } from "@/lib/tour-scheduling";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3001";
 
@@ -18,6 +22,10 @@ export default async function IntegrationsSettingsPage() {
     (channel) => channel.mode === "source_tag",
   );
   const integrationValidationIssues = validateInboundIntegrationConfiguration({
+    googleClientId: process.env.GOOGLE_CLIENT_ID,
+    googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    microsoftClientId: process.env.MICROSOFT_CLIENT_ID,
+    microsoftClientSecret: process.env.MICROSOFT_CLIENT_SECRET,
     resendApiKey: process.env.RESEND_API_KEY,
     resendFromEmail: process.env.RESEND_FROM_EMAIL,
     twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
@@ -56,6 +64,142 @@ export default async function IntegrationsSettingsPage() {
               ))
             )}
           </div>
+        </div>
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
+          <div className="text-xl font-semibold">Calendar sync connections</div>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
+            Store the workspace connection state for Google Calendar and Outlook. Scheduled, rescheduled, canceled, and no-show tour updates will sync only when the selected provider is active.
+          </p>
+          {!messagingSettings.canUseCalendarSync ? (
+            <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+              Calendar sync requires the Org package with the calendar sync capability enabled.
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              <form
+                action={updateWorkspaceCalendarConnectionAction}
+                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+              >
+                <div className="text-sm font-medium">Google Calendar</div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  Current state: {messagingSettings.googleCalendarConnectionSummary}
+                </div>
+                <label className="mt-4 flex items-center gap-2">
+                  <input
+                    defaultChecked={messagingSettings.googleCalendarConnectionSyncEnabled}
+                    name="syncEnabled"
+                    type="checkbox"
+                  />
+                  <span className="text-sm font-medium">Enable Google sync</span>
+                </label>
+                <label className="mt-3 block space-y-2">
+                  <span className="text-sm font-medium">Connected account</span>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={messagingSettings.googleCalendarConnectedAccount}
+                    name="connectedAccount"
+                    placeholder="ops@roomflow.app"
+                    type="text"
+                  />
+                </label>
+                <label className="mt-3 block space-y-2">
+                  <span className="text-sm font-medium">Connection status</span>
+                  <select
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={messagingSettings.googleCalendarConnectionStatus}
+                    name="status"
+                  >
+                    {calendarConnectionStatusOptions.map((statusOption) => (
+                      <option key={statusOption.value} value={statusOption.value}>
+                        {statusOption.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="mt-3 block space-y-2">
+                  <span className="text-sm font-medium">Error note</span>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={messagingSettings.googleCalendarConnectionError ?? ""}
+                    name="errorMessage"
+                    placeholder="Refresh token expired, calendar API disabled, or target unavailable."
+                    type="text"
+                  />
+                </label>
+                <input name="provider" type="hidden" value={CalendarSyncProvider.GOOGLE} />
+                <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+                <div className="mt-4 flex justify-end">
+                  <button
+                    className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                    type="submit"
+                  >
+                    Save Google sync
+                  </button>
+                </div>
+              </form>
+              <form
+                action={updateWorkspaceCalendarConnectionAction}
+                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+              >
+                <div className="text-sm font-medium">Outlook Calendar</div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  Current state: {messagingSettings.outlookCalendarConnectionSummary}
+                </div>
+                <label className="mt-4 flex items-center gap-2">
+                  <input
+                    defaultChecked={messagingSettings.outlookCalendarConnectionSyncEnabled}
+                    name="syncEnabled"
+                    type="checkbox"
+                  />
+                  <span className="text-sm font-medium">Enable Outlook sync</span>
+                </label>
+                <label className="mt-3 block space-y-2">
+                  <span className="text-sm font-medium">Connected account</span>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={messagingSettings.outlookCalendarConnectedAccount}
+                    name="connectedAccount"
+                    placeholder="leasing@roomflow.app"
+                    type="text"
+                  />
+                </label>
+                <label className="mt-3 block space-y-2">
+                  <span className="text-sm font-medium">Connection status</span>
+                  <select
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={messagingSettings.outlookCalendarConnectionStatus}
+                    name="status"
+                  >
+                    {calendarConnectionStatusOptions.map((statusOption) => (
+                      <option key={statusOption.value} value={statusOption.value}>
+                        {statusOption.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="mt-3 block space-y-2">
+                  <span className="text-sm font-medium">Error note</span>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={messagingSettings.outlookCalendarConnectionError ?? ""}
+                    name="errorMessage"
+                    placeholder="Consent missing, mailbox unavailable, or target inaccessible."
+                    type="text"
+                  />
+                </label>
+                <input name="provider" type="hidden" value={CalendarSyncProvider.OUTLOOK} />
+                <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+                <div className="mt-4 flex justify-end">
+                  <button
+                    className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                    type="submit"
+                  >
+                    Save Outlook sync
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
           <div className="text-xl font-semibold">Operator tour availability</div>
@@ -149,6 +293,97 @@ export default async function IntegrationsSettingsPage() {
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
+          <div className="text-xl font-semibold">Tour assignment and reminders</div>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
+            Control whether tours stay with the current operator, use manual teammate assignment, or rotate across the shared-coverage pool. Reminder offsets are tied to every scheduled tour.
+          </p>
+          <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm">
+            Scheduling mode: {messagingSettings.tourSchedulingModeSummary} · Reminder sequence: {messagingSettings.tourReminderSequenceSummary}
+          </div>
+          <form
+            action={updateWorkspaceTourSchedulingSettingsAction}
+            className="mt-5 grid gap-3 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4 md:grid-cols-3"
+          >
+            <label className="space-y-2 md:col-span-3">
+              <span className="text-sm font-medium">Assignment mode</span>
+              <select
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={messagingSettings.tourSchedulingMode}
+                name="tourSchedulingMode"
+              >
+                {tourSchedulingModeOptions.map((modeOption) => (
+                  <option
+                    disabled={
+                      !messagingSettings.canUseTeamScheduling &&
+                      modeOption.value !== "DIRECT"
+                    }
+                    key={modeOption.value}
+                    value={modeOption.value}
+                  >
+                    {modeOption.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">First reminder (minutes before)</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={String(messagingSettings.tourReminderSequence[0]?.minutesBefore ?? 1440)}
+                min={1}
+                name="firstReminderMinutes"
+                type="number"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium">Second reminder (minutes before)</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={String(messagingSettings.tourReminderSequence[1]?.minutesBefore ?? 60)}
+                min={1}
+                name="secondReminderMinutes"
+                type="number"
+              />
+            </label>
+            <div className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm text-[var(--color-muted)]">
+              {messagingSettings.canUseTeamScheduling
+                ? "Shared-coverage member participation is managed on the members page."
+                : "Upgrade to an Org workspace to unlock teammate assignment and round-robin coverage."}
+            </div>
+            <input type="hidden" name="redirectTo" value="/app/settings/integrations" />
+            <div className="flex justify-end md:col-span-3">
+              <button
+                className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                type="submit"
+              >
+                Save scheduling settings
+              </button>
+            </div>
+          </form>
+          {messagingSettings.sharedCoverageMemberships.length > 0 ? (
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {messagingSettings.sharedCoverageMemberships.map((member) => (
+                <div
+                  key={`${member.id}-coverage`}
+                  className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4 text-sm"
+                >
+                  <div className="font-medium">{member.name}</div>
+                  <div className="mt-2 text-[var(--color-muted)]">
+                    Coverage: {member.sharedTourCoverageEnabled ? "Shared pool" : "Direct only"}
+                  </div>
+                  <div className="mt-1 text-[var(--color-muted)]">
+                    Availability: {member.schedulingAvailabilitySummary}
+                  </div>
+                  <div className="mt-1 text-[var(--color-muted)]">
+                    Last assignment: {member.lastTourAssignedAt}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">

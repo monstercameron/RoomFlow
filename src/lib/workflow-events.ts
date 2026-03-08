@@ -22,6 +22,7 @@ export const workflowEventTypes = {
   outboundMessageQueued: "outbound_message_queued",
   outboundMessageBlocked: "outbound_message_blocked",
   outboundMessageSent: "outbound_message_sent",
+  reminderSent: "reminder_sent",
   deliveryFailed: "delivery_failed",
   staleMarked: "lead_stale_marked",
   staleArchiveSuggested: "lead_stale_archive_suggested",

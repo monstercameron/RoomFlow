@@ -1638,36 +1638,28 @@ export async function performLeadWorkflowAction(params: {
   });
 
   if (params.action === "schedule_tour") {
-    await prisma.tourEvent.create({
-      data: {
-        workspaceId: params.workspaceId,
-        leadId: lead.id,
-        propertyId: lead.propertyId,
-        status: TourEventStatus.SCHEDULED,
-        scheduledAt: now,
-      },
-    });
-
     await appendNotificationEvent({
       workspaceId: params.workspaceId,
       leadId: lead.id,
       type: NotificationType.TOUR_SCHEDULED,
-      title: "Tour scheduled",
-      body: `${lead.fullName} has been moved to tour scheduled.`,
+      title: "Scheduling handoff sent",
+      body: `${lead.fullName} has received the self-serve scheduling handoff.`,
       payload: {
         leadId: lead.id,
+        schedulingMethod: "handoff",
       },
     });
 
     await queueOutboundWorkflowWebhook({
       workspaceId: params.workspaceId,
       leadId: lead.id,
-      eventType: "tour.scheduled",
+      eventType: "tour.handoff_sent",
       signingSecret: lead.workspace.webhookSigningSecret,
       payload: {
         leadId: lead.id,
         workspaceId: params.workspaceId,
         scheduledAt: now.toISOString(),
+        schedulingMethod: "handoff",
       },
     });
   }

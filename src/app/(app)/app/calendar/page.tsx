@@ -55,6 +55,10 @@ export default async function CalendarPage() {
                     <div className="mt-1 font-medium">{tour.scheduledAt}</div>
                   </div>
                   <div>
+                    <div className="text-sm text-[var(--color-muted)]">Assigned to</div>
+                    <div className="mt-1 font-medium">{tour.assignedTo}</div>
+                  </div>
+                  <div>
                     <div className="text-sm text-[var(--color-muted)]">Move-in date</div>
                     <div className="mt-1 font-medium">{tour.moveInDate}</div>
                   </div>
@@ -66,6 +70,12 @@ export default async function CalendarPage() {
                     <div className="text-sm text-[var(--color-muted)]">Last activity</div>
                     <div className="mt-1 font-medium">{tour.lastActivity}</div>
                   </div>
+                </div>
+                <div className="mt-4 text-sm text-[var(--color-muted)]">
+                  Sync: {tour.calendarSyncSummary}
+                </div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  Reminders: {tour.reminderSummary}
                 </div>
                 {tour.externalCalendarId ? (
                   <div className="mt-4 text-sm text-[var(--color-muted)]">

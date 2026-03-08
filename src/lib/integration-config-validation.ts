@@ -5,6 +5,10 @@ type IntegrationValidationIssue = {
 };
 
 export function validateInboundIntegrationConfiguration(params: {
+  googleClientId: string | undefined;
+  googleClientSecret: string | undefined;
+  microsoftClientId: string | undefined;
+  microsoftClientSecret: string | undefined;
   resendApiKey: string | undefined;
   resendFromEmail: string | undefined;
   twilioAccountSid: string | undefined;
@@ -60,6 +64,38 @@ export function validateInboundIntegrationConfiguration(params: {
       level: "error",
       detail:
         "Inbound webhook signing secret is missing; provider webhook signature verification is effectively disabled.",
+    });
+  }
+
+  if (!params.googleClientId || params.googleClientId === "replace-me") {
+    issues.push({
+      key: "GOOGLE_CLIENT_ID",
+      level: "warning",
+      detail: "Google Calendar sync is not fully configured because the Google client ID is missing.",
+    });
+  }
+
+  if (!params.googleClientSecret || params.googleClientSecret === "replace-me") {
+    issues.push({
+      key: "GOOGLE_CLIENT_SECRET",
+      level: "warning",
+      detail: "Google Calendar sync is not fully configured because the Google client secret is missing.",
+    });
+  }
+
+  if (!params.microsoftClientId || params.microsoftClientId === "replace-me") {
+    issues.push({
+      key: "MICROSOFT_CLIENT_ID",
+      level: "warning",
+      detail: "Outlook calendar sync is not fully configured because the Microsoft client ID is missing.",
+    });
+  }
+
+  if (!params.microsoftClientSecret || params.microsoftClientSecret === "replace-me") {
+    issues.push({
+      key: "MICROSOFT_CLIENT_SECRET",
+      level: "warning",
+      detail: "Outlook calendar sync is not fully configured because the Microsoft client secret is missing.",
     });
   }
 
