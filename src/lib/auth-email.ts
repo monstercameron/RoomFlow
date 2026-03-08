@@ -1,3 +1,4 @@
+import type { MembershipRole } from "@/generated/prisma/client";
 import { Resend } from "resend";
 import {
   buildEmailVerificationCallbackPath,
@@ -216,5 +217,56 @@ export async function sendMagicLinkEmail(params: {
 
     console.error("[auth] Failed to send magic link via Resend:", error);
     console.info(`[auth] Magic link fallback for ${params.recipientEmailAddress}: ${magicLinkUrl}`);
+  }
+}
+
+function formatMembershipRoleLabel(membershipRole: MembershipRole) {
+  return membershipRole.charAt(0) + membershipRole.slice(1).toLowerCase();
+}
+
+export async function sendWorkspaceInviteEmail(params: {
+  inviteUrl: string;
+  invitedByName?: string | null;
+  recipientEmailAddress: string;
+  role: MembershipRole;
+  workspaceName: string;
+}) {
+  const resendClient = getAuthResendClient();
+  const senderEmailAddress = process.env.RESEND_FROM_EMAIL;
+  const roleLabel = formatMembershipRoleLabel(params.role);
+  const inviterName = params.invitedByName?.trim() || "A Roomflow teammate";
+
+  // Non-production environments should stay self-contained, so they expose the
+  // invite link in logs instead of depending on outbound email delivery.
+  if (!shouldUseRealEmailDelivery() || !resendClient || !senderEmailAddress) {
+    console.info(
+      `[auth] Workspace invite for ${params.recipientEmailAddress}: ${params.inviteUrl}`,
+    );
+    return;
+  }
+
+  try {
+    await resendClient.emails.send({
+      from: senderEmailAddress,
+      to: params.recipientEmailAddress,
+      subject: `Join ${params.workspaceName} on Roomflow`,
+      text: [
+        `${inviterName} invited you to join ${params.workspaceName} on Roomflow as a ${roleLabel}.`,
+        "",
+        "Open the invite below to join this workspace using an existing or new account:",
+        params.inviteUrl,
+        "",
+        "If you did not expect this invitation, you can ignore this email.",
+      ].join("\n"),
+    });
+  } catch (error) {
+    if (shouldUseRealEmailDelivery()) {
+      throw error;
+    }
+
+    console.error("[auth] Failed to send workspace invite via Resend:", error);
+    console.info(
+      `[auth] Workspace invite fallback for ${params.recipientEmailAddress}: ${params.inviteUrl}`,
+    );
   }
 }

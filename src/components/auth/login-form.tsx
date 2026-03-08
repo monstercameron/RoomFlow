@@ -3,8 +3,14 @@
 import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
 import { useState } from "react";
 
-export function LoginForm() {
-  const [emailAddress, setEmailAddress] = useState("test@roomflow.local");
+export function LoginForm(props?: {
+  callbackPath?: string;
+  defaultEmailAddress?: string;
+}) {
+  const callbackPath = props?.callbackPath ?? "/onboarding";
+  const [emailAddress, setEmailAddress] = useState(
+    props?.defaultEmailAddress ?? "test@roomflow.local",
+  );
   const [passwordValue, setPasswordValue] = useState("Roomflow123!");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
@@ -25,14 +31,14 @@ export function LoginForm() {
             },
             credentials: "include",
             body: JSON.stringify({
+              callbackURL: callbackPath,
               email: emailAddress,
               password: passwordValue,
-              callbackURL: "/onboarding",
             }),
           });
 
           if (signInResponse.ok) {
-            window.location.assign("/app");
+            window.location.assign(callbackPath);
             return;
           }
 
@@ -47,7 +53,7 @@ export function LoginForm() {
             window.location.assign(
               buildEmailVerificationPagePath({
                 emailAddress,
-                nextPath: "/onboarding",
+                nextPath: callbackPath,
               }),
             );
             return;

@@ -1,14 +1,24 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SignupForm } from "@/components/auth/signup-form";
+import { normalizeApplicationPath } from "@/lib/auth-urls";
 import { getAuthenticatedRedirectPath } from "@/lib/app-data";
 import { getServerSession } from "@/lib/session";
 
-export default async function SignupPage() {
+type SignupPageProps = {
+  searchParams: Promise<{
+    callbackURL?: string;
+    email?: string;
+  }>;
+};
+
+export default async function SignupPage({ searchParams }: SignupPageProps) {
   const session = await getServerSession();
+  const resolvedSearchParams = await searchParams;
+  const callbackPath = normalizeApplicationPath(resolvedSearchParams.callbackURL ?? "/onboarding");
 
   if (session) {
-    redirect(await getAuthenticatedRedirectPath());
+    redirect(resolvedSearchParams.callbackURL ? callbackPath : await getAuthenticatedRedirectPath());
   }
 
   return (
@@ -24,7 +34,10 @@ export default async function SignupPage() {
           The initial build path is single-workspace and single-operator first.
           Team roles, billing, and external integrations come later.
         </p>
-        <SignupForm />
+        <SignupForm
+          callbackPath={callbackPath}
+          defaultEmailAddress={resolvedSearchParams.email}
+        />
         <div className="mt-4 text-sm text-[var(--color-muted)]">
           Already have access?{" "}
           <Link className="font-medium text-[var(--color-accent-strong)]" href="/login">

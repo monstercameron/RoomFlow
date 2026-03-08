@@ -448,7 +448,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [ ] Add optional passkey registration and sign-in.
 - [ ] Add account-linking UI and server actions for multiple auth methods on one identity.
 - [x] Add session and device management UI for revoking active sessions.
-- [ ] Add workspace invite acceptance flow for existing and new users.
+- [x] Add workspace invite acceptance flow for existing and new users.
 - [x] Add workspace switching UI for users with access to multiple workspaces.
 
 ## Phase 13: workspace, plans, and account packaging

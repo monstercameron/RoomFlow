@@ -5,10 +5,14 @@ import { useRouter } from "next/navigation";
 import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
 import { authClient } from "@/lib/auth-client";
 
-export function SignupForm() {
+export function SignupForm(props?: {
+  callbackPath?: string;
+  defaultEmailAddress?: string;
+}) {
   const router = useRouter();
+  const callbackPath = props?.callbackPath ?? "/onboarding";
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(props?.defaultEmailAddress ?? "");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,10 +29,10 @@ export function SignupForm() {
 
         await authClient.signUp.email(
           {
-            name,
+            callbackURL: callbackPath,
             email,
+            name,
             password,
-            callbackURL: "/onboarding",
           },
           {
             onError(context) {
@@ -39,7 +43,7 @@ export function SignupForm() {
               router.push(
                 buildEmailVerificationPagePath({
                   emailAddress: email,
-                  nextPath: "/onboarding",
+                  nextPath: callbackPath,
                 }),
               );
               router.refresh();

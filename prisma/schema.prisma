@@ -168,6 +168,8 @@ model User {
   sessions      Session[]
   memberships   Membership[]
   auditEvents   AuditEvent[] @relation("AuditActor")
+  sentWorkspaceInvites     WorkspaceInvite[] @relation("WorkspaceInviteCreatedBy")
+  acceptedWorkspaceInvites WorkspaceInvite[] @relation("WorkspaceInviteAcceptedBy")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 }
@@ -181,6 +183,7 @@ model Workspace {
   dailyAutomatedSendCap Int               @default(3)
   webhookSigningSecret  String?
   memberships           Membership[]
+  workspaceInvites      WorkspaceInvite[]
   properties            Property[]
   leadSources           LeadSource[]
   leads                 Lead[]
@@ -205,6 +208,28 @@ model Membership {
 
   @@unique([userId, workspaceId])
   @@index([workspaceId, role])
+}
+
+model WorkspaceInvite {
+  id               String         @id @default(cuid())
+  workspaceId      String
+  email            String
+  role             MembershipRole
+  tokenHash        String         @unique
+  invitedByUserId  String
+  acceptedByUserId String?
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  expiresAt        DateTime
+  workspace        Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedByUser    User           @relation("WorkspaceInviteCreatedBy", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  acceptedByUser   User?          @relation("WorkspaceInviteAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, email])
+  @@index([email, expiresAt])
 }
 
 model Property {

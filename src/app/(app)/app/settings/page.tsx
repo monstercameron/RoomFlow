@@ -79,6 +79,19 @@ export default async function SettingsPage() {
             Open security
           </Link>
         </div>
+
+        <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className="text-xl font-semibold">Members</div>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
+            Invite teammates, review pending workspace access, and confirm who can work this queue.
+          </p>
+          <Link
+            className="mt-5 inline-flex rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+            href="/app/settings/members"
+          >
+            Open members
+          </Link>
+        </div>
       </div>
     </main>
   );

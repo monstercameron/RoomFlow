@@ -1,14 +1,24 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/auth/login-form";
+import { normalizeApplicationPath } from "@/lib/auth-urls";
 import { getAuthenticatedRedirectPath } from "@/lib/app-data";
 import { getServerSession } from "@/lib/session";
 
-export default async function LoginPage() {
+type LoginPageProps = {
+  searchParams: Promise<{
+    callbackURL?: string;
+    email?: string;
+  }>;
+};
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await getServerSession();
+  const resolvedSearchParams = await searchParams;
+  const callbackPath = normalizeApplicationPath(resolvedSearchParams.callbackURL ?? "/onboarding");
 
   if (session) {
-    redirect(await getAuthenticatedRedirectPath());
+    redirect(resolvedSearchParams.callbackURL ? callbackPath : await getAuthenticatedRedirectPath());
   }
 
   return (
@@ -34,7 +44,10 @@ export default async function LoginPage() {
           <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
             Test login is prefilled for local review.
           </div>
-          <LoginForm />
+          <LoginForm
+            callbackPath={callbackPath}
+            defaultEmailAddress={resolvedSearchParams.email}
+          />
           <div className="mt-4 text-sm text-[var(--color-muted)]">
             Need an account?{" "}
             <Link className="font-medium text-[var(--color-accent-strong)]" href="/signup">
