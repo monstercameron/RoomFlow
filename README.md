@@ -397,3 +397,5 @@ Once the core qualification workflow is solid, Roomflow can expand into:
 * portfolio-level lead intelligence
 
 The long-term vision is a focused operating system for **shared-housing intake and qualification**, not a generic property management suite.
+#   R o o m F l o w  
+ 
