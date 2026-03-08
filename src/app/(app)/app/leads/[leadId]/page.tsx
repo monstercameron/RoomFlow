@@ -357,6 +357,37 @@ export default async function LeadDetailPage({
                 action={sendManualOutboundMessageAction.bind(null, lead.id)}
                 className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
               >
+                <div className="text-sm font-semibold">Internal note</div>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">
+                  Save private operator context directly on the lead thread without sending anything externally.
+                </p>
+                <input type="hidden" name="manualChannel" value="INTERNAL_NOTE" />
+                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <label className="mt-3 block space-y-2">
+                  <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                    Note
+                  </span>
+                  <textarea
+                    className="min-h-28 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    name="manualBody"
+                    placeholder="Capture context, objections, follow-up plans, or team-only guidance."
+                    required
+                  />
+                </label>
+                <button
+                  className="mt-3 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium"
+                  type="submit"
+                >
+                  Save note
+                </button>
+              </form>
+            ) : null}
+
+            {lead.actions.manualOutbound ? (
+              <form
+                action={sendManualOutboundMessageAction.bind(null, lead.id)}
+                className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+              >
                 <div className="text-sm font-semibold">Manual outbound</div>
                 <p className="mt-1 text-xs text-[var(--color-muted)]">
                   Operator-initiated messages stay available even when automation is blocked.
@@ -370,9 +401,9 @@ export default async function LeadDetailPage({
                       className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
                       name="manualChannel"
                       required
-                      defaultValue="INTERNAL_NOTE"
+                      defaultValue="EMAIL"
                     >
-                      {["INTERNAL_NOTE", "EMAIL", "SMS"].map((manualChannelOption) => (
+                      {["EMAIL", "SMS"].map((manualChannelOption) => (
                         <option key={manualChannelOption} value={manualChannelOption}>
                           {manualChannelOption.replaceAll("_", " ")}
                         </option>
@@ -510,11 +541,11 @@ export default async function LeadDetailPage({
               <div className="mt-4 space-y-3">
               {lead.messages.map((message: (typeof lead.messages)[number]) => (
                 <div
-                  key={`${message.at}-${message.direction}`}
+                  key={`${message.at}-${message.direction}-${message.channel}`}
                   className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3"
                 >
                   <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
-                    {message.direction} | {message.at}
+                    {message.channel} | {message.direction} | {message.at}
                   </div>
                   <div className="mt-2 text-sm leading-7">{message.body}</div>
                 </div>

@@ -473,7 +473,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 
 ## Phase 15: communications hub depth
 
-- [ ] Add internal notes to leads and message threads.
+- [x] Add internal notes to leads and message threads.
 - [ ] Add teammate @mentions in private notes.
 - [ ] Add formal message types for screening invite, tour invite, application invite, house-rules acknowledgment, onboarding, decline, and waitlist notice.
 - [ ] Add branded message formatting for structured invitations and notices.

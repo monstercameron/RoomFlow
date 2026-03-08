@@ -11,6 +11,7 @@ import {
   evaluateLeadAction,
   requestInfoAction,
   scheduleTourAction,
+  sendManualOutboundMessageAction,
   sendApplicationAction,
 } from "@/lib/lead-actions";
 
@@ -122,6 +123,26 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                   </div>
                   <div className="mt-2 text-sm leading-7">{thread.latestMessage}</div>
                 </div>
+                <form
+                  action={sendManualOutboundMessageAction.bind(null, thread.id)}
+                  className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+                >
+                  <div className="text-sm font-medium">Internal note</div>
+                  <input type="hidden" name="manualChannel" value="INTERNAL_NOTE" />
+                  <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
+                  <textarea
+                    className="mt-3 min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    name="manualBody"
+                    placeholder="Add private context to this lead thread."
+                    required
+                  />
+                  <button
+                    className="mt-3 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium"
+                    type="submit"
+                  >
+                    Save note
+                  </button>
+                </form>
               </div>
 
               <div className="flex min-w-72 flex-col gap-3">

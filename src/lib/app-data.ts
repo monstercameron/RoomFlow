@@ -804,7 +804,9 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
 
   const messages =
     lead.conversation?.messages.map((message) => ({
+      channel: formatChannelLabel(message.channel),
       direction: formatEnumLabel(message.direction),
+      isInternalNote: message.channel === MessageChannel.INTERNAL_NOTE,
       at: formatRelativeTime(
         message.sentAt ?? message.receivedAt ?? message.createdAt,
       ),
@@ -1106,8 +1108,12 @@ export const getInboxViewData = cache(async (queueFilter?: string) => {
     latestMessage:
       lead.conversation?.messages[0]?.body ?? "No messages yet on this lead.",
     latestMessageDirection: lead.conversation?.messages[0]
-      ? formatEnumLabel(lead.conversation.messages[0].direction)
+      ? lead.conversation.messages[0].channel === MessageChannel.INTERNAL_NOTE
+        ? "Internal note"
+        : formatEnumLabel(lead.conversation.messages[0].direction)
       : "No thread",
+    latestMessageIsInternalNote:
+      lead.conversation?.messages[0]?.channel === MessageChannel.INTERNAL_NOTE,
     needsAssignment: !lead.propertyId && roleActionPermissions.assignProperty,
     availableProperties: properties,
   }));
