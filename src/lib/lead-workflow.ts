@@ -49,6 +49,7 @@ import {
   markMessageProviderUnresolved,
   sendQueuedMessage,
 } from "@/lib/message-delivery";
+import { formatBrandedMessageForLead } from "@/lib/message-branding";
 import { sendOwnerAdminNotificationEmail } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
 import {
@@ -671,7 +672,12 @@ function getTemplateFallback(
 }
 
 export function renderTemplateForLead(
-  template: { subject: string | null; body: string; type: TemplateType },
+  template: {
+    subject: string | null;
+    body: string;
+    type: TemplateType;
+    channel?: MessageChannel;
+  },
   lead: TemplateRenderLeadContext,
 ) {
   const firstName = lead.fullName.split(" ")[0] || lead.fullName;
@@ -695,9 +701,17 @@ export function renderTemplateForLead(
       return `{{${key}}}`;
     });
 
+  const renderedSubject = replaceTokens(template.subject);
+  const renderedBody = replaceTokens(template.body);
+
   return {
-    subject: replaceTokens(template.subject),
-    body: replaceTokens(template.body),
+    subject: renderedSubject,
+    body: formatBrandedMessageForLead({
+      body: renderedBody,
+      channel: template.channel ?? MessageChannel.EMAIL,
+      type: template.type,
+      lead,
+    }),
   };
 }
 
@@ -715,7 +729,12 @@ function extractTemplateTokens(value: string) {
 }
 
 export function renderTemplateForLeadSafely(
-  template: { subject: string | null; body: string; type: TemplateType },
+  template: {
+    subject: string | null;
+    body: string;
+    type: TemplateType;
+    channel?: MessageChannel;
+  },
   lead: TemplateRenderLeadContext,
 ) {
   const rendered = renderTemplateForLead(template, lead);
@@ -1299,6 +1318,7 @@ export async function performLeadWorkflowAction(params: {
   const rendered = renderTemplateForLeadSafely(
     template ?? {
       ...getTemplateFallback(actionTemplateType ?? TemplateType.REMINDER, lead),
+      channel: finalOutboundMessageChannel,
       type: actionTemplateType ?? TemplateType.REMINDER,
     },
     lead,

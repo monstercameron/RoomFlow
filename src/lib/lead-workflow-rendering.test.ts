@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TemplateType } from "@/generated/prisma/client";
+import { MessageChannel, TemplateType } from "@/generated/prisma/client";
 
 async function getLeadWorkflowModule() {
   process.env.DATABASE_URL ??=
@@ -32,13 +32,17 @@ test("renderTemplateForLead substitutes known template variables", async () => {
     {
       subject: "Hi {{lead.firstName}}",
       body: "Property: {{property.name}}",
+      channel: MessageChannel.EMAIL,
       type: TemplateType.SCREENING_INVITE,
     },
     baseLeadContext,
   );
 
   assert.equal(rendered.subject, "Hi Jordan");
-  assert.equal(rendered.body, "Property: Maple House");
+  assert.match(rendered.body, /^Hi Jordan,/);
+  assert.match(rendered.body, /Property: Maple House/);
+  assert.match(rendered.body, /What I need/);
+  assert.match(rendered.body, /Roomflow Demo leasing desk$/);
 });
 
 test("renderTemplateForLeadSafely surfaces unresolved tokens", async () => {
@@ -48,6 +52,7 @@ test("renderTemplateForLeadSafely surfaces unresolved tokens", async () => {
     {
       subject: "Hi {{lead.firstName}}",
       body: "Unknown token: {{lead.missingField}}",
+      channel: MessageChannel.EMAIL,
       type: TemplateType.REMINDER,
     },
     baseLeadContext,
