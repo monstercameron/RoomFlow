@@ -25,6 +25,7 @@ import {
   buildLeadChannelOptOutUpdate,
   formatMessageChannelLabel,
 } from "@/lib/lead-channel-opt-outs";
+import { publishNotificationBusEvent } from "@/lib/notification-bus";
 import { queueOutboundWorkflowWebhook } from "@/lib/lead-workflow";
 import { prisma } from "@/lib/prisma";
 import { workflowEventTypes } from "@/lib/workflow-events";
@@ -891,14 +892,12 @@ export async function processNormalizedInboundLead(payload: NormalizedLeadPayloa
       },
     });
 
-    await prisma.notificationEvent.create({
-      data: {
-        workspaceId: payload.workspaceId,
-        leadId: lead.id,
-        type: NotificationType.NEW_LEAD,
-        title: "New lead created",
-        body: `${lead.fullName} was added from ${payload.leadSourceName}.`,
-      },
+    await publishNotificationBusEvent({
+      workspaceId: payload.workspaceId,
+      leadId: lead.id,
+      type: NotificationType.NEW_LEAD,
+      title: "New lead created",
+      body: `${lead.fullName} was added from ${payload.leadSourceName}.`,
     });
 
     await queueOutboundWorkflowWebhook({

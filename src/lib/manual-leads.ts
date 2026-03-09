@@ -9,6 +9,7 @@ import {
   type Prisma,
 } from "@/generated/prisma/client";
 import { getCurrentWorkspaceMembership, getLeadCreateViewData } from "@/lib/app-data";
+import { publishNotificationBusEvent } from "@/lib/notification-bus";
 import { canMembershipRolePerformLeadAction } from "@/lib/membership-role-permissions";
 import { parseNullableInt, parseNullableString } from "@/lib/onboarding";
 import { prisma } from "@/lib/prisma";
@@ -164,14 +165,12 @@ const defaultCreateManualLeadDependencies: CreateManualLeadDependencies = {
       },
     }),
   createNotificationEvent: (input) =>
-    prisma.notificationEvent.create({
-      data: {
-        body: input.body,
-        leadId: input.leadId,
-        title: input.title,
-        type: input.type,
-        workspaceId: input.workspaceId,
-      },
+    publishNotificationBusEvent({
+      body: input.body,
+      leadId: input.leadId,
+      title: input.title,
+      type: input.type,
+      workspaceId: input.workspaceId,
     }),
   getCurrentWorkspaceMembership,
   getLeadCreateViewData,

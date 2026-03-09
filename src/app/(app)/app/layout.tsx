@@ -38,8 +38,16 @@ export default async function OperatorAppLayout({
 
   return (
     <AppShell
+      notifications={shellData.notifications}
+      taskCenter={shellData.taskCenter}
+      userImage={session.user.image ?? null}
       userLabel={session.user.email}
+      userName={session.user.name ?? null}
+      userRoleLabel={shellData.userRoleLabel}
+      workspaceMetrics={shellData.workspaceMetrics}
       workspaceName={shellData.workspaceName}
+      workspacePlanLabel={shellData.workspacePlanLabel}
+      workspacePlanStatusLabel={shellData.workspacePlanStatusLabel}
       workspaceSummary={shellData.workspaceSummary}
     >
       {children}

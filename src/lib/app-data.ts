@@ -100,6 +100,7 @@ import {
   parseTourReminderState,
   parseTourReminderSequence,
 } from "@/lib/tour-scheduling";
+import { getNotificationCenterData } from "@/lib/notification-bus";
 import { getServerSession } from "@/lib/session";
 import {
   getIntlLocaleForLeadsPageLocale,
@@ -119,6 +120,10 @@ import {
   type LeadListWorkflowFilters,
 } from "@/lib/lead-list-filters";
 import { workspaceHasCapability } from "@/lib/workspace-plan";
+import {
+  formatWorkspacePlanLabel,
+  formatWorkspacePlanStatusLabel,
+} from "@/lib/workspace-plan";
 import { activeWorkspaceCookieName, ensureWorkspaceForUser } from "@/lib/workspaces";
 import { sortTimelineEventsDeterministically } from "@/lib/workflow-events";
 
@@ -1027,36 +1032,170 @@ export const getWorkspaceSwitcherData = cache(async () => {
 
 export const getAppShellData = cache(async () => {
   const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
   const qualifiedStatuses = [
     LeadStatus.QUALIFIED,
     LeadStatus.TOUR_SCHEDULED,
     LeadStatus.APPLICATION_SENT,
   ];
+  const activeTaskStatuses = [TaskStatus.OPEN, TaskStatus.IN_PROGRESS];
+  const scopedTaskWhere: Prisma.TaskWhereInput = {
+    workspaceId: membership.workspaceId,
+    ...(scopedPropertyIds
+      ? {
+          OR: [
+            {
+              propertyId: null,
+            },
+            {
+              propertyId: {
+                in: scopedPropertyIds,
+              },
+            },
+          ],
+        }
+      : {}),
+  };
 
-  const propertyCount = await prisma.property.count({
-    where: {
-      workspaceId: membership.workspaceId,
-    },
-  });
-  const activeLeadCount = await prisma.lead.count({
-    where: {
-      workspaceId: membership.workspaceId,
-      status: {
-        notIn: [LeadStatus.ARCHIVED, LeadStatus.CLOSED],
+  const [
+    propertyCount,
+    activeLeadCount,
+    qualifiedLeadCount,
+    notifications,
+    generalTaskCount,
+    leadTaskCount,
+    overdueTaskCount,
+    recentTasks,
+  ] = await Promise.all([
+    prisma.property.count({
+      where: {
+        workspaceId: membership.workspaceId,
       },
-    },
-  });
-  const qualifiedLeadCount = await prisma.lead.count({
-    where: {
-      workspaceId: membership.workspaceId,
-      status: {
-        in: qualifiedStatuses,
+    }),
+    prisma.lead.count({
+      where: {
+        workspaceId: membership.workspaceId,
+        status: {
+          notIn: [LeadStatus.ARCHIVED, LeadStatus.CLOSED],
+        },
       },
-    },
-  });
+    }),
+    prisma.lead.count({
+      where: {
+        workspaceId: membership.workspaceId,
+        status: {
+          in: qualifiedStatuses,
+        },
+      },
+    }),
+    getNotificationCenterData({
+      workspaceId: membership.workspaceId,
+    }),
+    prisma.task.count({
+      where: {
+        ...scopedTaskWhere,
+        leadId: null,
+        status: {
+          in: activeTaskStatuses,
+        },
+      },
+    }),
+    prisma.task.count({
+      where: {
+        ...scopedTaskWhere,
+        leadId: {
+          not: null,
+        },
+        status: {
+          in: activeTaskStatuses,
+        },
+      },
+    }),
+    prisma.task.count({
+      where: {
+        ...scopedTaskWhere,
+        dueAt: {
+          lt: new Date(),
+        },
+        status: {
+          in: activeTaskStatuses,
+        },
+      },
+    }),
+    prisma.task.findMany({
+      where: {
+        ...scopedTaskWhere,
+        status: {
+          in: activeTaskStatuses,
+        },
+      },
+      include: {
+        assignedMembership: {
+          include: {
+            user: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+        lead: {
+          select: {
+            fullName: true,
+            id: true,
+          },
+        },
+        property: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      orderBy: [
+        {
+          dueAt: "asc",
+        },
+        {
+          createdAt: "desc",
+        },
+      ],
+      take: 6,
+    }),
+  ]);
 
   return {
+    notifications,
+    taskCenter: {
+      generalTaskCount,
+      items: recentTasks.map((task) => ({
+        assignedTo: task.assignedMembership?.user.name ?? "Unassigned",
+        dueAtLabel: formatDateTime(task.dueAt),
+        href: task.lead?.id ? `/app/leads/${task.lead.id}` : "/app/tasks",
+        id: task.id,
+        isGeneralTask: task.leadId === null,
+        isLeadTask: task.leadId !== null,
+        isOverdue: resolveTaskIsOverdue(task.dueAt, task.status),
+        leadName: task.lead?.fullName ?? null,
+        propertyName: task.property?.name ?? null,
+        statusLabel: formatEnumLabel(task.status),
+        title: task.title,
+      })),
+      leadTaskCount,
+      overdueTaskCount,
+      totalOpenCount: generalTaskCount + leadTaskCount,
+    },
+    userRoleLabel: getLocalizedMembershipRoleLabel(membership.role, "en"),
+    workspacePlanLabel: formatWorkspacePlanLabel(membership.workspace.planType),
+    workspacePlanStatusLabel: formatWorkspacePlanStatusLabel(membership.workspace.planStatus),
     workspaceName: membership.workspace.name,
+    workspaceMetrics: {
+      activeLeadCount,
+      propertyCount,
+      qualifiedLeadCount,
+    },
     workspaceSummary: `${propertyCount} properties, ${activeLeadCount} active leads, ${qualifiedLeadCount} qualified or tour-ready.`,
   };
 });

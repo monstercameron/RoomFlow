@@ -64,6 +64,7 @@ import {
   formatMessageChannelLabel,
   isLeadChannelOptedOut,
 } from "@/lib/lead-channel-opt-outs";
+import { publishNotificationBusEvent } from "@/lib/notification-bus";
 import { sendOwnerAdminNotificationEmail, sendSlackNotification } from "@/lib/notification-delivery";
 import { prisma } from "@/lib/prisma";
 import {
@@ -232,15 +233,13 @@ const defaultChannelPriorityOrder: MessageChannel[] = [
 
 const defaultAppendNotificationEventDependencies: AppendNotificationEventDependencies = {
   createNotificationEvent: ({ body, leadId, payload, title, type, workspaceId }) =>
-    prisma.notificationEvent.create({
-      data: {
-        workspaceId,
-        leadId,
-        type,
-        title,
-        body,
-        payload,
-      },
+    publishNotificationBusEvent({
+      body,
+      leadId,
+      payload,
+      title,
+      type,
+      workspaceId,
     }),
   sendOwnerAdminNotificationEmail,
   sendSlackNotification,

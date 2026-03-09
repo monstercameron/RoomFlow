@@ -28,6 +28,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "db:seed:notifications": "tsx scripts/seed-dev-notifications.ts",
     "db:seed:test-user": "tsx scripts/seed-test-user.ts",
     "db:backfill-workflow-events": "tsx scripts/backfill-workflow-events.ts",
     "worker": "tsx scripts/worker.ts"

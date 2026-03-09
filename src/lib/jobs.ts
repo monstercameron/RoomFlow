@@ -14,6 +14,7 @@ import {
   markMessageProviderUnresolved,
   sendQueuedMessage,
 } from "@/lib/message-delivery";
+import { publishNotificationBusEvent } from "@/lib/notification-bus";
 import { prisma } from "@/lib/prisma";
 import { sendTourReminderNotification } from "@/lib/tour-communications";
 import { markTourReminderSent, parseTourReminderState } from "@/lib/tour-scheduling";
@@ -352,16 +353,14 @@ async function processReminderJobs(jobs: JobWithMetadata<ReminderJob>[]) {
           },
         });
 
-        await prisma.notificationEvent.create({
-          data: {
-            workspaceId: staleCandidate.workspaceId,
+        await publishNotificationBusEvent({
+          workspaceId: staleCandidate.workspaceId,
+          leadId: staleCandidate.id,
+          type: NotificationType.STALE_LEAD,
+          title: "Lead marked stale",
+          body: `${staleCandidate.fullName} has gone stale and needs review.`,
+          payload: {
             leadId: staleCandidate.id,
-            type: NotificationType.STALE_LEAD,
-            title: "Lead marked stale",
-            body: `${staleCandidate.fullName} has gone stale and needs review.`,
-            payload: {
-              leadId: staleCandidate.id,
-            },
           },
         });
 
@@ -389,14 +388,12 @@ async function processReminderJobs(jobs: JobWithMetadata<ReminderJob>[]) {
         staleCandidate.applicationInviteSentAt &&
         staleCandidate.applicationInviteSentAt < staleCutoffDate
       ) {
-        await prisma.notificationEvent.create({
-          data: {
-            workspaceId: staleCandidate.workspaceId,
-            leadId: staleCandidate.id,
-            type: NotificationType.APPLICATION_INVITE_STALE,
-            title: "Application invite is stale",
-            body: `${staleCandidate.fullName} has an application invite that needs follow-up.`,
-          },
+        await publishNotificationBusEvent({
+          workspaceId: staleCandidate.workspaceId,
+          leadId: staleCandidate.id,
+          type: NotificationType.APPLICATION_INVITE_STALE,
+          title: "Application invite is stale",
+          body: `${staleCandidate.fullName} has an application invite that needs follow-up.`,
         });
       }
 
