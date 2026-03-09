@@ -410,6 +410,21 @@ export default async function LeadDetailPage({
     sort: activeSort,
   });
   const workflowChart = getLeadWorkflowChart(lead.statusValue, lead.status);
+  const automationSharedReasons =
+    lead.automationSuppressionSummaries.length > 1
+      ? lead.automationSuppressionSummaries[0]?.reasons.filter((reason) =>
+          lead.automationSuppressionSummaries.every((summary) =>
+            summary.reasons.includes(reason),
+          ),
+        ) ?? []
+      : [];
+  const automationActionSpecificSummaries =
+    lead.automationSuppressionSummaries.map((summary) => ({
+      ...summary,
+      specificReasons: summary.reasons.filter(
+        (reason) => !automationSharedReasons.includes(reason),
+      ),
+    }));
 
   return (
     <main>
@@ -430,7 +445,7 @@ export default async function LeadDetailPage({
           <div className="flex max-w-[58rem] flex-col gap-3 md:items-end">
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Link className={navigationActionClassName} href={currentListHref}>
-                <span aria-hidden="true">←</span>
+                <span aria-hidden="true">&larr;</span>
                 Back to leads
               </Link>
               {leadNavigation.previousLead ? (
@@ -439,12 +454,12 @@ export default async function LeadDetailPage({
                   href={buildLeadDetailHref(leadNavigation.previousLead.id, currentDetailParams)}
                   title={leadNavigation.previousLead.fullName}
                 >
-                  <span aria-hidden="true">←</span>
+                  <span aria-hidden="true">&larr;</span>
                   Previous lead
                 </Link>
               ) : (
                 <span aria-disabled="true" className={navigationActionDisabledClassName}>
-                  <span aria-hidden="true">←</span>
+                  <span aria-hidden="true">&larr;</span>
                   Previous lead
                 </span>
               )}
@@ -455,12 +470,12 @@ export default async function LeadDetailPage({
                   title={leadNavigation.nextLead.fullName}
                 >
                   Next lead
-                  <span aria-hidden="true">→</span>
+                  <span aria-hidden="true">&rarr;</span>
                 </Link>
               ) : (
                 <span aria-disabled="true" className={navigationActionDisabledClassName}>
                   Next lead
-                  <span aria-hidden="true">→</span>
+                  <span aria-hidden="true">&rarr;</span>
                 </span>
               )}
             </div>
@@ -1258,19 +1273,48 @@ export default async function LeadDetailPage({
         <div className={`${sectionPanelClassName} mb-5`}>
           <div className="text-sm font-semibold">Automation suppression reasons</div>
           <p className="mt-2 text-sm text-[var(--color-muted)]">
-            Manual outbound remains available, but these automated actions are currently blocked.
+            Manual outbound remains available. This panel explains what is blocking automated request info, scheduling, and application sends right now.
           </p>
+          {automationSharedReasons.length > 0 ? (
+            <div className={`${operatorWorkspaceInsetCardClassName} mt-4`}>
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                Shared blockers across all automated actions
+              </div>
+              <div className="mt-3 space-y-2 text-sm text-[var(--color-muted)]">
+                {automationSharedReasons.map((reason) => (
+                  <div key={`automation-shared-${reason}`}>{reason}</div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            {lead.automationSuppressionSummaries.map((summary) => (
+            {automationActionSpecificSummaries.map((summary) => (
               <div
                 key={summary.actionKey}
-                className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4"
+                className={operatorWorkspaceInsetCardClassName}
               >
-                <div className="text-sm font-medium">{summary.actionLabel}</div>
+                <div className="text-sm font-medium text-[var(--color-ink)]">
+                  {summary.actionLabel}
+                </div>
+                <div className="mt-2 text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                  {summary.specificReasons.length > 0
+                    ? "Action-specific blockers"
+                    : automationSharedReasons.length > 0
+                      ? "No extra blockers"
+                      : "Current blockers"}
+                </div>
                 <div className="mt-3 space-y-2 text-sm text-[var(--color-muted)]">
-                  {summary.reasons.map((reason) => (
-                    <div key={`${summary.actionKey}-${reason}`}>{reason}</div>
-                  ))}
+                  {summary.specificReasons.length > 0
+                    ? summary.specificReasons.map((reason) => (
+                        <div key={`${summary.actionKey}-${reason}`}>{reason}</div>
+                      ))
+                    : automationSharedReasons.length > 0
+                      ? (
+                        <div>Only the shared blockers above are preventing this action.</div>
+                      )
+                      : summary.reasons.map((reason) => (
+                          <div key={`${summary.actionKey}-${reason}`}>{reason}</div>
+                        ))}
                 </div>
               </div>
             ))}
@@ -1679,10 +1723,10 @@ export default async function LeadDetailPage({
                     <div>
                       <div className="text-sm font-medium">{screeningRequest.summary}</div>
                       <div className="mt-2 text-sm text-[var(--color-muted)]">
-                        Requested {screeningRequest.requestedAt} · Invite {screeningRequest.invitedAt}
+                        Requested {screeningRequest.requestedAt} | Invite {screeningRequest.invitedAt}
                       </div>
                       <div className="mt-2 text-sm text-[var(--color-muted)]">
-                        Current status: {screeningRequest.currentStatus} · Charge mode: {screeningRequest.chargeMode}
+                        Current status: {screeningRequest.currentStatus} | Charge mode: {screeningRequest.chargeMode}
                       </div>
                     </div>
                     <div className="text-sm text-[var(--color-muted)]">
@@ -1718,8 +1762,8 @@ export default async function LeadDetailPage({
                       <div className="mt-3 space-y-2">
                         {screeningRequest.statusEvents.map((statusEvent) => (
                           <div key={statusEvent.id}>
-                            {statusEvent.status} · {statusEvent.at}
-                            {statusEvent.detail ? ` · ${statusEvent.detail}` : ""}
+                            {statusEvent.status} | {statusEvent.at}
+                            {statusEvent.detail ? ` | ${statusEvent.detail}` : ""}
                           </div>
                         ))}
                       </div>
@@ -1730,9 +1774,9 @@ export default async function LeadDetailPage({
                             {screeningRequest.consentRecords.map((consentRecord) => (
                               <div key={consentRecord.id}>
                                 {consentRecord.consentedAt}
-                                {consentRecord.source ? ` · ${consentRecord.source}` : ""}
+                                {consentRecord.source ? ` | ${consentRecord.source}` : ""}
                                 {consentRecord.disclosureVersion
-                                  ? ` · ${consentRecord.disclosureVersion}`
+                                  ? ` | ${consentRecord.disclosureVersion}`
                                   : ""}
                               </div>
                             ))}
@@ -1764,10 +1808,10 @@ export default async function LeadDetailPage({
                                 <div className="mt-1 text-xs text-[var(--color-muted)]">
                                   Added {attachmentReference.createdAt}
                                   {attachmentReference.externalId
-                                    ? ` · ${attachmentReference.externalId}`
+                                    ? ` | ${attachmentReference.externalId}`
                                     : ""}
                                   {attachmentReference.contentType
-                                    ? ` · ${attachmentReference.contentType}`
+                                    ? ` | ${attachmentReference.contentType}`
                                     : ""}
                                 </div>
                               </div>
