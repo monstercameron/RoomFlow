@@ -32,6 +32,35 @@ body {
   font-family: var(--font-sans), sans-serif;
 }
 
+[data-sidebar-nav-scroll-container] {
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    rgba(0, 0, 0, 1) 22px,
+    rgba(0, 0, 0, 1) calc(100% - 22px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    rgba(0, 0, 0, 1) 22px,
+    rgba(0, 0, 0, 1) calc(100% - 22px),
+    transparent 100%
+  );
+}
+
+[data-sidebar-nav-scroll-container]::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sidebar-nav-scroll-container] {
+    scroll-behavior: auto;
+  }
+}
+
 a {
   color: inherit;
   text-decoration: none;

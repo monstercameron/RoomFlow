@@ -15,6 +15,7 @@
     "test:workflow3": "tsx scripts/playwright-workflow3.ts",
     "test:workflow4": "tsx scripts/playwright-workflow4.ts",
     "test:leads": "tsx scripts/playwright-leads.ts",
+    "test:sidebar-zoom": "tsx scripts/playwright-sidebar-zoom.ts",
     "openai:realtime:smoke": "tsx scripts/openai-realtime-smoke.ts",
     "lint": "eslint .",
     "pretypecheck": "npm run db:generate",

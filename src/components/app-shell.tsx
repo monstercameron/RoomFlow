@@ -1,39 +1,43 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { LogoutButton } from "@/components/logout-button";
 import { ScrollToTopButton } from "@/components/scroll-to-top-button";
 
 export function AppShell({
   children,
-  activeWorkspaceId,
   userLabel,
-  workspaceOptions,
   workspaceName,
   workspaceSummary,
 }: {
   children: ReactNode;
-  activeWorkspaceId: string;
   userLabel: string;
-  workspaceOptions: Array<{
-    membershipRole: string;
-    workspaceId: string;
-    workspaceName: string;
-    workspaceSlug: string;
-  }>;
   workspaceName: string;
   workspaceSummary: string;
 }) {
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
   return (
-    <div className="h-screen overflow-hidden bg-transparent text-[var(--color-ink)] md:grid md:grid-cols-[280px_1fr]">
-      <div className="hidden md:block md:sticky md:top-0 md:h-screen">
+    <div
+      className="h-screen overflow-hidden bg-transparent text-[var(--color-ink)] md:flex"
+    >
+      <div
+        className="hidden min-w-0 shrink-0 transition-[width,flex-basis] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] md:block md:sticky md:top-0 md:h-screen"
+        style={{
+          flexBasis: isSidebarCollapsed ? "84px" : "304px",
+          width: isSidebarCollapsed ? "84px" : "304px",
+        }}
+      >
         <AppSidebar
-          activeWorkspaceId={activeWorkspaceId}
-          workspaceOptions={workspaceOptions}
-          workspaceName={workspaceName}
-          workspaceSummary={workspaceSummary}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => {
+            setIsSidebarCollapsed((currentValue) => !currentValue);
+          }}
         />
       </div>
-      <div className="min-h-0 overflow-y-auto" data-app-scroll-container>
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto" data-app-scroll-container>
         <div className="px-5 pt-5 md:px-8 md:pt-8">
           <div className="mb-6 flex items-center justify-between rounded-3xl border border-[var(--color-line)] bg-[var(--color-panel)] px-5 py-4 shadow-[var(--shadow-panel)] backdrop-blur">
             <div>

@@ -5,7 +5,6 @@ import { buildEmailVerificationPagePath } from "@/lib/auth-urls";
 import {
   getAppShellData,
   getCurrentWorkspaceState,
-  getWorkspaceSwitcherData,
 } from "@/lib/app-data";
 import { getServerSession } from "@/lib/session";
 
@@ -36,13 +35,10 @@ export default async function OperatorAppLayout({
   }
 
   const shellData = await getAppShellData();
-  const workspaceSwitcherData = await getWorkspaceSwitcherData();
 
   return (
     <AppShell
-      activeWorkspaceId={workspaceSwitcherData.activeWorkspaceId}
       userLabel={session.user.email}
-      workspaceOptions={workspaceSwitcherData.workspaces}
       workspaceName={shellData.workspaceName}
       workspaceSummary={shellData.workspaceSummary}
     >
