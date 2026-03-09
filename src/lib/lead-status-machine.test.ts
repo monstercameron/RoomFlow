@@ -40,6 +40,10 @@ test("canTransitionLeadStatus allows configured forward transitions", () => {
     canTransitionLeadStatus(LeadStatus.APPLICATION_SENT, LeadStatus.CLOSED),
     true,
   );
+  assert.equal(
+    canTransitionLeadStatus(LeadStatus.ARCHIVED, LeadStatus.UNDER_REVIEW),
+    true,
+  );
 });
 
 test("canTransitionLeadStatus blocks invalid transitions", () => {
@@ -48,7 +52,7 @@ test("canTransitionLeadStatus blocks invalid transitions", () => {
     false,
   );
   assert.equal(
-    canTransitionLeadStatus(LeadStatus.ARCHIVED, LeadStatus.NEW),
+    canTransitionLeadStatus(LeadStatus.ARCHIVED, LeadStatus.CLOSED),
     false,
   );
   assert.equal(

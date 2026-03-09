@@ -21,6 +21,7 @@ import {
   WebhookDeliveryStatus,
   WorkspaceCapability,
   WorkspacePlanType,
+  type Prisma,
 } from "@/generated/prisma/client";
 import {
   buildLeadTimeline,
@@ -98,44 +99,44 @@ import {
   parseTourReminderSequence,
 } from "@/lib/tour-scheduling";
 import { getServerSession } from "@/lib/session";
+import {
+  getIntlLocaleForLeadsPageLocale,
+  getLeadsPageCopy,
+  getLocalizedLeadFitLabel,
+  getLocalizedLeadSlaLabel,
+  getLocalizedLeadStatusLabel,
+  getLocalizedMembershipRoleLabel,
+  type LeadsPageLocale,
+} from "@/lib/leads-page-i18n";
 import { workspaceHasCapability } from "@/lib/workspace-plan";
 import { activeWorkspaceCookieName, ensureWorkspaceForUser } from "@/lib/workspaces";
 import { sortTimelineEventsDeterministically } from "@/lib/workflow-events";
+function formatCurrency(value: number | null, locale: LeadsPageLocale = "en") {
+  const copy = getLeadsPageCopy(locale);
 
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-
-const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
-function formatCurrency(value: number | null) {
   if (value === null) {
     return "-";
   }
 
-  return currencyFormatter.format(value);
+  return new Intl.NumberFormat(getIntlLocaleForLeadsPageLocale(locale), {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
-function formatCurrencyAmountCents(value: number | null, currency = "USD") {
+function formatCurrencyAmountCents(
+  value: number | null,
+  currency = "USD",
+  locale: LeadsPageLocale = "en",
+) {
+  const copy = getLeadsPageCopy(locale);
+
   if (value === null) {
-    return "Not recorded";
+    return copy.common.notRecorded;
   }
 
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(getIntlLocaleForLeadsPageLocale(locale), {
     style: "currency",
     currency,
     maximumFractionDigits: 2,
@@ -143,20 +144,34 @@ function formatCurrencyAmountCents(value: number | null, currency = "USD") {
   }).format(value / 100);
 }
 
-function formatDate(value: Date | null) {
+function formatDate(value: Date | null, locale: LeadsPageLocale = "en") {
+  const copy = getLeadsPageCopy(locale);
+
   if (!value) {
-    return "Not set";
+    return copy.common.notSet;
   }
 
-  return dateFormatter.format(value);
+  return new Intl.DateTimeFormat(getIntlLocaleForLeadsPageLocale(locale), {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(value);
 }
 
-function formatDateTime(value: Date | null) {
+function formatDateTime(value: Date | null, locale: LeadsPageLocale = "en") {
+  const copy = getLeadsPageCopy(locale);
+
   if (!value) {
-    return "Not set";
+    return copy.common.notSet;
   }
 
-  return dateTimeFormatter.format(value);
+  return new Intl.DateTimeFormat(getIntlLocaleForLeadsPageLocale(locale), {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(value);
 }
 
 function formatDateTimeInputValue(value: Date | null) {
@@ -225,35 +240,41 @@ function formatScreeningRequestSummary(params: {
     : `${providerLabel} · ${statusLabel}`;
 }
 
-function formatRelativeTime(value: Date | null) {
+function formatRelativeTime(value: Date | null, locale: LeadsPageLocale = "en") {
+  const copy = getLeadsPageCopy(locale);
+
   if (!value) {
-    return "No recent activity";
+    return copy.common.noRecentActivity;
   }
 
   const diffMs = Date.now() - value.getTime();
   const diffMinutes = Math.max(1, Math.round(diffMs / 60000));
+  const relativeTimeFormatter = new Intl.RelativeTimeFormat(
+    getIntlLocaleForLeadsPageLocale(locale),
+    { numeric: "always" },
+  );
 
   if (diffMinutes < 60) {
-    return `${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
+    return relativeTimeFormatter.format(-diffMinutes, "minute");
   }
 
   const diffHours = Math.round(diffMinutes / 60);
 
   if (diffHours < 24) {
-    return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+    return relativeTimeFormatter.format(-diffHours, "hour");
   }
 
   const diffDays = Math.round(diffHours / 24);
 
   if (diffDays === 1) {
-    return "Yesterday";
+    return copy.common.yesterday;
   }
 
   if (diffDays < 7) {
-    return `${diffDays} days ago`;
+    return relativeTimeFormatter.format(-diffDays, "day");
   }
 
-  return formatDate(value);
+  return formatDate(value, locale);
 }
 
 async function resolveScopedPropertyIdsForMembership(params: {
@@ -430,12 +451,12 @@ function formatAiArtifactView<T>(
   };
 }
 
-function formatFitLabel(value: QualificationFit) {
-  return formatEnumLabel(value);
+function formatFitLabel(value: QualificationFit, locale: LeadsPageLocale = "en") {
+  return getLocalizedLeadFitLabel(value, locale);
 }
 
-function formatStatusLabel(value: LeadStatus) {
-  return formatEnumLabel(value);
+function formatStatusLabel(value: LeadStatus, locale: LeadsPageLocale = "en") {
+  return getLocalizedLeadStatusLabel(value, locale);
 }
 
 function formatChannelLabel(value: MessageChannel) {
@@ -2014,17 +2035,366 @@ export const getWorkspaceBillingOwnerTransferData = cache(async () => {
   };
 });
 
-export const getLeadListViewData = cache(async () => {
+export type LeadListFilter =
+  | "all"
+  | "awaiting-response"
+  | "archived"
+  | "review"
+  | "qualified"
+  | "unassigned"
+  | "overdue";
+
+export type LeadListSort =
+  | "last-activity-desc"
+  | "last-activity-asc"
+  | "name-asc"
+  | "name-desc"
+  | "property-asc"
+  | "property-desc"
+  | "assignee-asc"
+  | "assignee-desc"
+  | "move-in-asc"
+  | "move-in-desc"
+  | "budget-high"
+  | "budget-low";
+
+function buildLeadListFilterClauses(overdueLeadIds: Set<string>) {
+  return {
+    all: null,
+    "awaiting-response": {
+      status: {
+        in: [LeadStatus.NEW, LeadStatus.AWAITING_RESPONSE, LeadStatus.INCOMPLETE],
+      },
+    },
+    archived: {
+      status: LeadStatus.ARCHIVED,
+    },
+    overdue:
+      overdueLeadIds.size > 0
+        ? {
+            id: {
+              in: [...overdueLeadIds],
+            },
+          }
+        : {
+            id: {
+              in: ["__no_matching_overdue_leads__"],
+            },
+          },
+    qualified: {
+      fitResult: QualificationFit.PASS,
+    },
+    review: {
+      OR: [
+        {
+          fitResult: QualificationFit.CAUTION,
+        },
+        {
+          fitResult: QualificationFit.MISMATCH,
+        },
+        {
+          status: LeadStatus.UNDER_REVIEW,
+        },
+      ],
+    },
+    unassigned: {
+      assignedMembershipId: null,
+    },
+  } satisfies Record<LeadListFilter, Prisma.LeadWhereInput | null>;
+}
+
+function buildLeadListSearchClause(activeQuery: string): Prisma.LeadWhereInput | null {
+  return activeQuery
+    ? {
+        OR: [
+          {
+            fullName: {
+              contains: activeQuery,
+              mode: "insensitive" as const,
+            },
+          },
+          {
+            email: {
+              contains: activeQuery,
+              mode: "insensitive" as const,
+            },
+          },
+          {
+            phone: {
+              contains: activeQuery,
+              mode: "insensitive" as const,
+            },
+          },
+          {
+            property: {
+              is: {
+                name: {
+                  contains: activeQuery,
+                  mode: "insensitive" as const,
+                },
+              },
+            },
+          },
+          {
+            leadSource: {
+              is: {
+                name: {
+                  contains: activeQuery,
+                  mode: "insensitive" as const,
+                },
+              },
+            },
+          },
+        ],
+      }
+    : null;
+}
+
+function buildLeadListSortOrder(sort: LeadListSort) {
+  switch (sort) {
+    case "assignee-asc":
+      return [
+        {
+          assignedMembership: {
+            user: {
+              name: "asc" as const,
+            },
+          },
+        },
+        {
+          fullName: "asc" as const,
+        },
+      ];
+    case "assignee-desc":
+      return [
+        {
+          assignedMembership: {
+            user: {
+              name: "desc" as const,
+            },
+          },
+        },
+        {
+          fullName: "asc" as const,
+        },
+      ];
+    case "budget-high":
+      return [
+        {
+          monthlyBudget: "desc" as const,
+        },
+        {
+          lastActivityAt: "desc" as const,
+        },
+      ];
+    case "budget-low":
+      return [
+        {
+          monthlyBudget: "asc" as const,
+        },
+        {
+          lastActivityAt: "desc" as const,
+        },
+      ];
+    case "move-in-asc":
+      return [
+        {
+          moveInDate: "asc" as const,
+        },
+        {
+          lastActivityAt: "desc" as const,
+        },
+      ];
+    case "move-in-desc":
+      return [
+        {
+          moveInDate: "desc" as const,
+        },
+        {
+          lastActivityAt: "desc" as const,
+        },
+      ];
+    case "name-asc":
+      return [
+        {
+          fullName: "asc" as const,
+        },
+      ];
+    case "name-desc":
+      return [
+        {
+          fullName: "desc" as const,
+        },
+      ];
+    case "property-asc":
+      return [
+        {
+          property: {
+            name: "asc" as const,
+          },
+        },
+        {
+          fullName: "asc" as const,
+        },
+      ];
+    case "property-desc":
+      return [
+        {
+          property: {
+            name: "desc" as const,
+          },
+        },
+        {
+          fullName: "asc" as const,
+        },
+      ];
+    case "last-activity-asc":
+      return [
+        {
+          lastActivityAt: "asc" as const,
+        },
+        {
+          createdAt: "asc" as const,
+        },
+      ];
+    case "last-activity-desc":
+    default:
+      return [
+        {
+          lastActivityAt: "desc" as const,
+        },
+        {
+          createdAt: "desc" as const,
+        },
+      ];
+  }
+}
+
+export async function getLeadListViewData(params?: {
+  filter?: LeadListFilter;
+  locale?: LeadsPageLocale;
+  page?: number;
+  pageSize?: number;
+  query?: string;
+  showArchived?: boolean;
+  sort?: LeadListSort;
+}) {
   const membership = await getCurrentWorkspaceMembership();
   const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
     membershipId: membership.id,
     membershipRole: membership.role,
   });
-  const leads = await prisma.lead.findMany({
-    where: {
-      workspaceId: membership.workspaceId,
-      ...buildScopedLeadAccessFilter(scopedPropertyIds),
+  const activeFilter = params?.filter ?? "all";
+  const activeQuery = params?.query?.trim() ?? "";
+  const locale = params?.locale ?? "en";
+  const leadsPageCopy = getLeadsPageCopy(locale);
+  const showArchived = (params?.showArchived ?? false) || activeFilter === "archived";
+  const pageSize =
+    params?.pageSize && [5, 10, 25, 50].includes(params.pageSize)
+      ? params.pageSize
+      : 10;
+  const roleActionPermissions = getLeadActionPermissionsForMembershipRole(
+    membership.role,
+  );
+  const canAssignLeadOwner =
+    roleActionPermissions.assignProperty &&
+    workspaceHasCapability(
+      membership.workspace.enabledCapabilities,
+      WorkspaceCapability.ORG_MEMBERS,
+    );
+  const assignableMemberships = canAssignLeadOwner
+    ? await prisma.membership.findMany({
+        where: {
+          workspaceId: membership.workspaceId,
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      })
+    : [];
+  const assignmentOptions = [
+    {
+      label: leadsPageCopy.common.unassigned,
+      summary: leadsPageCopy.common.sharedInboxOwnershipRemainsOpen,
+      value: "unassigned",
     },
+    ...assignableMemberships.map((workspaceMembership) => ({
+      label: workspaceMembership.user.name ?? "Team member",
+      summary: getLocalizedMembershipRoleLabel(workspaceMembership.role, locale),
+      value: workspaceMembership.id,
+    })),
+  ];
+  const baseWhere = {
+    workspaceId: membership.workspaceId,
+    ...buildScopedLeadAccessFilter(scopedPropertyIds),
+  };
+  const summaryLeads = await prisma.lead.findMany({
+    where: baseWhere,
+    select: {
+      assignedMembershipId: true,
+      createdAt: true,
+      fitResult: true,
+      id: true,
+      lastActivityAt: true,
+      status: true,
+      updatedAt: true,
+    },
+  });
+  const activeSummaryLeads = summaryLeads.filter(
+    (lead) => lead.status !== LeadStatus.ARCHIVED,
+  );
+  const archivedCount = summaryLeads.length - activeSummaryLeads.length;
+
+  const overdueLeadIds = new Set(
+    activeSummaryLeads
+      .filter((lead) => {
+        const slaSummary = resolveLeadSlaSummary({
+          createdAt: lead.createdAt,
+          isReviewQueueItem:
+            lead.fitResult === QualificationFit.CAUTION ||
+            lead.fitResult === QualificationFit.MISMATCH ||
+            lead.status === LeadStatus.UNDER_REVIEW,
+          lastActivityAt: lead.lastActivityAt,
+          leadReviewSlaMinutes: membership.workspace.leadReviewSlaMinutes,
+          leadResponseSlaMinutes: membership.workspace.leadResponseSlaMinutes,
+          status: lead.status,
+          updatedAt: lead.updatedAt,
+        });
+
+        return Boolean(slaSummary?.isOverdue);
+      })
+      .map((lead) => lead.id),
+  );
+
+  const filterClauses = buildLeadListFilterClauses(overdueLeadIds);
+  const searchClause = buildLeadListSearchClause(activeQuery);
+  const archivedVisibilityClause: Prisma.LeadWhereInput | null = showArchived
+    ? null
+    : {
+        status: {
+          not: LeadStatus.ARCHIVED,
+        },
+      };
+  const where: Prisma.LeadWhereInput = {
+    ...baseWhere,
+    AND: [archivedVisibilityClause, filterClauses[activeFilter], searchClause].filter(
+      (clause): clause is Prisma.LeadWhereInput => clause !== null,
+    ),
+  };
+  const activeSort = params?.sort ?? "last-activity-desc";
+  const sortOrder = buildLeadListSortOrder(activeSort);
+  const totalCount = await prisma.lead.count({ where });
+  const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+  const page = Math.min(Math.max(params?.page ?? 1, 1), pageCount);
+  const leads = await prisma.lead.findMany({
+    where,
     include: {
       assignedMembership: {
         select: {
@@ -2046,52 +2416,228 @@ export const getLeadListViewData = cache(async () => {
         },
       },
     },
-    orderBy: [
-      {
-        lastActivityAt: "desc",
-      },
-      {
-        createdAt: "desc",
-      },
-    ],
+    orderBy: sortOrder,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
   });
 
-  return leads.map((lead) => ({
-    assignedTo: lead.assignedMembership?.user.name ?? "Unassigned",
-    id: lead.id,
-    name: lead.fullName,
-    source: lead.leadSource?.name ?? "Manual",
-    property: lead.property?.name ?? "Unassigned",
-    moveInDate: formatDate(lead.moveInDate),
-    budget: formatCurrency(lead.monthlyBudget),
-    status: formatStatusLabel(lead.status),
-    statusValue: lead.status,
-    fit: formatFitLabel(lead.fitResult),
-    fitValue: lead.fitResult,
-    lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt),
-    slaSummary: (() => {
-      const slaSummary = resolveLeadSlaSummary({
-        createdAt: lead.createdAt,
-        isReviewQueueItem:
+  return {
+    activeFilter,
+    leads: leads.map((lead) => ({
+      assignedMembershipId: lead.assignedMembershipId,
+      assignedTo: lead.assignedMembership?.user.name ?? leadsPageCopy.common.unassigned,
+      assignmentOptions,
+      budget: formatCurrency(lead.monthlyBudget, locale),
+      budgetValue: lead.monthlyBudget,
+      canArchive:
+        roleActionPermissions.archiveLead && lead.status !== LeadStatus.ARCHIVED,
+      canAssignOwner: canAssignLeadOwner,
+      canUnarchive:
+        roleActionPermissions.archiveLead && lead.status === LeadStatus.ARCHIVED,
+      email: lead.email,
+      fit: formatFitLabel(lead.fitResult, locale),
+      fitValue: lead.fitResult,
+      id: lead.id,
+      isArchived: lead.status === LeadStatus.ARCHIVED,
+      lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt, locale),
+      moveInDate: formatDate(lead.moveInDate, locale),
+      moveInDateValue: lead.moveInDate,
+      name: lead.fullName,
+      phone: lead.phone,
+      property: lead.property?.name ?? "Unassigned",
+      slaSummary: (() => {
+        const slaSummary = resolveLeadSlaSummary({
+          createdAt: lead.createdAt,
+          isReviewQueueItem:
+            lead.fitResult === QualificationFit.CAUTION ||
+            lead.fitResult === QualificationFit.MISMATCH ||
+            lead.status === LeadStatus.UNDER_REVIEW,
+          lastActivityAt: lead.lastActivityAt,
+          leadReviewSlaMinutes: membership.workspace.leadReviewSlaMinutes,
+          leadResponseSlaMinutes: membership.workspace.leadResponseSlaMinutes,
+          status: lead.status,
+          updatedAt: lead.updatedAt,
+        });
+
+        return slaSummary
+          ? {
+              dueAt: formatRelativeTime(slaSummary.dueAt),
+              isOverdue: slaSummary.isOverdue,
+              label: getLocalizedLeadSlaLabel(slaSummary.queue, locale),
+            }
+          : null;
+      })(),
+      source: lead.leadSource?.name ?? leadsPageCopy.common.manual,
+      status: formatStatusLabel(lead.status, locale),
+      statusValue: lead.status,
+    })),
+    page,
+    pageCount,
+    pageSize,
+    query: activeQuery,
+    archivedCount,
+    allLeadCount: summaryLeads.length,
+    showArchived,
+    sort: activeSort,
+    summary: {
+      awaitingResponseCount: activeSummaryLeads.filter((lead) =>
+        lead.status === LeadStatus.NEW ||
+        lead.status === LeadStatus.AWAITING_RESPONSE ||
+        lead.status === LeadStatus.INCOMPLETE,
+      ).length,
+      overdueCount: overdueLeadIds.size,
+      qualifiedCount: activeSummaryLeads.filter(
+        (lead) => lead.fitResult === QualificationFit.PASS,
+      ).length,
+      reviewCount: activeSummaryLeads.filter(
+        (lead) =>
           lead.fitResult === QualificationFit.CAUTION ||
           lead.fitResult === QualificationFit.MISMATCH ||
           lead.status === LeadStatus.UNDER_REVIEW,
-        lastActivityAt: lead.lastActivityAt,
-        leadReviewSlaMinutes: membership.workspace.leadReviewSlaMinutes,
-        leadResponseSlaMinutes: membership.workspace.leadResponseSlaMinutes,
-        status: lead.status,
-        updatedAt: lead.updatedAt,
-      });
+      ).length,
+      totalCount: activeSummaryLeads.length,
+      unassignedCount: activeSummaryLeads.filter((lead) => !lead.assignedMembershipId)
+        .length,
+    },
+    totalCount,
+  };
+}
 
-      return slaSummary
-        ? {
-            dueAt: formatRelativeTime(slaSummary.dueAt),
-            isOverdue: slaSummary.isOverdue,
-            label: slaSummary.label,
-          }
-        : null;
-    })(),
-  }));
+export async function getLeadDetailNavigationData(params: {
+  filter?: LeadListFilter;
+  leadId: string;
+  query?: string;
+  showArchived?: boolean;
+  sort?: LeadListSort;
+}) {
+  const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
+  const activeFilter = params.filter ?? "all";
+  const activeQuery = params.query?.trim() ?? "";
+  const activeSort = params.sort ?? "last-activity-desc";
+  const showArchived = (params.showArchived ?? false) || activeFilter === "archived";
+  const baseWhere = {
+    workspaceId: membership.workspaceId,
+    ...buildScopedLeadAccessFilter(scopedPropertyIds),
+  };
+  const summaryLeads = await prisma.lead.findMany({
+    where: baseWhere,
+    select: {
+      assignedMembershipId: true,
+      createdAt: true,
+      fitResult: true,
+      id: true,
+      lastActivityAt: true,
+      status: true,
+      updatedAt: true,
+    },
+  });
+  const activeSummaryLeads = summaryLeads.filter(
+    (lead) => lead.status !== LeadStatus.ARCHIVED,
+  );
+  const overdueLeadIds = new Set(
+    activeSummaryLeads
+      .filter((lead) => {
+        const slaSummary = resolveLeadSlaSummary({
+          createdAt: lead.createdAt,
+          isReviewQueueItem:
+            lead.fitResult === QualificationFit.CAUTION ||
+            lead.fitResult === QualificationFit.MISMATCH ||
+            lead.status === LeadStatus.UNDER_REVIEW,
+          lastActivityAt: lead.lastActivityAt,
+          leadReviewSlaMinutes: membership.workspace.leadReviewSlaMinutes,
+          leadResponseSlaMinutes: membership.workspace.leadResponseSlaMinutes,
+          status: lead.status,
+          updatedAt: lead.updatedAt,
+        });
+
+        return Boolean(slaSummary?.isOverdue);
+      })
+      .map((lead) => lead.id),
+  );
+  const filterClauses = buildLeadListFilterClauses(overdueLeadIds);
+  const searchClause = buildLeadListSearchClause(activeQuery);
+  const archivedVisibilityClause: Prisma.LeadWhereInput | null = showArchived
+    ? null
+    : {
+        status: {
+          not: LeadStatus.ARCHIVED,
+        },
+      };
+  const where: Prisma.LeadWhereInput = {
+    ...baseWhere,
+    AND: [archivedVisibilityClause, filterClauses[activeFilter], searchClause].filter(
+      (clause): clause is Prisma.LeadWhereInput => clause !== null,
+    ),
+  };
+  const orderedLeads = await prisma.lead.findMany({
+    where,
+    select: {
+      fullName: true,
+      id: true,
+    },
+    orderBy: buildLeadListSortOrder(activeSort),
+  });
+  const currentIndex = orderedLeads.findIndex((lead) => lead.id === params.leadId);
+
+  if (currentIndex === -1) {
+    return {
+      nextLead: null,
+      previousLead: null,
+    };
+  }
+
+  return {
+    nextLead:
+      currentIndex < orderedLeads.length - 1 ? orderedLeads[currentIndex + 1] : null,
+    previousLead: currentIndex > 0 ? orderedLeads[currentIndex - 1] : null,
+  };
+}
+
+export const getLeadCreateViewData = cache(async () => {
+  const membership = await getCurrentWorkspaceMembership();
+  const scopedPropertyIds = await resolveScopedPropertyIdsForMembership({
+    membershipId: membership.id,
+    membershipRole: membership.role,
+  });
+  const [properties, sources] = await Promise.all([
+    prisma.property.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+        ...buildScopedPropertyAccessFilter(scopedPropertyIds),
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    }),
+    prisma.leadSource.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+      },
+    }),
+  ]);
+
+  return {
+    defaultLeadSourceId:
+      sources.find((source) => source.type === LeadSourceType.MANUAL)?.id ?? null,
+    properties,
+    sources,
+  };
 });
 
 export const getLeadDetailViewData = cache(async (leadId: string) => {
@@ -2597,6 +3143,9 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     id: lead.id,
     source: lead.leadSource?.name ?? "Manual",
     name: lead.fullName,
+    email: lead.email ?? "Not set",
+    phone: lead.phone ?? "Not set",
+    lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt),
     property: lead.property?.name ?? "Unassigned",
     availableProperties: await prisma.property.findMany({
       where: {
@@ -2818,6 +3367,10 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
         screeningRequests.length > 0,
       manualOutbound: roleActionPermissions.requestInfo,
       assignProperty: roleActionPermissions.assignProperty,
+      archiveLead:
+        roleActionPermissions.archiveLead && lead.status !== LeadStatus.ARCHIVED,
+      unarchiveLead:
+        roleActionPermissions.archiveLead && lead.status === LeadStatus.ARCHIVED,
       overrideFit: roleActionPermissions.overrideFit,
       declineLead: roleActionPermissions.declineLead,
       confirmDuplicate:

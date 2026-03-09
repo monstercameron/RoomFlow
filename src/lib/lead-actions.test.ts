@@ -3,6 +3,7 @@ import test from "node:test";
 import { AuditActorType, CalendarSyncProvider, DeclineReason, LeadStatus, MembershipRole, MessageChannel, PropertyLifecycleStatus, QualificationFit, ScreeningChargeMode, ScreeningConnectionAuthState, ScreeningProvider, ScreeningRequestStatus, WorkspaceCapability } from "@/generated/prisma/client";
 import { LeadWorkflowError } from "@/lib/lead-workflow-errors";
 import type {
+  ArchiveLeadActionDependencies,
   AssignLeadPropertyActionDependencies,
   CancelTourActionDependencies,
   CreateManualTourActionDependencies,
@@ -18,6 +19,7 @@ import type {
   SendManualOutboundMessageActionDependencies,
   UpdateScreeningRequestStatusActionDependencies,
   UpdateLeadChannelOptOutActionDependencies,
+  UnarchiveLeadActionDependencies,
   WorkflowActionRedirectDependencies,
 } from "@/lib/lead-actions";
 
@@ -738,6 +740,134 @@ test("handleConfirmDuplicateLeadAction validates candidate inputs and confirms d
   ]);
   assert.deepEqual(refreshedLeadIds, ["lead-1", "lead-2"]);
   assert.deepEqual(redirects, ["/app/leads/lead-1?tab=duplicates"]);
+});
+
+test("handleArchiveLeadAction validates the lead and archives it", async () => {
+  const { handleArchiveLeadAction } = getLeadActionsModule();
+
+  const invalidDependencies: ArchiveLeadActionDependencies = {
+    archiveLead: async () => undefined,
+    assertLeadActionPermission: async () => undefined,
+    assertLeadStatusTransitionIsAllowed: () => undefined,
+    findLeadForArchive: async () => null,
+    getActionContext: async () => createActionContext(),
+    redirect: () => undefined as never,
+    redirectToWorkflowErrorPath: () => undefined as never,
+    refreshLeadWorkflow: () => undefined,
+  };
+
+  await assert.rejects(
+    handleArchiveLeadAction("lead-1", new FormData(), invalidDependencies),
+    (error: unknown) =>
+      error instanceof LeadWorkflowError && error.code === "LEAD_NOT_FOUND",
+  );
+
+  const archivedInputs: unknown[] = [];
+  const redirects: string[] = [];
+  const refreshedLeadIds: string[] = [];
+  const successFormData = new FormData();
+  successFormData.set("archiveReason", "No longer active");
+  successFormData.set("redirectTo", "/app/leads?page=2&showArchived=1");
+
+  await handleArchiveLeadAction("lead-1", successFormData, {
+    archiveLead: async (input) => {
+      archivedInputs.push(input);
+    },
+    assertLeadActionPermission: async () => undefined,
+    assertLeadStatusTransitionIsAllowed: () => undefined,
+    findLeadForArchive: async () => ({
+      id: "lead-1",
+      propertyId: "property-1",
+      status: LeadStatus.QUALIFIED,
+    }),
+    getActionContext: async () => createActionContext({ membershipRole: MembershipRole.ADMIN }),
+    redirect: (path) => {
+      redirects.push(path);
+      return undefined as never;
+    },
+    redirectToWorkflowErrorPath: () => undefined as never,
+    refreshLeadWorkflow: (leadId) => {
+      refreshedLeadIds.push(leadId);
+    },
+  });
+
+  assert.deepEqual(archivedInputs, [
+    {
+      actionContext: createActionContext({ membershipRole: MembershipRole.ADMIN }),
+      archiveReason: "No longer active",
+      lead: {
+        id: "lead-1",
+        propertyId: "property-1",
+        status: LeadStatus.QUALIFIED,
+      },
+    },
+  ]);
+  assert.deepEqual(refreshedLeadIds, ["lead-1"]);
+  assert.deepEqual(redirects, ["/app/leads?page=2&showArchived=1"]);
+});
+
+test("handleUnarchiveLeadAction restores archived leads to a sensible status", async () => {
+  const { handleUnarchiveLeadAction } = getLeadActionsModule();
+
+  const invalidDependencies: UnarchiveLeadActionDependencies = {
+    assertLeadActionPermission: async () => undefined,
+    assertLeadStatusTransitionIsAllowed: () => undefined,
+    findLeadForUnarchive: async () => null,
+    getActionContext: async () => createActionContext(),
+    redirect: () => undefined as never,
+    redirectToWorkflowErrorPath: () => undefined as never,
+    refreshLeadWorkflow: () => undefined,
+    restoreLead: async () => undefined,
+  };
+
+  await assert.rejects(
+    handleUnarchiveLeadAction("lead-1", new FormData(), invalidDependencies),
+    (error: unknown) =>
+      error instanceof LeadWorkflowError && error.code === "LEAD_NOT_FOUND",
+  );
+
+  const restoredInputs: unknown[] = [];
+  const redirects: string[] = [];
+  const refreshedLeadIds: string[] = [];
+  const successFormData = new FormData();
+  successFormData.set("redirectTo", "/app/leads?showArchived=1");
+
+  await handleUnarchiveLeadAction("lead-1", successFormData, {
+    assertLeadActionPermission: async () => undefined,
+    assertLeadStatusTransitionIsAllowed: () => undefined,
+    findLeadForUnarchive: async () => ({
+      id: "lead-1",
+      propertyId: "property-1",
+      restoreStatus: LeadStatus.QUALIFIED,
+      status: LeadStatus.ARCHIVED,
+    }),
+    getActionContext: async () => createActionContext({ membershipRole: MembershipRole.ADMIN }),
+    redirect: (path) => {
+      redirects.push(path);
+      return undefined as never;
+    },
+    redirectToWorkflowErrorPath: () => undefined as never,
+    refreshLeadWorkflow: (leadId) => {
+      refreshedLeadIds.push(leadId);
+    },
+    restoreLead: async (input) => {
+      restoredInputs.push(input);
+    },
+  });
+
+  assert.deepEqual(restoredInputs, [
+    {
+      actionContext: createActionContext({ membershipRole: MembershipRole.ADMIN }),
+      lead: {
+        id: "lead-1",
+        propertyId: "property-1",
+        restoreStatus: LeadStatus.QUALIFIED,
+        status: LeadStatus.ARCHIVED,
+      },
+    },
+  ]);
+  assert.deepEqual(refreshedLeadIds, ["lead-1"]);
+  assert.deepEqual(redirects, ["/app/leads?showArchived=1"]);
 });
 
 test("handleOverrideLeadRoutingAction validates override inputs and audits recomputed fit", async () => {

@@ -3014,6 +3014,317 @@ export async function confirmDuplicateLeadAction(leadId: string, formData: FormD
   return handleConfirmDuplicateLeadAction(leadId, formData);
 }
 
+export type ArchiveLeadActionDependencies = {
+  archiveLead: (input: {
+    actionContext: LeadActionContext;
+    archiveReason: string | null;
+    lead: {
+      id: string;
+      propertyId: string | null;
+      status: LeadStatus;
+    };
+  }) => Promise<void>;
+  assertLeadActionPermission: (params: {
+    workspaceId: string;
+    leadId: string;
+    actorUserId: string;
+    membershipRole: MembershipRole;
+    leadActionPermissionKey: LeadActionPermissionKey;
+  }) => Promise<void>;
+  assertLeadStatusTransitionIsAllowed: typeof assertLeadStatusTransitionIsAllowed;
+  findLeadForArchive: (input: { leadId: string; workspaceId: string }) => Promise<{
+    id: string;
+    propertyId: string | null;
+    status: LeadStatus;
+  } | null>;
+  getActionContext: (leadId: string) => Promise<LeadActionContext>;
+  redirect: typeof redirect;
+  redirectToWorkflowErrorPath: typeof redirectToWorkflowErrorPath;
+  refreshLeadWorkflow: (leadId: string) => void;
+};
+
+const defaultArchiveLeadActionDependencies: ArchiveLeadActionDependencies = {
+  archiveLead: async ({ actionContext, archiveReason, lead }) => {
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.lead.update({
+        where: {
+          id: lead.id,
+        },
+        data: {
+          lastActivityAt: new Date(),
+          status: LeadStatus.ARCHIVED,
+        },
+      });
+
+      if (lead.status !== LeadStatus.ARCHIVED) {
+        await transactionClient.leadStatusHistory.create({
+          data: {
+            leadId: lead.id,
+            fromStatus: lead.status,
+            toStatus: LeadStatus.ARCHIVED,
+            reason: archiveReason ?? "Archived by operator.",
+          },
+        });
+      }
+
+      await transactionClient.auditEvent.create({
+        data: {
+          workspaceId: actionContext.workspaceId,
+          leadId: lead.id,
+          propertyId: lead.propertyId,
+          actorUserId: actionContext.actorUserId,
+          actorType: AuditActorType.USER,
+          eventType: workflowEventTypes.archived,
+          payload: {
+            nextStatus: LeadStatus.ARCHIVED,
+            previousStatus: lead.status,
+            reason: archiveReason ?? "Archived by operator.",
+          },
+        },
+      });
+    });
+  },
+  assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+  assertLeadStatusTransitionIsAllowed,
+  findLeadForArchive: ({ leadId, workspaceId }) =>
+    prisma.lead.findFirst({
+      where: {
+        id: leadId,
+        workspaceId,
+      },
+      select: {
+        id: true,
+        propertyId: true,
+        status: true,
+      },
+    }),
+  getActionContext,
+  redirect,
+  redirectToWorkflowErrorPath,
+  refreshLeadWorkflow,
+};
+
+export async function handleArchiveLeadAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: ArchiveLeadActionDependencies = defaultArchiveLeadActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
+  const archiveReason = parseOptionalFormText(formData.get("archiveReason"));
+  const redirectTargetValue = formData.get("redirectTo");
+  const fallbackRedirectPath = getLeadDetailPath(leadId);
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : fallbackRedirectPath;
+
+  try {
+    await dependencies.assertLeadActionPermission({
+      ...actionContext,
+      leadActionPermissionKey: "archiveLead",
+    });
+
+    const lead = await dependencies.findLeadForArchive({
+      leadId,
+      workspaceId: actionContext.workspaceId,
+    });
+
+    if (!lead) {
+      throw new LeadWorkflowError(
+        "LEAD_NOT_FOUND",
+        `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
+      );
+    }
+
+    dependencies.assertLeadStatusTransitionIsAllowed(lead.status, LeadStatus.ARCHIVED);
+
+    await dependencies.archiveLead({
+      actionContext,
+      archiveReason,
+      lead,
+    });
+  } catch (error) {
+    if (isLeadWorkflowError(error)) {
+      dependencies.redirectToWorkflowErrorPath(redirectPath, error.code);
+    }
+
+    throw error;
+  }
+
+  dependencies.refreshLeadWorkflow(leadId);
+  dependencies.redirect(redirectPath);
+}
+
+export async function archiveLeadAction(leadId: string, formData: FormData) {
+  return handleArchiveLeadAction(leadId, formData);
+}
+
+export type UnarchiveLeadActionDependencies = {
+  assertLeadActionPermission: (params: {
+    workspaceId: string;
+    leadId: string;
+    actorUserId: string;
+    membershipRole: MembershipRole;
+    leadActionPermissionKey: LeadActionPermissionKey;
+  }) => Promise<void>;
+  assertLeadStatusTransitionIsAllowed: typeof assertLeadStatusTransitionIsAllowed;
+  getActionContext: (leadId: string) => Promise<LeadActionContext>;
+  redirect: typeof redirect;
+  redirectToWorkflowErrorPath: typeof redirectToWorkflowErrorPath;
+  refreshLeadWorkflow: (leadId: string) => void;
+  restoreLead: (input: {
+    actionContext: LeadActionContext;
+    lead: {
+      id: string;
+      propertyId: string | null;
+      restoreStatus: LeadStatus | null;
+      status: LeadStatus;
+    };
+  }) => Promise<void>;
+  findLeadForUnarchive: (input: { leadId: string; workspaceId: string }) => Promise<{
+    id: string;
+    propertyId: string | null;
+    restoreStatus: LeadStatus | null;
+    status: LeadStatus;
+  } | null>;
+};
+
+const defaultUnarchiveLeadActionDependencies: UnarchiveLeadActionDependencies = {
+  assertLeadActionPermission: (params) => handleAssertLeadActionPermission(params),
+  assertLeadStatusTransitionIsAllowed,
+  getActionContext,
+  redirect,
+  redirectToWorkflowErrorPath,
+  refreshLeadWorkflow,
+  restoreLead: async ({ actionContext, lead }) => {
+    const restoredStatus = resolveRestoredLeadStatus(lead.restoreStatus);
+
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.lead.update({
+        where: {
+          id: lead.id,
+        },
+        data: {
+          lastActivityAt: new Date(),
+          status: restoredStatus,
+        },
+      });
+
+      await transactionClient.leadStatusHistory.create({
+        data: {
+          leadId: lead.id,
+          fromStatus: lead.status,
+          toStatus: restoredStatus,
+          reason: "Restored from archive.",
+        },
+      });
+
+      await transactionClient.auditEvent.create({
+        data: {
+          workspaceId: actionContext.workspaceId,
+          leadId: lead.id,
+          propertyId: lead.propertyId,
+          actorUserId: actionContext.actorUserId,
+          actorType: AuditActorType.USER,
+          eventType: workflowEventTypes.restored,
+          payload: {
+            previousStatus: lead.status,
+            restoredFromStatus: lead.restoreStatus,
+            nextStatus: restoredStatus,
+          },
+        },
+      });
+    });
+  },
+  findLeadForUnarchive: ({ leadId, workspaceId }) =>
+    prisma.lead.findFirst({
+      where: {
+        id: leadId,
+        workspaceId,
+      },
+      select: {
+        id: true,
+        propertyId: true,
+        status: true,
+        statusHistory: {
+          where: {
+            toStatus: LeadStatus.ARCHIVED,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 1,
+          select: {
+            fromStatus: true,
+          },
+        },
+      },
+    }).then((lead) =>
+      lead
+        ? {
+            id: lead.id,
+            propertyId: lead.propertyId,
+            restoreStatus: lead.statusHistory[0]?.fromStatus ?? null,
+            status: lead.status,
+          }
+        : null,
+    ),
+};
+
+export async function handleUnarchiveLeadAction(
+  leadId: string,
+  formData: FormData,
+  dependencies: UnarchiveLeadActionDependencies = defaultUnarchiveLeadActionDependencies,
+) {
+  const actionContext = await dependencies.getActionContext(leadId);
+  const redirectTargetValue = formData.get("redirectTo");
+  const fallbackRedirectPath = getLeadDetailPath(leadId);
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : fallbackRedirectPath;
+
+  try {
+    await dependencies.assertLeadActionPermission({
+      ...actionContext,
+      leadActionPermissionKey: "archiveLead",
+    });
+
+    const lead = await dependencies.findLeadForUnarchive({
+      leadId,
+      workspaceId: actionContext.workspaceId,
+    });
+
+    if (!lead) {
+      throw new LeadWorkflowError(
+        "LEAD_NOT_FOUND",
+        `Lead ${leadId} was not found in workspace ${actionContext.workspaceId}.`,
+      );
+    }
+
+    const restoredStatus = resolveRestoredLeadStatus(lead.restoreStatus);
+    dependencies.assertLeadStatusTransitionIsAllowed(lead.status, restoredStatus);
+
+    await dependencies.restoreLead({
+      actionContext,
+      lead,
+    });
+  } catch (error) {
+    if (isLeadWorkflowError(error)) {
+      dependencies.redirectToWorkflowErrorPath(redirectPath, error.code);
+    }
+
+    throw error;
+  }
+
+  dependencies.refreshLeadWorkflow(leadId);
+  dependencies.redirect(redirectPath);
+}
+
+export async function unarchiveLeadAction(leadId: string, formData: FormData) {
+  return handleUnarchiveLeadAction(leadId, formData);
+}
+
 function parseLeadStatusFromFormValue(value: FormDataEntryValue | null) {
   if (typeof value !== "string" || value.length === 0) {
     return null;
@@ -3052,6 +3363,18 @@ function parseOptionalFormText(value: FormDataEntryValue | null) {
   const normalizedValue = value.trim();
 
   return normalizedValue.length > 0 ? normalizedValue : null;
+}
+
+function resolveRestoredLeadStatus(previousStatus: LeadStatus | null) {
+  if (
+    previousStatus &&
+    previousStatus !== LeadStatus.ARCHIVED &&
+    previousStatus !== LeadStatus.CLOSED
+  ) {
+    return previousStatus;
+  }
+
+  return LeadStatus.UNDER_REVIEW;
 }
 
 function parseOptionalFormDateTime(value: FormDataEntryValue | null) {

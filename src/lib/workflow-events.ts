@@ -23,6 +23,7 @@ export const workflowEventTypes = {
   applicationSent: "application_sent",
   declineRecorded: "decline_recorded",
   archived: "lead_archived",
+  restored: "lead_restored",
   templateRenderFailed: "template_render_failed",
   outboundMessageQueued: "outbound_message_queued",
   outboundMessageBlocked: "outbound_message_blocked",

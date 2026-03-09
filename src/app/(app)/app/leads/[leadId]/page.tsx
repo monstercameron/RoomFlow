@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
-import { getLeadDetailViewData } from "@/lib/app-data";
+import {
+  getLeadDetailNavigationData,
+  getLeadDetailViewData,
+  type LeadListFilter,
+  type LeadListSort,
+} from "@/lib/app-data";
 import {
   generateLeadInsightsAction,
   generateLeadTranslationAction,
@@ -23,6 +28,8 @@ import {
   scheduleTourAction,
   sendApplicationAction,
   updateScreeningRequestStatusAction,
+  archiveLeadAction,
+  unarchiveLeadAction,
   assignLeadPropertyAction,
   confirmDuplicateLeadAction,
   declineLeadAction,
@@ -41,9 +48,109 @@ type LeadDetailPageProps = {
     leadId: string;
   }>;
   searchParams: Promise<{
+    filter?: string;
+    page?: string;
+    pageSize?: string;
+    q?: string;
+    showArchived?: string;
+    sort?: string;
     workflowError?: string;
   }>;
 };
+
+const leadListFilterValues: LeadListFilter[] = [
+  "all",
+  "awaiting-response",
+  "archived",
+  "review",
+  "qualified",
+  "unassigned",
+  "overdue",
+];
+
+const leadListSortValues: LeadListSort[] = [
+  "last-activity-desc",
+  "last-activity-asc",
+  "name-asc",
+  "name-desc",
+  "property-asc",
+  "property-desc",
+  "assignee-asc",
+  "assignee-desc",
+  "move-in-asc",
+  "move-in-desc",
+  "budget-high",
+  "budget-low",
+];
+
+const leadWorkflowStages = [
+  {
+    description: "Lead captured and ready for first action.",
+    key: "intake",
+    label: "Intake",
+    statuses: ["NEW"],
+  },
+  {
+    description: "Waiting on outreach or missing details.",
+    key: "follow-up",
+    label: "Follow-up",
+    statuses: ["AWAITING_RESPONSE", "INCOMPLETE"],
+  },
+  {
+    description: "Needs operator review before routing forward.",
+    key: "review",
+    label: "Review",
+    statuses: ["UNDER_REVIEW", "CAUTION"],
+  },
+  {
+    description: "Qualified and ready for scheduling or application.",
+    key: "qualified",
+    label: "Qualified",
+    statuses: ["QUALIFIED"],
+  },
+  {
+    description: "Tour coordination is active.",
+    key: "tour",
+    label: "Tour",
+    statuses: ["TOUR_SCHEDULED"],
+  },
+  {
+    description: "Application has been sent and is in flight.",
+    key: "application",
+    label: "Application",
+    statuses: ["APPLICATION_SENT"],
+  },
+  {
+    description: "Lead reached a final state.",
+    key: "outcome",
+    label: "Outcome",
+    statuses: ["DECLINED", "ARCHIVED", "CLOSED"],
+  },
+] as const;
+
+const majorPanelClassName =
+  "mb-6 rounded-[2.4rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[0_26px_60px_rgba(44,32,20,0.09)] md:p-7";
+
+const sectionPanelClassName =
+  "rounded-[2.1rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[0_22px_52px_rgba(44,32,20,0.08)]";
+
+const insetPanelClassName =
+  "rounded-[1.7rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.34)]";
+
+const metadataTileClassName =
+  "rounded-[1.45rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.78)] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)]";
+
+const navigationActionClassName =
+  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-[rgba(184,88,51,0.18)] bg-[rgba(249,240,231,0.96)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)] shadow-[0_8px_18px_rgba(62,43,28,0.05)] transition-[color,background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:border-[rgba(184,88,51,0.3)] hover:bg-[rgba(255,247,239,0.98)] hover:text-[rgb(123,54,29)] hover:shadow-[0_14px_28px_rgba(62,43,28,0.08)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(184,88,51,0.08)]";
+
+const navigationActionDisabledClassName =
+  "inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-2xl border border-[rgba(184,88,51,0.14)] bg-[rgba(241,232,222,0.68)] px-4 py-3 text-sm font-medium text-[rgba(113,94,78,0.64)] shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]";
+
+const primaryWorkflowButtonClassName =
+  "inline-flex min-h-11 items-center justify-center rounded-2xl border border-[rgba(184,88,51,0.24)] bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white shadow-[0_12px_24px_rgba(141,63,33,0.22)] transition-colors duration-150 hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50";
+
+const secondaryWorkflowButtonClassName =
+  "inline-flex min-h-11 items-center justify-center rounded-2xl border border-[var(--color-line)] bg-[rgba(255,255,255,0.86)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.2)] hover:bg-[rgba(255,255,255,0.96)] disabled:cursor-not-allowed disabled:opacity-50";
 
 export default async function LeadDetailPage({
   params,
@@ -63,50 +170,86 @@ export default async function LeadDetailPage({
     notFound();
   }
 
+  const activeFilter = isLeadListFilter(resolvedSearchParams.filter)
+    ? resolvedSearchParams.filter
+    : "all";
+  const activeSort = normalizeLeadListSort(resolvedSearchParams.sort);
+  const activePage = parsePositiveInteger(resolvedSearchParams.page) ?? 1;
+  const activePageSize = parsePositiveInteger(resolvedSearchParams.pageSize) ?? 10;
+  const activeQuery = resolvedSearchParams.q ?? "";
+  const showArchived =
+    parseBooleanSearchParam(resolvedSearchParams.showArchived) ||
+    activeFilter === "archived";
+  const currentListParams = {
+    filter: activeFilter,
+    page: activePage,
+    pageSize: activePageSize,
+    query: activeQuery,
+    showArchived,
+    sort: activeSort,
+  };
+  const currentListHref = buildLeadsHref(currentListParams);
+  const currentDetailHref = buildLeadDetailHref(lead.id, currentListParams);
+  const leadNavigation = await getLeadDetailNavigationData({
+    filter: activeFilter,
+    leadId,
+    query: activeQuery,
+    showArchived,
+    sort: activeSort,
+  });
+  const workflowChart = getLeadWorkflowChart(lead.statusValue, lead.status);
+
   return (
     <main>
       <PageHeader
         eyebrow={lead.source}
-        title={lead.name}
+        title={
+          <span className="flex flex-wrap items-center gap-3">
+            <span>{lead.name}</span>
+            {lead.statusValue === "ARCHIVED" ? (
+              <span className="inline-flex items-center rounded-full border border-[rgba(126,87,53,0.28)] bg-[rgb(229,214,198)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[rgb(98,66,40)] shadow-[inset_0_1px_0_rgba(255,255,255,0.34)]">
+                Archived
+              </span>
+            ) : null}
+          </span>
+        }
         description={`${lead.property} | ${lead.status} | ${lead.contactMethod}`}
         actions={
-          <div className="flex flex-wrap gap-2">
-            <form action={evaluateLeadAction.bind(null, lead.id)}>
-              <button
-                className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!lead.actions.evaluateFit}
-                type="submit"
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link className={navigationActionClassName} href={currentListHref}>
+              <span aria-hidden="true">←</span>
+              Back to leads
+            </Link>
+            {leadNavigation.previousLead ? (
+              <Link
+                className={navigationActionClassName}
+                href={buildLeadDetailHref(leadNavigation.previousLead.id, currentListParams)}
+                title={leadNavigation.previousLead.fullName}
               >
-                Evaluate fit
-              </button>
-            </form>
-            <form action={requestInfoAction.bind(null, lead.id)}>
-              <button
-                className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!lead.actions.requestInfo}
-                type="submit"
+                <span aria-hidden="true">←</span>
+                Previous lead
+              </Link>
+            ) : (
+              <span aria-disabled="true" className={navigationActionDisabledClassName}>
+                <span aria-hidden="true">←</span>
+                Previous lead
+              </span>
+            )}
+            {leadNavigation.nextLead ? (
+              <Link
+                className={navigationActionClassName}
+                href={buildLeadDetailHref(leadNavigation.nextLead.id, currentListParams)}
+                title={leadNavigation.nextLead.fullName}
               >
-                Request info
-              </button>
-            </form>
-            <form action={scheduleTourAction.bind(null, lead.id)}>
-              <button
-                className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!lead.actions.scheduleTour}
-                type="submit"
-              >
-                Send scheduling handoff
-              </button>
-            </form>
-            <form action={sendApplicationAction.bind(null, lead.id)}>
-              <button
-                className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!lead.actions.sendApplication}
-                type="submit"
-              >
-                Send application
-              </button>
-            </form>
+                Next lead
+                <span aria-hidden="true">→</span>
+              </Link>
+            ) : (
+              <span aria-disabled="true" className={navigationActionDisabledClassName}>
+                Next lead
+                <span aria-hidden="true">→</span>
+              </span>
+            )}
           </div>
         }
       />
@@ -115,7 +258,195 @@ export default async function LeadDetailPage({
           {workflowErrorMessage}
         </div>
       ) : null}
-      <section className="mb-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+      <section className={majorPanelClassName}>
+        <div className="mb-6 rounded-[2rem] border border-[rgba(184,88,51,0.16)] bg-[linear-gradient(180deg,rgba(255,250,245,0.98),rgba(247,239,230,0.94))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] md:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
+                Workflow chart
+              </div>
+              <div className="mt-2 text-xl font-semibold tracking-tight">
+                {workflowChart.currentStageLabel} stage
+              </div>
+              <div className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-muted)]">
+                {workflowChart.summary}
+              </div>
+            </div>
+            <div className="rounded-[1.4rem] border border-[rgba(184,88,51,0.16)] bg-[rgba(255,255,255,0.84)] px-4 py-3 shadow-[0_10px_24px_rgba(62,43,28,0.05)]">
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                Current status
+              </div>
+              <div className="mt-2 inline-flex items-center rounded-full border border-[rgba(184,88,51,0.18)] bg-[rgba(249,240,231,0.96)] px-3 py-1 text-sm font-semibold text-[var(--color-accent-strong)]">
+                {workflowChart.currentStatusLabel}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 overflow-x-auto pb-1">
+            <div className="flex min-w-[980px] items-stretch gap-0">
+              {workflowChart.stages.map((stage, index) => (
+                <div key={stage.key} className="flex min-w-[132px] flex-1 items-center">
+                  <div className="flex min-w-0 flex-1 flex-col items-center text-center">
+                    <div
+                      className={getWorkflowStageNodeClassName(stage.state)}
+                    >
+                      <span aria-hidden="true">{index + 1}</span>
+                    </div>
+                    <div className="mt-3 text-sm font-semibold text-[var(--color-ink)]">
+                      {stage.label}
+                    </div>
+                    <div className="mt-1 max-w-[11rem] text-xs leading-5 text-[var(--color-muted)]">
+                      {stage.displayDescription}
+                    </div>
+                  </div>
+                  {index < workflowChart.stages.length - 1 ? (
+                    <div className="mx-2 mt-[-2.7rem] h-[3px] flex-1 rounded-full bg-[rgba(184,88,51,0.14)]">
+                      <div
+                        className={getWorkflowConnectorFillClassName(stage.connectorState)}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.88fr)]">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+            <div className={insetPanelClassName}>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
+                    Lead snapshot
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className={getDetailStatusBadgeClassName(lead.statusValue)}>{lead.status}</span>
+                    <span className={getDetailFitBadgeClassName(lead.fitValue)}>{lead.fit}</span>
+                    <span className="inline-flex items-center rounded-full border border-[rgba(184,88,51,0.16)] bg-[rgba(255,255,255,0.8)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                      {lead.source}
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.74)] px-4 py-3 text-right">
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                    Last activity
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-[var(--color-ink)]">{lead.lastActivity}</div>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className={metadataTileClassName}>
+                  <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Primary contact</div>
+                  <div className="mt-2 text-sm font-medium">{lead.contactMethod}</div>
+                </div>
+                <div className={metadataTileClassName}>
+                  <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Assigned property</div>
+                  <div className="mt-2 text-sm font-medium">{lead.property}</div>
+                </div>
+                <div className={metadataTileClassName}>
+                  <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Email</div>
+                  <div className="mt-2 break-all text-sm font-medium">{lead.email}</div>
+                </div>
+                <div className={metadataTileClassName}>
+                  <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Phone</div>
+                  <div className="mt-2 text-sm font-medium">{lead.phone}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className={insetPanelClassName}>
+              <div className="text-sm font-semibold">Quick facts</div>
+              <div className="mt-4 grid gap-3">
+                <SnapshotFact label="Assigned owner" value={lead.leadOwner.assignedTo} />
+                <SnapshotFact label="Move-in date" value={lead.moveInDate} />
+                <SnapshotFact label="Budget" value={lead.budget} />
+                <SnapshotFact label="Stay length" value={lead.stayLength} />
+                <SnapshotFact label="Work status" value={lead.workStatus} />
+              </div>
+              <div className="mt-4 rounded-[1.45rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(255,255,255,0.7)] px-4 py-4 text-sm text-[var(--color-muted)]">
+                {lead.notes}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-[rgba(184,88,51,0.18)] bg-[linear-gradient(180deg,rgba(255,250,244,0.98),rgba(248,241,234,0.94))] p-5 shadow-[0_22px_54px_rgba(44,32,20,0.08)]">
+            <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
+              Workflow focus
+            </div>
+            <div className="mt-2 text-lg font-semibold leading-tight">
+              Move this lead forward with the smallest next step.
+            </div>
+            <div className="mt-4 space-y-3">
+              {lead.slaSummary ? (
+                <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                  <span className="font-medium text-[var(--color-ink)]">{lead.slaSummary.label}</span> due {lead.slaSummary.dueAtRelative}
+                </div>
+              ) : null}
+              {lead.possibleDuplicateCandidate ? (
+                <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.18)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm text-[var(--color-accent-strong)]">
+                  Possible duplicate found with {lead.possibleDuplicateCandidate.name}.
+                </div>
+              ) : null}
+              {lead.optOutSummary.isOptedOut ? (
+                <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                  Latest opt-out {lead.optOutSummary.optedOutAt}
+                  {lead.optOutSummary.optedOutReason ? ` | ${lead.optOutSummary.optedOutReason}` : ""}
+                </div>
+              ) : null}
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <form action={evaluateLeadAction.bind(null, lead.id)}>
+                <button
+                  className={primaryWorkflowButtonClassName}
+                  disabled={!lead.actions.evaluateFit}
+                  type="submit"
+                >
+                  Evaluate fit
+                </button>
+              </form>
+              <form action={requestInfoAction.bind(null, lead.id)}>
+                <button
+                  className={secondaryWorkflowButtonClassName}
+                  disabled={!lead.actions.requestInfo}
+                  type="submit"
+                >
+                  Request info
+                </button>
+              </form>
+              <form action={scheduleTourAction.bind(null, lead.id)}>
+                <button
+                  className={secondaryWorkflowButtonClassName}
+                  disabled={!lead.actions.scheduleTour}
+                  type="submit"
+                >
+                  Send scheduling handoff
+                </button>
+              </form>
+              <form action={sendApplicationAction.bind(null, lead.id)}>
+                <button
+                  className={secondaryWorkflowButtonClassName}
+                  disabled={!lead.actions.sendApplication}
+                  type="submit"
+                >
+                  Send application
+                </button>
+              </form>
+            </div>
+            {lead.actions.archiveLead || lead.actions.unarchiveLead ? (
+              <form className="mt-3" action={(lead.actions.unarchiveLead ? unarchiveLeadAction : archiveLeadAction).bind(null, lead.id)}>
+                <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                <button
+                  className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-[rgba(184,88,51,0.18)] bg-[rgba(255,255,255,0.9)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.28)] hover:bg-[rgba(255,255,255,0.98)]"
+                  type="submit"
+                >
+                  {lead.actions.unarchiveLead ? "Unarchive lead" : "Archive lead"}
+                </button>
+              </form>
+            ) : null}
+          </div>
+        </div>
+      </section>
+      <section className={majorPanelClassName}>
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <div className="text-lg font-semibold">Ownership and review SLA</div>
@@ -273,7 +604,7 @@ export default async function LeadDetailPage({
         </div>
       </section>
       {lead.automationSuppressionSummaries.length > 0 ? (
-        <div className="mb-5 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-5 shadow-[var(--shadow-panel)]">
+        <div className={`${sectionPanelClassName} mb-5`}>
           <div className="text-sm font-semibold">Automation suppression reasons</div>
           <p className="mt-2 text-sm text-[var(--color-muted)]">
             Manual outbound remains available, but these automated actions are currently blocked.
@@ -296,7 +627,7 @@ export default async function LeadDetailPage({
         </div>
       ) : null}
 
-      <section className="mb-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+      <section className={majorPanelClassName}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="text-lg font-semibold">Manual tour scheduling</div>
@@ -611,7 +942,7 @@ export default async function LeadDetailPage({
       </section>
 
       {lead.canUseScreening ? (
-        <section className="mb-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+        <section className={majorPanelClassName}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="text-lg font-semibold">Screening and verification</div>
@@ -988,7 +1319,7 @@ export default async function LeadDetailPage({
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <section className="space-y-6">
           {lead.hasAiAssist ? (
-            <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className={sectionPanelClassName}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-lg font-semibold">AI operator assist</div>
@@ -1089,7 +1420,7 @@ export default async function LeadDetailPage({
           ) : null}
 
           {lead.possibleDuplicateCandidate ? (
-            <div className="rounded-[2rem] border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] p-6 shadow-[var(--shadow-panel)]">
+            <div className="rounded-[2.1rem] border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] p-6 shadow-[0_22px_52px_rgba(44,32,20,0.08)]">
               <div className="text-lg font-semibold">Possible duplicate lead</div>
               <p className="mt-2 text-sm text-[var(--color-muted)]">
                 This lead matched an existing record with medium confidence. Confirm if this
@@ -1132,48 +1463,32 @@ export default async function LeadDetailPage({
             </div>
           ) : null}
 
-          <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
-            <div className="text-lg font-semibold">Summary</div>
-            <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className={sectionPanelClassName}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <dt className="text-sm text-[var(--color-muted)]">Assigned property</dt>
-                <dd className="mt-1 font-medium">{lead.property}</dd>
+                <div className="text-lg font-semibold">Operator controls</div>
+                <p className="mt-2 max-w-2xl text-sm text-[var(--color-muted)]">
+                  Keep routing, outreach, exceptions, and operator-only context together so the top of the page can stay focused on the prospect profile.
+                </p>
               </div>
-              <div>
-                <dt className="text-sm text-[var(--color-muted)]">Move-in date</dt>
-                <dd className="mt-1 font-medium">{lead.moveInDate}</dd>
+              <div className="rounded-[1.45rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                {lead.schedulingUrl ? (
+                  <a
+                    className="text-[var(--color-accent-strong)] underline decoration-[var(--color-line)] underline-offset-4"
+                    href={lead.schedulingUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Scheduling handoff link
+                  </a>
+                ) : (
+                  "Property scheduling link not configured"
+                )}
               </div>
-              <div>
-                <dt className="text-sm text-[var(--color-muted)]">Budget</dt>
-                <dd className="mt-1 font-medium">{lead.budget}</dd>
-              </div>
-              <div>
-                <dt className="text-sm text-[var(--color-muted)]">Stay length</dt>
-                <dd className="mt-1 font-medium">{lead.stayLength}</dd>
-              </div>
-              <div>
-                <dt className="text-sm text-[var(--color-muted)]">Work status</dt>
-                <dd className="mt-1 font-medium">{lead.workStatus}</dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-sm text-[var(--color-muted)]">Scheduling handoff</dt>
-                <dd className="mt-1 font-medium">
-                  {lead.schedulingUrl ? (
-                    <a
-                      className="text-[var(--color-accent-strong)] underline-offset-4 hover:underline"
-                      href={lead.schedulingUrl}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      {lead.schedulingUrl}
-                    </a>
-                  ) : (
-                    "Property scheduling link not configured"
-                  )}
-                </dd>
-              </div>
-            </dl>
-            <p className="mt-4 text-sm text-[var(--color-muted)]">{lead.notes}</p>
+            </div>
+            <div className="mt-4 rounded-[1.45rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.74)] px-4 py-4 text-sm text-[var(--color-muted)]">
+              {lead.notes}
+            </div>
             {lead.actions.manualOutbound ? (
               <div className="mt-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4">
                 <div className="text-sm font-semibold">Contact preferences</div>
@@ -1511,7 +1826,7 @@ export default async function LeadDetailPage({
           </div>
 
           {lead.normalizedFieldMetadataRows.length > 0 ? (
-            <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className={sectionPanelClassName}>
               <div className="text-lg font-semibold">Extraction confidence</div>
               <p className="mt-2 text-sm text-[var(--color-muted)]">
                 Normalized lead fields from inbound parsing with confidence and source.
@@ -1592,7 +1907,7 @@ export default async function LeadDetailPage({
           ) : null}
 
           {lead.hasAiAssist && lead.latestMessageForTranslation ? (
-            <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+            <div className={sectionPanelClassName}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-lg font-semibold">Translation assist</div>
@@ -1651,9 +1966,14 @@ export default async function LeadDetailPage({
             </div>
           ) : null}
 
-          <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
-            <div className="flex items-center justify-between">
-              <div className="text-lg font-semibold">House-rule fit</div>
+          <div className={sectionPanelClassName}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold">Qualification details</div>
+                <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  The lead facts, rule outcomes, and intake answers that support the current fit judgment.
+                </div>
+              </div>
               <div className="rounded-full bg-[var(--color-sidebar)] px-3 py-1 text-sm text-white">
                 {lead.fit}
               </div>
@@ -1698,7 +2018,7 @@ export default async function LeadDetailPage({
         </section>
 
         <section className="space-y-6">
-          <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)]">
+          <div className={sectionPanelClassName}>
             <div className="text-lg font-semibold">Shared thread</div>
             <p className="mt-2 text-sm text-[var(--color-muted)]">
               A single chronological thread for messages, notes, status changes, and system events.
@@ -1751,4 +2071,227 @@ export default async function LeadDetailPage({
       </div>
     </main>
   );
+}
+
+function SnapshotFact(params: { label: string; value: string }) {
+  return (
+    <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(255,255,255,0.74)] px-4 py-3">
+      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+        {params.label}
+      </div>
+      <div className="mt-1.5 text-sm font-medium text-[var(--color-ink)]">{params.value}</div>
+    </div>
+  );
+}
+
+function getDetailStatusBadgeClassName(statusValue: string) {
+  switch (statusValue) {
+    case "NEW":
+    case "AWAITING_RESPONSE":
+    case "INCOMPLETE":
+      return "inline-flex items-center rounded-full border border-[rgba(21,94,239,0.34)] bg-[rgba(37,99,235,0.14)] px-3 py-1 text-xs font-semibold text-[rgb(29,78,216)]";
+    case "QUALIFIED":
+    case "TOUR_SCHEDULED":
+    case "APPLICATION_SENT":
+      return "inline-flex items-center rounded-full border border-[rgba(22,101,52,0.28)] bg-[rgba(34,197,94,0.14)] px-3 py-1 text-xs font-semibold text-[rgb(21,128,61)]";
+    case "UNDER_REVIEW":
+    case "CAUTION":
+      return "inline-flex items-center rounded-full border border-[rgba(180,83,9,0.3)] bg-[rgba(245,158,11,0.14)] px-3 py-1 text-xs font-semibold text-[rgb(180,83,9)]";
+    default:
+      return "inline-flex items-center rounded-full border border-[rgba(71,85,105,0.24)] bg-[rgba(148,163,184,0.14)] px-3 py-1 text-xs font-semibold text-[rgb(71,85,105)]";
+  }
+}
+
+function getDetailFitBadgeClassName(fitValue: string) {
+  switch (fitValue) {
+    case "PASS":
+      return "inline-flex items-center rounded-full border border-[rgba(39,110,78,0.24)] bg-[rgb(225,244,233)] px-3 py-1 text-xs font-semibold text-[rgb(39,110,78)]";
+    case "CAUTION":
+      return "inline-flex items-center rounded-full border border-[rgba(184,88,51,0.24)] bg-[rgb(248,228,214)] px-3 py-1 text-xs font-semibold text-[var(--color-accent-strong)]";
+    case "MISMATCH":
+      return "inline-flex items-center rounded-full border border-[rgba(157,60,76,0.22)] bg-[rgb(246,221,227)] px-3 py-1 text-xs font-semibold text-[rgb(157,60,76)]";
+    default:
+      return "inline-flex items-center rounded-full border border-[rgba(123,112,97,0.18)] bg-[rgb(239,233,225)] px-3 py-1 text-xs font-semibold text-[rgb(107,98,86)]";
+  }
+}
+
+function getWorkflowStageNodeClassName(
+  state: "complete" | "current" | "upcoming",
+) {
+  switch (state) {
+    case "complete":
+      return "flex h-12 w-12 items-center justify-center rounded-full border border-[rgba(39,110,78,0.22)] bg-[rgb(225,244,233)] text-sm font-semibold text-[rgb(39,110,78)] shadow-[0_10px_20px_rgba(39,110,78,0.12)]";
+    case "current":
+      return "flex h-14 w-14 items-center justify-center rounded-full border border-[rgba(184,88,51,0.3)] bg-[linear-gradient(180deg,rgba(204,103,62,0.94),rgba(160,71,37,0.96))] text-sm font-semibold text-white shadow-[0_14px_28px_rgba(141,63,33,0.24)]";
+    default:
+      return "flex h-12 w-12 items-center justify-center rounded-full border border-[rgba(184,88,51,0.12)] bg-[rgba(255,255,255,0.88)] text-sm font-semibold text-[var(--color-muted)] shadow-[inset_0_1px_0_rgba(255,255,255,0.42)]";
+  }
+}
+
+function getWorkflowConnectorFillClassName(
+  state: "complete" | "current" | "upcoming",
+) {
+  switch (state) {
+    case "complete":
+      return "h-full w-full rounded-full bg-[rgb(112,176,142)]";
+    case "current":
+      return "h-full w-1/2 rounded-full bg-[linear-gradient(90deg,rgb(112,176,142),rgb(204,103,62))]";
+    default:
+      return "h-full w-0 rounded-full bg-transparent";
+  }
+}
+
+function getWorkflowChartStatusDescription(statusValue: string) {
+  switch (statusValue) {
+    case "NEW":
+      return "The lead has entered the queue and is ready for first contact or evaluation.";
+    case "AWAITING_RESPONSE":
+      return "Outreach is active and the team is waiting on the lead to reply.";
+    case "INCOMPLETE":
+      return "Progress is blocked on missing information before the lead can move forward.";
+    case "UNDER_REVIEW":
+      return "An operator review is in progress to resolve fit or routing questions.";
+    case "CAUTION":
+      return "The lead has review flags and needs a manual decision before advancing.";
+    case "QUALIFIED":
+      return "The lead has cleared qualification and can move into scheduling or application steps.";
+    case "TOUR_SCHEDULED":
+      return "A tour is scheduled, so the workflow is focused on showing coordination and follow-up.";
+    case "APPLICATION_SENT":
+      return "The application has been sent and the lead is in the conversion stage.";
+    case "DECLINED":
+      return "The lead has exited the workflow as declined.";
+    case "ARCHIVED":
+      return "The lead has been archived and removed from the active workflow.";
+    case "CLOSED":
+      return "The lead completed the workflow and is now closed.";
+    default:
+      return "This lead is moving through the standard qualification workflow.";
+  }
+}
+
+function getLeadWorkflowChart(statusValue: string, statusLabel: string) {
+  const currentStageIndex = Math.max(
+    0,
+    leadWorkflowStages.findIndex((stage) => stage.statuses.includes(statusValue)),
+  );
+
+  return {
+    currentStageLabel: leadWorkflowStages[currentStageIndex]?.label ?? "Workflow",
+    currentStatusLabel: statusLabel,
+    stages: leadWorkflowStages.map((stage, index) => {
+      const state =
+        index < currentStageIndex
+          ? "complete"
+          : index === currentStageIndex
+            ? "current"
+            : "upcoming";
+
+      return {
+        connectorState:
+          index < currentStageIndex
+            ? "complete"
+            : index === currentStageIndex
+              ? "current"
+              : "upcoming",
+        displayDescription:
+          index === currentStageIndex
+            ? getWorkflowChartStatusDescription(statusValue)
+            : stage.description,
+        key: stage.key,
+        label: stage.label,
+        state,
+      };
+    }),
+    summary: getWorkflowChartStatusDescription(statusValue),
+  };
+}
+
+function buildLeadsHref(params: {
+  filter: LeadListFilter;
+  page: number;
+  pageSize: number;
+  query: string;
+  showArchived: boolean;
+  sort: LeadListSort;
+}) {
+  const searchParameters = new URLSearchParams();
+
+  if (params.filter !== "all") {
+    searchParameters.set("filter", params.filter);
+  }
+
+  if (params.page > 1) {
+    searchParameters.set("page", String(params.page));
+  }
+
+  if (params.pageSize !== 10) {
+    searchParameters.set("pageSize", String(params.pageSize));
+  }
+
+  if (params.query.trim().length > 0) {
+    searchParameters.set("q", params.query.trim());
+  }
+
+  if (params.showArchived) {
+    searchParameters.set("showArchived", "1");
+  }
+
+  if (params.sort !== "last-activity-desc") {
+    searchParameters.set("sort", params.sort);
+  }
+
+  const queryString = searchParameters.toString();
+
+  return queryString.length > 0 ? `/app/leads?${queryString}` : "/app/leads";
+}
+
+function buildLeadDetailHref(
+  leadId: string,
+  params: {
+    filter: LeadListFilter;
+    page: number;
+    pageSize: number;
+    query: string;
+    showArchived: boolean;
+    sort: LeadListSort;
+  },
+) {
+  const listHref = buildLeadsHref(params);
+  const queryString = listHref.split("?")[1] ?? "";
+
+  return queryString.length > 0
+    ? `/app/leads/${leadId}?${queryString}`
+    : `/app/leads/${leadId}`;
+}
+
+function isLeadListFilter(value: string | undefined): value is LeadListFilter {
+  return leadListFilterValues.includes(value as LeadListFilter);
+}
+
+function isLeadListSort(value: string | undefined): value is LeadListSort {
+  return leadListSortValues.includes(value as LeadListSort);
+}
+
+function normalizeLeadListSort(value: string | undefined): LeadListSort {
+  switch (value) {
+    case "last-activity":
+      return "last-activity-desc";
+    default:
+      return isLeadListSort(value) ? value : "last-activity-desc";
+  }
+}
+
+function parseBooleanSearchParam(value: string | undefined) {
+  return value === "1" || value === "true";
+}
+
+function parsePositiveInteger(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const parsedValue = Number.parseInt(value, 10);
+
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : null;
 }

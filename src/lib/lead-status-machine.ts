@@ -66,7 +66,17 @@ const allowedStatusTransitionsByCurrentStatus: Readonly<
     LeadStatus.ARCHIVED,
   ]),
   [LeadStatus.DECLINED]: new Set([LeadStatus.ARCHIVED]),
-  [LeadStatus.ARCHIVED]: new Set(),
+  [LeadStatus.ARCHIVED]: new Set([
+    LeadStatus.NEW,
+    LeadStatus.AWAITING_RESPONSE,
+    LeadStatus.INCOMPLETE,
+    LeadStatus.UNDER_REVIEW,
+    LeadStatus.CAUTION,
+    LeadStatus.QUALIFIED,
+    LeadStatus.TOUR_SCHEDULED,
+    LeadStatus.APPLICATION_SENT,
+    LeadStatus.DECLINED,
+  ]),
   [LeadStatus.CLOSED]: new Set(),
 };
 
