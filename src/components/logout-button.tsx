@@ -28,10 +28,11 @@ function LogoutIcon() {
 export function LogoutButton() {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
+  const isDisabled = isPending;
 
   return (
     <button
-      className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-[rgba(170,58,32,0.22)] bg-[linear-gradient(180deg,rgba(255,236,232,0.98),rgba(251,223,216,0.94))] px-4 py-3 text-sm font-semibold text-[#8f2f1c] shadow-[0_10px_22px_rgba(143,47,28,0.08)] transition-[transform,border-color,background-color,color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:border-[rgba(143,47,28,0.34)] hover:bg-[linear-gradient(180deg,rgba(255,228,222,1),rgba(247,208,199,0.98))] hover:text-[#6f2416] hover:shadow-[0_14px_28px_rgba(143,47,28,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(170,58,32,0.22)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-panel)] active:translate-y-px disabled:translate-y-0 disabled:cursor-wait disabled:border-[rgba(170,58,32,0.12)] disabled:bg-[rgba(246,224,218,0.72)] disabled:text-[rgba(143,47,28,0.58)] disabled:shadow-none"
+      className="inline-flex min-h-12 items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-[transform,filter,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-panel)] active:translate-y-px disabled:translate-y-0 disabled:cursor-wait disabled:brightness-100"
       onClick={async () => {
         if (isPending) {
           return;
@@ -47,7 +48,22 @@ export function LogoutButton() {
           setIsPending(false);
         }
       }}
-      disabled={isPending}
+      disabled={isDisabled}
+      style={
+        isDisabled
+          ? {
+              backgroundColor: "#fca5a5",
+              border: "1px solid #fca5a5",
+              boxShadow: "none",
+              color: "#fff5f5",
+            }
+          : {
+              backgroundColor: "#dc2626",
+              border: "1px solid #991b1b",
+              boxShadow: "0 16px 30px rgba(220, 38, 38, 0.32)",
+              color: "#ffffff",
+            }
+      }
       type="button"
     >
       <LogoutIcon />
