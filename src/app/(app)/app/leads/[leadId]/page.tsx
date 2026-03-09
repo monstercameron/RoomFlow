@@ -158,7 +158,7 @@ const navigationActionDisabledClassName =
   "inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-2xl border border-[rgba(184,88,51,0.14)] bg-[rgba(241,232,222,0.68)] px-4 py-3 text-sm font-medium text-[rgba(113,94,78,0.64)] shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]";
 
 const primaryWorkflowButtonClassName =
-  "inline-flex min-h-11 items-center justify-center rounded-2xl border border-[rgba(184,88,51,0.24)] bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white shadow-[0_12px_24px_rgba(141,63,33,0.22)] transition-colors duration-150 hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-h-11 items-center justify-center rounded-2xl border border-[rgba(184,88,51,0.24)] bg-[var(--color-accent)] px-4 py-3 text-sm font-medium !text-white visited:!text-white hover:!text-white shadow-[0_12px_24px_rgba(141,63,33,0.22)] transition-colors duration-150 hover:bg-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50";
 
 const secondaryWorkflowButtonClassName =
   "inline-flex min-h-11 items-center justify-center rounded-2xl border border-[var(--color-line)] bg-[rgba(255,255,255,0.86)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.2)] hover:bg-[rgba(255,255,255,0.96)] disabled:cursor-not-allowed disabled:opacity-50";
@@ -167,7 +167,19 @@ const topActionPanelClassName =
   "rounded-[1.8rem] border border-[rgba(184,88,51,0.18)] bg-[rgba(255,250,245,0.92)] p-3 shadow-[0_16px_34px_rgba(62,43,28,0.06)]";
 
 const topActionSectionClassName =
-  "rounded-[1.45rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.84)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)]";
+  "flex h-full flex-col rounded-[1.45rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.84)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)]";
+
+const topActionEyebrowClassName =
+  "text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-accent-strong)]";
+
+const topActionSecondaryButtonClassName =
+  "inline-flex min-h-11 items-center justify-center rounded-2xl border border-[rgba(184,88,51,0.2)] bg-[rgba(249,240,231,0.96)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)] shadow-[0_8px_18px_rgba(62,43,28,0.05)] transition-[color,background-color,border-color,box-shadow] duration-150 hover:border-[rgba(184,88,51,0.3)] hover:bg-[rgba(255,247,239,0.98)] hover:text-[rgb(123,54,29)] hover:shadow-[0_14px_28px_rgba(62,43,28,0.08)] disabled:cursor-not-allowed disabled:border-[rgba(184,88,51,0.14)] disabled:bg-[rgba(241,232,222,0.68)] disabled:text-[rgba(113,94,78,0.64)] disabled:shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]";
+
+const leadDetailFocusPanelClassName =
+  "rounded-[2rem] border border-[rgba(184,88,51,0.18)] bg-[rgb(245,236,226)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.32),0_14px_32px_rgba(62,43,28,0.06)]";
+
+const leadDetailFocusInsetClassName =
+  "rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.82)] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.38)]";
 
 const operatorWorkspaceCardClassName =
   "rounded-[1.6rem] border border-[rgba(184,88,51,0.18)] bg-[rgb(245,236,226)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.32),0_14px_32px_rgba(62,43,28,0.06)]";
@@ -456,7 +468,7 @@ export default async function LeadDetailPage({
             <div className={topActionPanelClassName}>
               <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)]">
                 <div className={topActionSectionClassName}>
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[rgb(29,78,216)]">
+                  <div className={topActionEyebrowClassName}>
                     Prospect-facing
                   </div>
                   <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">
@@ -465,7 +477,7 @@ export default async function LeadDetailPage({
                   <div className="mt-1 text-sm text-[var(--color-muted)]">
                     Start with direct outreach, then use the thread for context and history.
                   </div>
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
                     {lead.actions.manualOutbound ? (
                       <Link
                         className={primaryWorkflowButtonClassName}
@@ -477,14 +489,14 @@ export default async function LeadDetailPage({
                     {lead.requestInfoActionLabel === "Ask missing questions" ? (
                       lead.askMissingQuestionsAvailability.canOpenComposer ? (
                         <Link
-                          className={secondaryWorkflowButtonClassName}
+                          className={topActionSecondaryButtonClassName}
                           href={`${askMissingQuestionsHref}#manual-outbound`}
                         >
                           Ask missing questions
                         </Link>
                       ) : (
                         <button
-                          className={secondaryWorkflowButtonClassName}
+                          className={topActionSecondaryButtonClassName}
                           disabled
                           title={lead.askMissingQuestionsAvailability.disabledReason ?? undefined}
                           type="button"
@@ -495,13 +507,13 @@ export default async function LeadDetailPage({
                     ) : lead.actions.requestInfo ? (
                       <form action={requestInfoAction.bind(null, lead.id)}>
                         <input type="hidden" name="redirectTo" value={currentDetailHref} />
-                        <button className={secondaryWorkflowButtonClassName} type="submit">
+                        <button className={topActionSecondaryButtonClassName} type="submit">
                           Request info
                         </button>
                       </form>
                     ) : null}
                     <Link
-                      className="text-sm font-medium text-[var(--color-accent-strong)] underline decoration-[var(--color-line)] underline-offset-4"
+                      className={topActionSecondaryButtonClassName}
                       href="#shared-thread"
                     >
                       Open thread
@@ -510,7 +522,7 @@ export default async function LeadDetailPage({
                 </div>
 
                 <div className={topActionSectionClassName}>
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-accent-strong)]">
+                  <div className={topActionEyebrowClassName}>
                     Internal ops
                   </div>
                   <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">
@@ -519,10 +531,10 @@ export default async function LeadDetailPage({
                   <div className="mt-1 text-sm text-[var(--color-muted)]">
                     High-touch operational controls stay near the top; lower-frequency tools remain below.
                   </div>
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
                     {lead.actions.overrideFit ? (
                       <Link
-                        className={secondaryWorkflowButtonClassName}
+                        className={topActionSecondaryButtonClassName}
                         href="#routing-controls"
                       >
                         Qualify / Move status
@@ -530,7 +542,7 @@ export default async function LeadDetailPage({
                     ) : null}
                     {canReassignProperty ? (
                       <Link
-                        className={secondaryWorkflowButtonClassName}
+                        className={topActionSecondaryButtonClassName}
                         href="#property-panel"
                       >
                         Reassign property
@@ -603,10 +615,10 @@ export default async function LeadDetailPage({
         </div>
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
           <div className="grid gap-5">
-            <div className={insetPanelClassName}>
+            <div className={leadDetailFocusPanelClassName}>
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
+                  <div className={topActionEyebrowClassName}>
                     At a glance
                   </div>
                   <div className="mt-2 text-sm text-[var(--color-muted)]">
@@ -615,7 +627,7 @@ export default async function LeadDetailPage({
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span className={getDetailStatusBadgeClassName(lead.statusValue)}>{lead.status}</span>
                     <span className={getDetailFitBadgeClassName(lead.fitValue)}>{lead.fit}</span>
-                    <span className="inline-flex items-center rounded-full border border-[rgba(184,88,51,0.16)] bg-[rgba(255,255,255,0.8)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                    <span className="inline-flex items-center px-1 py-1 text-xs font-medium text-[var(--color-muted)]">
                       {lead.source}
                     </span>
                   </div>
@@ -646,7 +658,7 @@ export default async function LeadDetailPage({
                     </div>
                   </div>
                 </div>
-                <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.74)] px-4 py-3 text-left lg:max-w-[18rem]">
+                <div className={`${leadDetailFocusInsetClassName} text-left lg:max-w-[18rem]`}>
                   <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
                     Ready check
                   </div>
@@ -655,7 +667,7 @@ export default async function LeadDetailPage({
                   </div>
                 </div>
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="mt-5 grid justify-items-start gap-3 sm:grid-cols-2">
                 <div className={metadataTileClassName}>
                   <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Email</div>
                   <div className="mt-2 break-all text-sm font-medium">{lead.email}</div>
@@ -667,8 +679,9 @@ export default async function LeadDetailPage({
               </div>
             </div>
 
-            <div className={insetPanelClassName}>
-              <div className="text-sm font-semibold">Key details</div>
+            <div className={leadDetailFocusPanelClassName}>
+              <div className={topActionEyebrowClassName}>Key details</div>
+              <div className="mt-2 text-lg font-semibold text-[var(--color-ink)]">Review fit, timing, and operating context.</div>
               <div className="mt-2 text-sm text-[var(--color-muted)]">
                 The details that shape fit, timing, and follow-up.
               </div>
@@ -678,7 +691,7 @@ export default async function LeadDetailPage({
                 <SnapshotFact label="Stay length" value={lead.stayLength} />
                 <SnapshotFact label="Work" value={lead.workStatus} />
               </div>
-              <div className="mt-4 rounded-[1.45rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(255,255,255,0.7)] px-4 py-4 text-sm text-[var(--color-muted)]">
+              <div className={`mt-4 ${leadDetailFocusInsetClassName} text-sm text-[var(--color-muted)]`}>
                 <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
                   Notes
                 </div>
@@ -698,7 +711,7 @@ export default async function LeadDetailPage({
                     </div>
                   </div>
                   <Link
-                    className="text-sm font-medium text-[var(--color-accent-strong)] underline decoration-[var(--color-line)] underline-offset-4"
+                    className={topActionSecondaryButtonClassName}
                     href="#qualification-details"
                   >
                     Open fit explanation
@@ -733,8 +746,8 @@ export default async function LeadDetailPage({
           </div>
 
           <div className="grid gap-5">
-            <div className="rounded-[2rem] border border-[rgba(184,88,51,0.18)] bg-[linear-gradient(180deg,rgba(255,250,244,0.98),rgba(248,241,234,0.94))] p-5 shadow-[0_22px_54px_rgba(44,32,20,0.08)]">
-              <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
+            <div className={leadDetailFocusPanelClassName}>
+              <div className={topActionEyebrowClassName}>
                 Next step
               </div>
               <div className="mt-2 text-lg font-semibold leading-tight">
@@ -745,7 +758,7 @@ export default async function LeadDetailPage({
               </div>
               <div className="mt-4 space-y-3">
                 {lead.slaSummary ? (
-                  <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                  <div className={`${leadDetailFocusInsetClassName} py-3 text-sm text-[var(--color-muted)]`}>
                     <span className="font-medium text-[var(--color-ink)]">{lead.slaSummary.label}</span> due {lead.slaSummary.dueAtRelative}
                   </div>
                 ) : null}
@@ -755,7 +768,7 @@ export default async function LeadDetailPage({
                   </div>
                 ) : null}
                 {lead.optOutSummary.isOptedOut ? (
-                  <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                  <div className={`${leadDetailFocusInsetClassName} py-3 text-sm text-[var(--color-muted)]`}>
                     Latest opt-out {lead.optOutSummary.optedOutAt}
                     {lead.optOutSummary.optedOutReason ? ` | ${lead.optOutSummary.optedOutReason}` : ""}
                   </div>
@@ -775,14 +788,14 @@ export default async function LeadDetailPage({
                 {lead.requestInfoActionLabel === "Ask missing questions" ? (
                   lead.actions.manualOutbound && lead.askMissingQuestionsDraft ? (
                     <Link
-                      className={secondaryWorkflowButtonClassName}
+                      className={topActionSecondaryButtonClassName}
                       href={`${askMissingQuestionsHref}#manual-outbound`}
                     >
                       {lead.requestInfoActionLabel}
                     </Link>
                   ) : (
                     <button
-                      className={secondaryWorkflowButtonClassName}
+                      className={topActionSecondaryButtonClassName}
                       disabled
                       type="button"
                     >
@@ -793,7 +806,7 @@ export default async function LeadDetailPage({
                   <form action={requestInfoAction.bind(null, lead.id)}>
                     <input type="hidden" name="redirectTo" value={currentDetailHref} />
                     <button
-                      className={secondaryWorkflowButtonClassName}
+                      className={topActionSecondaryButtonClassName}
                       disabled={!lead.actions.requestInfo}
                       type="submit"
                     >
@@ -804,7 +817,7 @@ export default async function LeadDetailPage({
                 <form action={scheduleTourAction.bind(null, lead.id)}>
                   <input type="hidden" name="redirectTo" value={currentDetailHref} />
                   <button
-                    className={secondaryWorkflowButtonClassName}
+                    className={topActionSecondaryButtonClassName}
                     disabled={!lead.actions.scheduleTour}
                     type="submit"
                   >
@@ -814,7 +827,7 @@ export default async function LeadDetailPage({
                 <form action={sendApplicationAction.bind(null, lead.id)}>
                   <input type="hidden" name="redirectTo" value={currentDetailHref} />
                   <button
-                    className={secondaryWorkflowButtonClassName}
+                    className={topActionSecondaryButtonClassName}
                     disabled={!lead.actions.sendApplication}
                     type="submit"
                   >
@@ -826,7 +839,7 @@ export default async function LeadDetailPage({
                 <form className="mt-3" action={(lead.actions.unarchiveLead ? unarchiveLeadAction : archiveLeadAction).bind(null, lead.id)}>
                   <input type="hidden" name="redirectTo" value={currentDetailHref} />
                   <button
-                    className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-[rgba(184,88,51,0.18)] bg-[rgba(255,255,255,0.9)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.28)] hover:bg-[rgba(255,255,255,0.98)]"
+                    className={topActionSecondaryButtonClassName}
                     type="submit"
                   >
                     {lead.actions.unarchiveLead ? "Unarchive lead" : "Archive lead"}
@@ -837,12 +850,12 @@ export default async function LeadDetailPage({
 
             {lead.actions.overrideFit ? (
               <div
-                className="rounded-[2rem] border border-[rgba(184,88,51,0.18)] bg-[rgba(255,255,255,0.9)] p-5 shadow-[0_20px_48px_rgba(44,32,20,0.07)]"
+                className={leadDetailFocusPanelClassName}
                 id="routing-controls"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
+                    <div className={topActionEyebrowClassName}>
                       Move lead
                     </div>
                     <div className="mt-2 text-lg font-semibold leading-tight">
@@ -852,20 +865,20 @@ export default async function LeadDetailPage({
                       Use a fast move when the next step is obvious. Use the form when you need more control.
                     </div>
                   </div>
-                  <div className="rounded-[1.35rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                  <div className={`${operatorWorkspaceInsetCardClassName} py-3 text-sm text-[var(--color-muted)]`}>
                     Recommended: <span className="font-semibold text-[var(--color-ink)]">{lead.recommendedStatus}</span>
                   </div>
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(249,240,231,0.6)] px-4 py-4">
+                  <div className={operatorWorkspaceInsetCardClassName}>
                     <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Current</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <span className={getDetailStatusBadgeClassName(lead.statusValue)}>{lead.status}</span>
                       <span className={getDetailFitBadgeClassName(lead.fitValue)}>{lead.fit}</span>
                     </div>
                   </div>
-                  <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(255,255,255,0.8)] px-4 py-4 text-sm text-[var(--color-muted)]">
+                  <div className={`${operatorWorkspaceInsetCardClassName} text-sm text-[var(--color-muted)]`}>
                     {routingStatusOptions.length > 1
                       ? `${routingStatusOptions.length - 1} valid manual status transition${routingStatusOptions.length === 2 ? "" : "s"} from here.`
                       : "No forward moves are available from this status."}
@@ -885,7 +898,7 @@ export default async function LeadDetailPage({
                           <input type="hidden" name="overrideFit" value={quickAction.fitValue} />
                           <input type="hidden" name="overrideReason" value={quickAction.reason} />
                           <input type="hidden" name="redirectTo" value={currentDetailHref} />
-                          <button className={secondaryWorkflowButtonClassName} type="submit">
+                          <button className={topActionSecondaryButtonClassName} type="submit">
                             {quickAction.label}
                           </button>
                         </form>
@@ -896,7 +909,7 @@ export default async function LeadDetailPage({
 
                 <form
                   action={overrideLeadRoutingAction.bind(null, lead.id)}
-                  className="mt-5 rounded-[1.45rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
+                  className={`mt-5 ${operatorWorkspaceInsetCardClassName}`}
                 >
                   <div className="text-sm font-semibold">More options</div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -905,7 +918,7 @@ export default async function LeadDetailPage({
                         Status
                       </span>
                       <select
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className="w-full rounded-2xl border border-[rgba(184,88,51,0.2)] bg-[rgba(255,255,255,0.98)] px-4 py-3 text-[var(--color-ink)] shadow-[inset_0_1px_0_rgba(255,255,255,0.86),0_8px_18px_rgba(62,43,28,0.05)] outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-[rgba(184,88,51,0.34)] focus:bg-white focus:ring-4 focus:ring-[rgba(184,88,51,0.08)]"
                         defaultValue={lead.recommendedStatusValue}
                         name="overrideStatus"
                         required
@@ -922,7 +935,7 @@ export default async function LeadDetailPage({
                         Fit
                       </span>
                       <select
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className="w-full rounded-2xl border border-[rgba(184,88,51,0.2)] bg-[rgba(255,255,255,0.98)] px-4 py-3 text-[var(--color-ink)] shadow-[inset_0_1px_0_rgba(255,255,255,0.86),0_8px_18px_rgba(62,43,28,0.05)] outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-[rgba(184,88,51,0.34)] focus:bg-white focus:ring-4 focus:ring-[rgba(184,88,51,0.08)]"
                         defaultValue={resolveRoutingPanelFitDefault(
                           lead.fitValue,
                           lead.recommendedStatusValue,
@@ -943,7 +956,7 @@ export default async function LeadDetailPage({
                       Reason
                     </span>
                     <input
-                      className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      className="w-full rounded-2xl border border-[rgba(184,88,51,0.2)] bg-[rgba(255,255,255,0.98)] px-4 py-3 text-[var(--color-ink)] shadow-[inset_0_1px_0_rgba(255,255,255,0.86),0_8px_18px_rgba(62,43,28,0.05)] outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-[rgba(184,88,51,0.34)] focus:bg-white focus:ring-4 focus:ring-[rgba(184,88,51,0.08)]"
                       defaultValue="Routed from the Workflow 7 status controls."
                       name="overrideReason"
                       required
@@ -951,7 +964,7 @@ export default async function LeadDetailPage({
                     />
                   </label>
                   <input type="hidden" name="redirectTo" value={currentDetailHref} />
-                  <button className="mt-3 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white" type="submit">
+                  <button className={`${primaryWorkflowButtonClassName} mt-3`} type="submit">
                     Save routing update
                   </button>
                 </form>
@@ -2789,7 +2802,7 @@ export default async function LeadDetailPage({
 
 function SnapshotFact(params: { label: string; value: string }) {
   return (
-    <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(255,255,255,0.74)] px-4 py-3">
+    <div className={`${leadDetailFocusInsetClassName} py-3`}>
       <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
         {params.label}
       </div>
@@ -2855,29 +2868,33 @@ function getDetailStatusBadgeClassName(statusValue: string) {
     case "NEW":
     case "AWAITING_RESPONSE":
     case "INCOMPLETE":
-      return "inline-flex items-center rounded-full border border-[rgba(21,94,239,0.34)] bg-[rgba(37,99,235,0.14)] px-3 py-1 text-xs font-semibold text-[rgb(29,78,216)]";
+      return "inline-flex items-center rounded-full border border-[rgba(21,94,239,0.38)] bg-[rgba(37,99,235,0.18)] px-3 py-1 text-xs font-semibold text-[rgb(29,78,216)]";
     case "QUALIFIED":
     case "TOUR_SCHEDULED":
     case "APPLICATION_SENT":
-      return "inline-flex items-center rounded-full border border-[rgba(22,101,52,0.28)] bg-[rgba(34,197,94,0.14)] px-3 py-1 text-xs font-semibold text-[rgb(21,128,61)]";
+      return "inline-flex items-center rounded-full border border-[rgba(22,101,52,0.34)] bg-[rgba(34,197,94,0.18)] px-3 py-1 text-xs font-semibold text-[rgb(21,128,61)]";
     case "UNDER_REVIEW":
     case "CAUTION":
-      return "inline-flex items-center rounded-full border border-[rgba(180,83,9,0.3)] bg-[rgba(245,158,11,0.14)] px-3 py-1 text-xs font-semibold text-[rgb(180,83,9)]";
+      return "inline-flex items-center rounded-full border border-[rgba(180,83,9,0.34)] bg-[rgba(245,158,11,0.18)] px-3 py-1 text-xs font-semibold text-[rgb(180,83,9)]";
+    case "DECLINED":
+    case "ARCHIVED":
+    case "CLOSED":
+      return "inline-flex items-center rounded-full border border-[rgba(71,85,105,0.28)] bg-[rgba(148,163,184,0.18)] px-3 py-1 text-xs font-semibold text-[rgb(71,85,105)]";
     default:
-      return "inline-flex items-center rounded-full border border-[rgba(71,85,105,0.24)] bg-[rgba(148,163,184,0.14)] px-3 py-1 text-xs font-semibold text-[rgb(71,85,105)]";
+      return "inline-flex items-center rounded-full border border-[rgba(71,85,105,0.22)] bg-[rgba(241,245,249,0.9)] px-3 py-1 text-xs font-semibold text-[rgb(71,85,105)]";
   }
 }
 
 function getDetailFitBadgeClassName(fitValue: string) {
   switch (fitValue) {
     case "PASS":
-      return "inline-flex items-center rounded-full border border-[rgba(39,110,78,0.24)] bg-[rgb(225,244,233)] px-3 py-1 text-xs font-semibold text-[rgb(39,110,78)]";
+      return "inline-flex items-center rounded-full border border-[rgba(39,110,78,0.24)] bg-[rgb(225,244,233)] px-3 py-1 text-xs font-semibold text-[rgb(39,110,78)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]";
     case "CAUTION":
-      return "inline-flex items-center rounded-full border border-[rgba(184,88,51,0.24)] bg-[rgb(248,228,214)] px-3 py-1 text-xs font-semibold text-[var(--color-accent-strong)]";
+      return "inline-flex items-center rounded-full border border-[rgba(184,88,51,0.26)] bg-[rgb(248,228,214)] px-3 py-1 text-xs font-semibold text-[var(--color-accent-strong)] shadow-[inset_0_1px_0_rgba(255,255,255,0.42)]";
     case "MISMATCH":
-      return "inline-flex items-center rounded-full border border-[rgba(157,60,76,0.22)] bg-[rgb(246,221,227)] px-3 py-1 text-xs font-semibold text-[rgb(157,60,76)]";
+      return "inline-flex items-center rounded-full border border-[rgba(157,60,76,0.22)] bg-[rgb(246,221,227)] px-3 py-1 text-xs font-semibold text-[rgb(157,60,76)] shadow-[inset_0_1px_0_rgba(255,255,255,0.42)]";
     default:
-      return "inline-flex items-center rounded-full border border-[rgba(123,112,97,0.18)] bg-[rgb(239,233,225)] px-3 py-1 text-xs font-semibold text-[rgb(107,98,86)]";
+      return "inline-flex items-center rounded-full border border-[rgba(123,112,97,0.18)] bg-[rgb(239,233,225)] px-3 py-1 text-xs font-semibold text-[rgb(107,98,86)] shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]";
   }
 }
 
