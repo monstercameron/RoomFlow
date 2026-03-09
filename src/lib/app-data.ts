@@ -3610,6 +3610,10 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt),
     property: lead.property?.name ?? "Unassigned",
     propertyId: lead.propertyId,
+    propertyLifecycleStatus: lead.property
+      ? formatPropertyLifecycleStatus(lead.property.lifecycleStatus)
+      : null,
+    propertyLifecycleStatusValue: lead.property?.lifecycleStatus ?? null,
     availableProperties: await prisma.property.findMany({
       where: {
         workspaceId: membership.workspaceId,

@@ -425,6 +425,53 @@ export default async function LeadDetailPage({
         (reason) => !automationSharedReasons.includes(reason),
       ),
     }));
+  const manualScheduleBlockers: string[] = [];
+
+  if (lead.upcomingTour) {
+    manualScheduleBlockers.push(
+      "An upcoming tour already exists. Update or close that tour before creating another one.",
+    );
+  }
+
+  if (!lead.propertyId) {
+    manualScheduleBlockers.push(
+      "Assign this lead to an active property before scheduling a manual tour.",
+    );
+  } else if (
+    lead.propertyLifecycleStatusValue &&
+    lead.propertyLifecycleStatusValue !== "ACTIVE"
+  ) {
+    manualScheduleBlockers.push(
+      `The assigned property is ${lead.propertyLifecycleStatus.toLowerCase()}. Manual tours only open for active properties.`,
+    );
+  }
+
+  if (lead.fitValue === QualificationFit.MISMATCH) {
+    manualScheduleBlockers.push(
+      "This lead is marked as a mismatch, so manual tour scheduling is disabled.",
+    );
+  }
+
+  if (lead.recommendedStatusValue === LeadStatus.INCOMPLETE) {
+    manualScheduleBlockers.push(
+      "Required qualification information is still missing. Finish that intake first.",
+    );
+  } else if (lead.statusValue !== LeadStatus.QUALIFIED && !lead.upcomingTour) {
+    manualScheduleBlockers.push(
+      `This lead is currently ${lead.status.toLowerCase()}. Move it to qualified before booking a manual tour.`,
+    );
+  }
+
+  const canCreateManualSchedule =
+    lead.actions.manualScheduleTour && !lead.upcomingTour;
+  const manualScheduleAssignmentSummary =
+    lead.tourSchedulingModeSummary === "Direct assignment"
+      ? "Defaults to whoever books it"
+      : lead.tourSchedulingModeSummary === "Manual team assignment"
+        ? "Choose the teammate when you book it"
+        : lead.tourSchedulingModeSummary === "Round robin shared coverage"
+          ? "Auto-assigns to the next coverage teammate"
+          : lead.tourSchedulingModeSummary;
 
   return (
     <main>
@@ -1325,19 +1372,48 @@ export default async function LeadDetailPage({
       <section className={majorPanelClassName}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="text-lg font-semibold">Manual tour scheduling</div>
+            <div className={topActionEyebrowClassName}>Manual scheduling</div>
+            <div className="mt-2 text-lg font-semibold">Manual tour scheduling</div>
             <p className="mt-2 max-w-2xl text-sm text-[var(--color-muted)]">
               Schedule an operator-managed tour here, or keep using the separate handoff button when the prospect should pick their own time from the property link.
             </p>
-            <div className="mt-3 grid gap-2 text-sm text-[var(--color-muted)] md:grid-cols-2">
-              <div>Operator availability: {lead.operatorSchedulingAvailabilitySummary}</div>
-              <div>Property availability: {lead.propertySchedulingAvailabilitySummary}</div>
-              <div>Assignment mode: {lead.tourSchedulingModeSummary}</div>
-              <div>Reminder sequence: {lead.tourReminderSequenceSummary}</div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className={operatorWorkspaceInsetCardClassName}>
+                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                  Operator availability
+                </div>
+                <div className="mt-2 text-sm text-[var(--color-ink)]">
+                  {lead.operatorSchedulingAvailabilitySummary}
+                </div>
+              </div>
+              <div className={operatorWorkspaceInsetCardClassName}>
+                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                  Property availability
+                </div>
+                <div className="mt-2 text-sm text-[var(--color-ink)]">
+                  {lead.propertySchedulingAvailabilitySummary}
+                </div>
+              </div>
+              <div className={operatorWorkspaceInsetCardClassName}>
+                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                  Who gets the tour
+                </div>
+                <div className="mt-2 text-sm text-[var(--color-ink)]">
+                  {manualScheduleAssignmentSummary}
+                </div>
+              </div>
+              <div className={operatorWorkspaceInsetCardClassName}>
+                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                  Reminder sequence
+                </div>
+                <div className="mt-2 text-sm text-[var(--color-ink)]">
+                  {lead.tourReminderSequenceSummary}
+                </div>
+              </div>
             </div>
           </div>
           {lead.upcomingTour ? (
-            <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-2 text-sm font-medium">
+            <div className="rounded-full border border-[rgba(39,110,78,0.24)] bg-[rgb(225,244,233)] px-4 py-2 text-sm font-medium text-[rgb(39,110,78)]">
               Upcoming tour on {lead.upcomingTour.scheduledAt}
             </div>
           ) : null}
@@ -1345,30 +1421,50 @@ export default async function LeadDetailPage({
 
         {lead.upcomingTour ? (
           <div className="mt-5 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-            <div className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5">
-              <div className="text-sm font-medium text-[var(--color-muted)]">Upcoming tour</div>
+            <div className={operatorWorkspaceCardClassName}>
+              <div className={topActionEyebrowClassName}>Upcoming tour</div>
               <div className="mt-2 text-xl font-semibold">{lead.upcomingTour.scheduledAt}</div>
-              <div className="mt-2 text-sm text-[var(--color-muted)]">
-                Status: {lead.upcomingTour.status}
+              <div className="mt-4 rounded-[1.35rem] border border-[rgba(184,88,51,0.18)] bg-[rgb(252,244,236)] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.36)]">
+                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-accent-strong)]">
+                  Scheduling status
+                </div>
+                <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">
+                  Another manual booking is blocked right now
+                </div>
+                <p className={`mt-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                  This lead already has an upcoming tour. Use the controls on the right to reschedule, cancel, complete, or mark no-show instead of creating a second booking.
+                </p>
               </div>
-              <div className="mt-2 text-sm text-[var(--color-muted)]">
-                Assigned to: {lead.upcomingTour.assignedTo}
-              </div>
-              <div className="mt-2 text-sm text-[var(--color-muted)]">
-                Property: {lead.property}
-              </div>
-              <div className="mt-2 text-sm text-[var(--color-muted)]">
-                Sync: {lead.upcomingTour.calendarSyncSummary}
-              </div>
-              <div className="mt-2 text-sm text-[var(--color-muted)]">
-                Reminders: {lead.upcomingTour.reminderSummary}
-              </div>
-              <div className="mt-2 text-sm text-[var(--color-muted)]">
-                Prospect notified: {lead.upcomingTour.prospectNotificationSentAt}
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className={operatorWorkspaceInsetCardClassName}>
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Status</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--color-ink)]">{lead.upcomingTour.status}</div>
+                </div>
+                <div className={operatorWorkspaceInsetCardClassName}>
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Assigned to</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--color-ink)]">{lead.upcomingTour.assignedTo}</div>
+                </div>
+                <div className={operatorWorkspaceInsetCardClassName}>
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Property</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--color-ink)]">{lead.property}</div>
+                </div>
+                <div className={operatorWorkspaceInsetCardClassName}>
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Calendar sync</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--color-ink)]">{lead.upcomingTour.calendarSyncSummary}</div>
+                </div>
+                <div className={operatorWorkspaceInsetCardClassName}>
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Reminders</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--color-ink)]">{lead.upcomingTour.reminderSummary}</div>
+                </div>
+                <div className={operatorWorkspaceInsetCardClassName}>
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Prospect notified</div>
+                  <div className="mt-2 text-sm font-medium text-[var(--color-ink)]">{lead.upcomingTour.prospectNotificationSentAt}</div>
+                </div>
               </div>
               {lead.upcomingTour.externalCalendarId ? (
-                <div className="mt-2 text-sm text-[var(--color-muted)]">
-                  External calendar id: {lead.upcomingTour.externalCalendarId}
+                <div className={`mt-3 ${operatorWorkspaceInsetCardClassName}`}>
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">External calendar id</div>
+                  <div className="mt-2 break-all text-sm text-[var(--color-ink)]">{lead.upcomingTour.externalCalendarId}</div>
                 </div>
               ) : null}
             </div>
@@ -1376,23 +1472,24 @@ export default async function LeadDetailPage({
             <div className="grid gap-4 lg:grid-cols-2">
               <form
                 action={rescheduleTourAction.bind(null, lead.id)}
-                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+                className={operatorWorkspaceCardClassName}
               >
-                <div className="text-sm font-medium">Reschedule tour</div>
-                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                <div className={topActionEyebrowClassName}>Timing update</div>
+                <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">Reschedule tour</div>
+                <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   New tour date and time
                   <input
-                    className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    className={operatorWorkspaceInputClassName}
                     defaultValue={lead.upcomingTour.scheduledAtInputValue}
                     name="scheduledAt"
                     required
                     type="datetime-local"
                   />
                 </label>
-                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   Assign to
                   <select
-                    className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    className={operatorWorkspaceInputClassName}
                     defaultValue={lead.upcomingTour.assignedMembershipId ?? lead.tourAssignmentOptions[0]?.value}
                     name="assignedMembershipId"
                   >
@@ -1403,30 +1500,30 @@ export default async function LeadDetailPage({
                     ))}
                   </select>
                 </label>
-                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   Reschedule reason
                   <input
-                    className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    className={operatorWorkspaceInputClassName}
                     defaultValue="Rescheduled by operator"
                     name="operatorRescheduleReason"
                     placeholder="Rescheduled by operator"
                   />
                 </label>
-                <label className="mt-3 flex items-center gap-2 text-sm text-[var(--color-muted)]">
+                <label className={`mt-3 flex items-center gap-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   <input defaultChecked name="notifyProspect" type="checkbox" />
                   Notify prospect about this change
                 </label>
-                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   Optional prospect message
                   <textarea
-                    className="mt-2 min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    className={`${operatorWorkspaceInputClassName} min-h-24`}
                     name="prospectMessage"
                     placeholder="Your tour has been moved to a new time."
                   />
                 </label>
                 <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <button
-                  className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`${primaryWorkflowButtonClassName} mt-4`}
                   disabled={!lead.actions.manageScheduledTour}
                   type="submit"
                 >
@@ -1436,35 +1533,36 @@ export default async function LeadDetailPage({
 
               <form
                 action={cancelTourAction.bind(null, lead.id)}
-                className="rounded-[1.5rem] border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] p-5"
+                className="rounded-[1.6rem] border border-[rgba(184,88,51,0.22)] bg-[rgba(248,228,214,0.72)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_14px_28px_rgba(141,63,33,0.05)]"
               >
-                <div className="text-sm font-medium">Cancel tour</div>
-                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                <div className={topActionEyebrowClassName}>Fallback</div>
+                <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">Cancel tour</div>
+                <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   Cancellation reason
                   <input
-                    className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    className={operatorWorkspaceInputClassName}
                     defaultValue="Canceled by operator"
                     name="operatorCancelReason"
                     placeholder="Canceled by operator"
                     required
                   />
                 </label>
-                <label className="mt-3 flex items-center gap-2 text-sm text-[var(--color-muted)]">
+                <label className={`mt-3 flex items-center gap-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   <input defaultChecked name="notifyProspect" type="checkbox" />
                   Notify prospect about cancellation
                 </label>
-                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   Optional prospect message
                   <textarea
-                    className="mt-2 min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    className={`${operatorWorkspaceInputClassName} min-h-24`}
                     name="prospectMessage"
                     placeholder="Your tour has been canceled. Reply if you want another time."
                   />
                 </label>
-                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   Route lead back to
                   <select
-                    className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    className={operatorWorkspaceInputClassName}
                     defaultValue="QUALIFIED"
                     name="routeToStatus"
                   >
@@ -1474,7 +1572,7 @@ export default async function LeadDetailPage({
                 </label>
                 <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <button
-                  className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.14)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`${topActionSecondaryButtonClassName} mt-4`}
                   disabled={!lead.actions.manageScheduledTour}
                   type="submit"
                 >
@@ -1484,14 +1582,16 @@ export default async function LeadDetailPage({
 
               <form
                 action={completeTourAction.bind(null, lead.id)}
-                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+                className={operatorWorkspaceCardClassName}
               >
-                <div className="text-sm font-medium">Complete tour</div>
-                <p className="mt-3 text-sm text-[var(--color-muted)]">
+                <div className={topActionEyebrowClassName}>Outcome</div>
+                <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">Complete tour</div>
+                <p className={`mt-3 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   Mark the scheduled tour as completed and move the lead back to qualified follow-up.
                 </p>
                 <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <button
+                  className={`${primaryWorkflowButtonClassName} mt-4`}
                   disabled={!lead.actions.manageScheduledTour}
                   type="submit"
                 >
@@ -1501,13 +1601,14 @@ export default async function LeadDetailPage({
 
               <form
                 action={markTourNoShowAction.bind(null, lead.id)}
-                className="rounded-[1.5rem] border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.06)] p-5"
+                className="rounded-[1.6rem] border border-[rgba(184,88,51,0.22)] bg-[rgba(248,228,214,0.72)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_14px_28px_rgba(141,63,33,0.05)]"
               >
-                <div className="text-sm font-medium">Mark no-show</div>
-                <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                <div className={topActionEyebrowClassName}>Fallback</div>
+                <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">Mark no-show</div>
+                <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                   No-show reason
                   <input
-                    className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    className={operatorWorkspaceInputClassName}
                     defaultValue="Prospect did not attend."
                     name="operatorNoShowReason"
                     placeholder="Prospect did not attend."
@@ -1515,7 +1616,7 @@ export default async function LeadDetailPage({
                 </label>
                 <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <button
-                  className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.14)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`${topActionSecondaryButtonClassName} mt-4`}
                   disabled={!lead.actions.manageScheduledTour}
                   type="submit"
                 >
@@ -1526,33 +1627,68 @@ export default async function LeadDetailPage({
           </div>
         ) : (
           <div className="mt-5 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-            <div className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5">
-              <div className="text-sm font-medium">No upcoming tour</div>
-              <p className="mt-3 text-sm text-[var(--color-muted)]">
-                Manual scheduling becomes available once the lead is qualified and assigned to an active property.
+            <div className={operatorWorkspaceCardClassName}>
+              <div className={topActionEyebrowClassName}>Tour state</div>
+              <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">
+                {canCreateManualSchedule
+                  ? "Manual scheduling is available now"
+                  : "Manual scheduling is currently blocked"}
+              </div>
+              <p className={`mt-3 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                {canCreateManualSchedule
+                  ? "You can book a tour now. The selected time still has to fit both the operator and property availability windows shown above."
+                  : "Resolve the blockers below before a manual tour can be created from this panel."}
               </p>
+              {canCreateManualSchedule ? (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className={operatorWorkspaceInsetCardClassName}>
+                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Availability</div>
+                    <div className="mt-2 text-sm text-[var(--color-ink)]">Confirm the operator and property windows line up before you book the tour.</div>
+                  </div>
+                  <div className={operatorWorkspaceInsetCardClassName}>
+                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Before sending</div>
+                    <div className="mt-2 text-sm text-[var(--color-ink)]">Pick the time, assign the teammate, and decide whether the prospect should get the confirmation immediately.</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {manualScheduleBlockers.length > 0 ? (
+                    manualScheduleBlockers.map((blocker) => (
+                      <div key={blocker} className={operatorWorkspaceInsetCardClassName}>
+                        <div className="text-sm text-[var(--color-ink)]">{blocker}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className={operatorWorkspaceInsetCardClassName}>
+                      <div className="text-sm text-[var(--color-ink)]">
+                        This lead does not currently meet the scheduling requirements. Check qualification status, property assignment, and active tour state.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <form
               action={createManualTourAction.bind(null, lead.id)}
-              className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+              className={operatorWorkspaceCardClassName}
             >
-              <div className="text-sm font-medium">Create manual tour</div>
-              <div className="mt-3 text-sm text-[var(--color-muted)]">
+              <div className={topActionEyebrowClassName}>Create manual tour</div>
+              <div className={`mt-3 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                 Assignment mode: {lead.tourSchedulingModeSummary}
               </div>
-              <label className="mt-3 block text-sm text-[var(--color-muted)]">
+              <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                 Tour date and time
                 <input
-                  className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  className={operatorWorkspaceInputClassName}
                   name="scheduledAt"
                   required
                   type="datetime-local"
                 />
               </label>
-              <label className="mt-3 block text-sm text-[var(--color-muted)]">
+              <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                 Assign to
                 <select
-                  className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  className={operatorWorkspaceInputClassName}
                   defaultValue={lead.tourAssignmentOptions[0]?.value}
                   name="assignedMembershipId"
                 >
@@ -1563,13 +1699,13 @@ export default async function LeadDetailPage({
                   ))}
                 </select>
               </label>
-              <label className="mt-3 flex items-center gap-2 text-sm text-[var(--color-muted)]">
+              <label className={`mt-3 flex items-center gap-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                 <input defaultChecked name="notifyProspect" type="checkbox" />
                 Send confirmation to prospect
               </label>
               <input type="hidden" name="redirectTo" value={currentDetailHref} />
               <button
-                className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className={`${primaryWorkflowButtonClassName} mt-4`}
                 disabled={!lead.actions.manualScheduleTour}
                 type="submit"
               >
@@ -1584,47 +1720,47 @@ export default async function LeadDetailPage({
             <div className="text-sm font-medium">Tour history</div>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               {lead.tourHistory.map((tour) => (
-                <div
-                  key={tour.id}
-                  className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
-                >
+                <div key={tour.id} className={operatorWorkspaceInsetCardClassName}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium">{tour.status}</div>
-                      <div className="mt-1 text-sm text-[var(--color-muted)]">
-                        {tour.scheduledAt}
-                      </div>
-                          <div className="mt-3 text-sm text-[var(--color-muted)]">
-                            Assigned to: {tour.assignedTo}
-                          </div>
-                          <div className="mt-2 text-sm text-[var(--color-muted)]">
-                            Sync: {tour.calendarSyncSummary}
-                          </div>
-                          <div className="mt-2 text-sm text-[var(--color-muted)]">
-                            Reminders: {tour.reminderSummary}
-                          </div>
+                      <div className={`mt-1 text-sm ${operatorWorkspaceMutedTextClassName}`}>{tour.scheduledAt}</div>
                     </div>
                     <div className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
                       {tour.createdAt}
                     </div>
                   </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Assigned to</div>
+                      <div className={`mt-1 text-sm ${operatorWorkspaceMutedTextClassName}`}>{tour.assignedTo}</div>
+                    </div>
+                    <div>
+                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Sync</div>
+                      <div className={`mt-1 text-sm ${operatorWorkspaceMutedTextClassName}`}>{tour.calendarSyncSummary}</div>
+                    </div>
+                    <div>
+                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Reminders</div>
+                      <div className={`mt-1 text-sm ${operatorWorkspaceMutedTextClassName}`}>{tour.reminderSummary}</div>
+                    </div>
+                  </div>
                   {tour.cancelReason ? (
-                    <div className="mt-3 text-sm text-[var(--color-muted)]">
+                    <div className={`mt-3 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                       Reason: {tour.cancelReason}
                     </div>
                   ) : null}
                   {tour.operatorRescheduleReason ? (
-                    <div className="mt-2 text-sm text-[var(--color-muted)]">
+                    <div className={`mt-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                       Reschedule note: {tour.operatorRescheduleReason}
                     </div>
                   ) : null}
                   {tour.operatorNoShowReason ? (
-                    <div className="mt-2 text-sm text-[var(--color-muted)]">
+                    <div className={`mt-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                       No-show note: {tour.operatorNoShowReason}
                     </div>
                   ) : null}
                   {tour.externalCalendarId ? (
-                    <div className="mt-2 text-sm text-[var(--color-muted)]">
+                    <div className={`mt-2 break-all text-sm ${operatorWorkspaceMutedTextClassName}`}>
                       External calendar id: {tour.externalCalendarId}
                     </div>
                   ) : null}
