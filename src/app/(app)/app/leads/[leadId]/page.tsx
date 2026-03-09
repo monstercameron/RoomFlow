@@ -675,11 +675,11 @@ export default async function LeadDetailPage({
             </div>
           </div>
         </div>
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
+        <div className="grid gap-5 xl:grid-cols-2">
           <div className="grid gap-5">
             <div className={leadDetailFocusPanelClassName}>
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
+              <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+                <div className="min-w-0">
                   <div className={topActionEyebrowClassName}>
                     At a glance
                   </div>
@@ -720,7 +720,7 @@ export default async function LeadDetailPage({
                     </div>
                   </div>
                 </div>
-                <div className={`${leadDetailFocusInsetClassName} text-left lg:max-w-[18rem]`}>
+                <div className={`${leadDetailFocusInsetClassName} text-left lg:h-full`}>
                   <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
                     Ready check
                   </div>
@@ -1420,7 +1420,7 @@ export default async function LeadDetailPage({
         </div>
 
         {lead.upcomingTour ? (
-          <div className="mt-5 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="mt-5 grid gap-4 xl:grid-cols-2">
             <div className={operatorWorkspaceCardClassName}>
               <div className={topActionEyebrowClassName}>Upcoming tour</div>
               <div className="mt-2 text-xl font-semibold">{lead.upcomingTour.scheduledAt}</div>
@@ -1626,7 +1626,7 @@ export default async function LeadDetailPage({
             </div>
           </div>
         ) : (
-          <div className="mt-5 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="mt-5 grid gap-4 xl:grid-cols-2">
             <div className={operatorWorkspaceCardClassName}>
               <div className={topActionEyebrowClassName}>Tour state</div>
               <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">
