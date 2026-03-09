@@ -250,3 +250,76 @@ export async function handleSetPasswordAction(
 export async function setPasswordAction(formData: FormData) {
   return handleSetPasswordAction(formData);
 }
+
+export type ChangePasswordActionDependencies = {
+  changePassword: (input: {
+    body: {
+      currentPassword: string;
+      newPassword: string;
+      revokeOtherSessions?: boolean;
+    };
+    headers: Headers;
+  }) => Promise<unknown>;
+  getHeaders: () => Promise<Headers>;
+  redirect: typeof redirect;
+  revalidatePath: typeof revalidatePath;
+};
+
+const defaultChangePasswordActionDependencies: ChangePasswordActionDependencies = {
+  changePassword: (input) => auth.api.changePassword(input),
+  getHeaders: async () => (await headers()) as unknown as Headers,
+  redirect,
+  revalidatePath,
+};
+
+export async function handleChangePasswordAction(
+  formData: FormData,
+  dependencies: ChangePasswordActionDependencies = defaultChangePasswordActionDependencies,
+) {
+  const currentPassword = String(formData.get("currentPassword") ?? "");
+  const newPassword = String(formData.get("newPassword") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
+  const revokeOtherSessions = String(formData.get("revokeOtherSessions") ?? "") === "on";
+
+  if (!currentPassword) {
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+      accountError: "Enter your current password before saving.",
+    });
+  }
+
+  if (newPassword.length < 8) {
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+      accountError: "Choose a password with at least 8 characters.",
+    });
+  }
+
+  if (newPassword !== confirmPassword) {
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+      accountError: "Password confirmation does not match.",
+    });
+  }
+
+  try {
+    await dependencies.changePassword({
+      body: {
+        currentPassword,
+        newPassword,
+        revokeOtherSessions,
+      },
+      headers: await dependencies.getHeaders(),
+    });
+  } catch (error) {
+    redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+      accountError: getActionErrorMessage(error, "Unable to change your password right now."),
+    });
+  }
+
+  dependencies.revalidatePath(securitySettingsPath);
+  redirectToSecuritySettingsWithDependency(dependencies.redirect, {
+    accountStatus: revokeOtherSessions ? "password-changed-sessions-reset" : "password-changed",
+  });
+}
+
+export async function changePasswordAction(formData: FormData) {
+  return handleChangePasswordAction(formData);
+}

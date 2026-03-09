@@ -1,4 +1,5 @@
 import {
+  changePasswordAction,
   linkSocialAccountAction,
   setPasswordAction,
   unlinkAccountAction,
@@ -59,8 +60,60 @@ export function AccountMethodsPanel(props: {
           </p>
 
           {props.hasPasswordAccount ? (
-            <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
-              Password access is active.
+            <div className="mt-4 space-y-4">
+              <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                Password access is active.
+              </div>
+              <form action={changePasswordAction} className="space-y-3">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[var(--color-ink)]" htmlFor="currentPassword">
+                    Current password
+                  </label>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent-strong)]"
+                    id="currentPassword"
+                    name="currentPassword"
+                    required
+                    type="password"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[var(--color-ink)]" htmlFor="nextPassword">
+                    New password
+                  </label>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent-strong)]"
+                    id="nextPassword"
+                    minLength={8}
+                    name="newPassword"
+                    required
+                    type="password"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[var(--color-ink)]" htmlFor="confirmNextPassword">
+                    Confirm new password
+                  </label>
+                  <input
+                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--color-accent-strong)]"
+                    id="confirmNextPassword"
+                    minLength={8}
+                    name="confirmPassword"
+                    required
+                    type="password"
+                  />
+                </div>
+                <label className="flex items-start gap-3 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                  <input className="mt-1" name="revokeOtherSessions" type="checkbox" />
+                  <span>Revoke other active sessions after changing this password.</span>
+                </label>
+                <button
+                  className="rounded-2xl border border-[var(--color-line)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)]"
+                  type="submit"
+                >
+                  Update password
+                </button>
+              </form>
             </div>
           ) : (
             <form action={setPasswordAction} className="mt-5 space-y-3">

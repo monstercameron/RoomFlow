@@ -12,8 +12,8 @@ import {
 export const integrationCatalog = [
   {
     category: IntegrationCategory.MESSAGING,
-    description: "Outbound transactional email and reply threading foundation.",
-    label: "Resend email",
+    description: "Outbound transactional email foundation for auth, invites, and operator messaging.",
+    label: "Outbound email",
     provider: IntegrationProvider.RESEND,
     setupSteps: [
       "Explanation",

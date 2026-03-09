@@ -14,6 +14,14 @@ function getAccountMethodStatusMessage(statusValue?: string | null) {
     return "Password sign-in was added to this identity.";
   }
 
+  if (statusValue === "password-changed") {
+    return "Password updated.";
+  }
+
+  if (statusValue === "password-changed-sessions-reset") {
+    return "Password updated and other sessions were revoked.";
+  }
+
   if (statusValue.endsWith("-linked")) {
     const providerLabel = `${statusValue.replace(/-linked$/, "")}`;
 

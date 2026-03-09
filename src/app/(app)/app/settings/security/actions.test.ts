@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type {
+  ChangePasswordActionDependencies,
   LinkSocialAccountActionDependencies,
   SetPasswordActionDependencies,
   UnlinkAccountActionDependencies,
@@ -63,6 +64,18 @@ function createSetPasswordDependencies(
     redirect: () => undefined as never,
     revalidatePath: () => undefined,
     setPassword: async () => undefined,
+    ...overrides,
+  };
+}
+
+function createChangePasswordDependencies(
+  overrides: Partial<ChangePasswordActionDependencies> = {},
+): ChangePasswordActionDependencies {
+  return {
+    changePassword: async () => undefined,
+    getHeaders: async () => new Headers({ "x-test": "1" }),
+    redirect: () => undefined as never,
+    revalidatePath: () => undefined,
     ...overrides,
   };
 }
@@ -336,5 +349,105 @@ test("handleSetPasswordAction validates passwords and reports success or failure
   );
   assert.deepEqual(setPasswordErrorRedirectCapture.redirects, [
     "/app/settings/security?accountError=Password+update+blocked+by+policy.",
+  ]);
+});
+
+test("handleChangePasswordAction validates input and reports success or failure", async () => {
+  const { handleChangePasswordAction } = getSecurityActionsModule();
+
+  const missingCurrentPasswordRedirectCapture = createRedirectCapture();
+  const missingCurrentPasswordFormData = new FormData();
+  missingCurrentPasswordFormData.set("newPassword", "password-123");
+  missingCurrentPasswordFormData.set("confirmPassword", "password-123");
+
+  await assert.rejects(
+    handleChangePasswordAction(
+      missingCurrentPasswordFormData,
+      createChangePasswordDependencies({
+        redirect: missingCurrentPasswordRedirectCapture.redirect as never,
+      }),
+    ),
+    missingCurrentPasswordRedirectCapture.redirectError,
+  );
+  assert.deepEqual(missingCurrentPasswordRedirectCapture.redirects, [
+    "/app/settings/security?accountError=Enter+your+current+password+before+saving.",
+  ]);
+
+  const mismatchRedirectCapture = createRedirectCapture();
+  const mismatchFormData = new FormData();
+  mismatchFormData.set("currentPassword", "old-password");
+  mismatchFormData.set("newPassword", "password-123");
+  mismatchFormData.set("confirmPassword", "password-456");
+
+  await assert.rejects(
+    handleChangePasswordAction(
+      mismatchFormData,
+      createChangePasswordDependencies({
+        redirect: mismatchRedirectCapture.redirect as never,
+      }),
+    ),
+    mismatchRedirectCapture.redirectError,
+  );
+  assert.deepEqual(mismatchRedirectCapture.redirects, [
+    "/app/settings/security?accountError=Password+confirmation+does+not+match.",
+  ]);
+
+  const changePasswordCalls: unknown[] = [];
+  const revalidatedPaths: string[] = [];
+  const successRedirectCapture = createRedirectCapture();
+  const successFormData = new FormData();
+  successFormData.set("currentPassword", "old-password");
+  successFormData.set("newPassword", "password-123");
+  successFormData.set("confirmPassword", "password-123");
+  successFormData.set("revokeOtherSessions", "on");
+
+  await assert.rejects(
+    handleChangePasswordAction(
+      successFormData,
+      createChangePasswordDependencies({
+        changePassword: async (input) => {
+          changePasswordCalls.push(input);
+        },
+        redirect: successRedirectCapture.redirect as never,
+        revalidatePath: (path) => {
+          revalidatedPaths.push(path);
+        },
+      }),
+    ),
+    successRedirectCapture.redirectError,
+  );
+  assert.equal(changePasswordCalls.length, 1);
+  assert.deepEqual(changePasswordCalls[0], {
+    body: {
+      currentPassword: "old-password",
+      newPassword: "password-123",
+      revokeOtherSessions: true,
+    },
+    headers: new Headers({ "x-test": "1" }),
+  });
+  assert.deepEqual(revalidatedPaths, ["/app/settings/security"]);
+  assert.deepEqual(successRedirectCapture.redirects, [
+    "/app/settings/security?accountStatus=password-changed-sessions-reset",
+  ]);
+
+  const changePasswordErrorRedirectCapture = createRedirectCapture();
+  await assert.rejects(
+    handleChangePasswordAction(
+      successFormData,
+      createChangePasswordDependencies({
+        redirect: changePasswordErrorRedirectCapture.redirect as never,
+        changePassword: async () => {
+          throw {
+            body: {
+              message: "Current password is invalid.",
+            },
+          };
+        },
+      }),
+    ),
+    changePasswordErrorRedirectCapture.redirectError,
+  );
+  assert.deepEqual(changePasswordErrorRedirectCapture.redirects, [
+    "/app/settings/security?accountError=Current+password+is+invalid.",
   ]);
 });

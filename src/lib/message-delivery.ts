@@ -1,19 +1,13 @@
-import { Resend } from "resend";
 import twilio from "twilio";
 import { IntegrationProvider, MessageChannel } from "@/generated/prisma/client";
 import { serializeDeliveryStatus } from "@/lib/delivery-status";
+import {
+  getConfiguredEmailDeliveryClient,
+  getConfiguredSenderEmailAddress,
+  getMissingEmailDeliveryConfigurationKeys,
+} from "@/lib/email-delivery";
 import { parseMessagingChannelIntegrationConfig } from "@/lib/integrations";
 import { prisma } from "@/lib/prisma";
-
-function getResendClient() {
-  const apiKey = process.env.RESEND_API_KEY;
-
-  if (!apiKey || apiKey === "replace-me") {
-    throw new Error("RESEND_API_KEY is not configured.");
-  }
-
-  return new Resend(apiKey);
-}
 
 function getTwilioClient() {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -93,11 +87,22 @@ export async function sendQueuedMessage(messageId: string, retryCount = 0) {
       throw new Error("Lead is missing an email address.");
     }
 
-    const resend = getResendClient();
+    const emailDeliveryConfigurationIssues = getMissingEmailDeliveryConfigurationKeys();
 
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL ?? "onboarding@roomflow.local",
-      to: recipientEmail,
+    if (emailDeliveryConfigurationIssues.length > 0) {
+      throw new Error(`${emailDeliveryConfigurationIssues[0]} is not configured.`);
+    }
+
+    const emailDeliveryClient = getConfiguredEmailDeliveryClient();
+    const senderEmailAddress = getConfiguredSenderEmailAddress();
+
+    if (!emailDeliveryClient || !senderEmailAddress) {
+      throw new Error("Email delivery provider is not configured.");
+    }
+
+    await emailDeliveryClient.sendTextEmail({
+      from: senderEmailAddress,
+      to: [recipientEmail],
       subject: message.subject ?? "Roomflow follow-up",
       text: message.body,
     });
@@ -110,7 +115,7 @@ export async function sendQueuedMessage(messageId: string, retryCount = 0) {
         sentAt: new Date(),
         deliveryStatus: serializeDeliveryStatus({
           state: "sent",
-          provider: "resend",
+          provider: emailDeliveryClient.provider,
           retryCount,
         }),
       },
@@ -247,7 +252,7 @@ export async function markMessageProviderUnresolved(params: {
 
   const unresolvedProviderLabel =
     existingMessageRecord?.channel === MessageChannel.EMAIL
-      ? "resend"
+      ? getConfiguredEmailDeliveryClient()?.provider ?? "email"
       : existingMessageRecord?.channel === MessageChannel.SMS
         ? "twilio"
         : existingMessageRecord?.channel === MessageChannel.WHATSAPP

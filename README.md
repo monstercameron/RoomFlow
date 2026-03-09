@@ -191,6 +191,16 @@ If needed, copy the env template first:
 copy .env.example .env
 ```
 
+Outbound email config now supports three providers:
+
+- `EMAIL_DELIVERY_PROVIDER="mock"` for a local disk-backed inbox used in development and testing
+- `EMAIL_DELIVERY_PROVIDER="resend"` for the current hosted provider path
+- `EMAIL_DELIVERY_PROVIDER="ses"` for Amazon SES
+
+Use `EMAIL_FROM_ADDRESS` as the shared sender when possible. Provider-specific fallbacks still exist through `MOCK_EMAIL_FROM_ADDRESS`, `RESEND_FROM_EMAIL`, and `SES_FROM_EMAIL`.
+
+Local development now defaults to the mock provider from `.env.example`. Captured mail is written to `.local_email/mock-email-inbox.json` and can be reviewed in the app at `/app/settings/integrations/mock-email`.
+
 ### Start the app locally
 
 Run the following in order:
@@ -238,6 +248,27 @@ If you want to test linked social accounts from the security settings flow, conf
 - `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET`
 
 Providers without valid credentials remain unavailable in the app.
+
+## Amazon SES Preflight
+
+The app is now prepared for SES even if the AWS account work has not started yet.
+
+Before signing up or enabling SES in production, decide these inputs:
+
+1. The sending domain or subdomain you want to verify, such as `mail.roomflow.app`.
+2. The AWS region you want SES to live in, since that now maps directly to `AWS_REGION`.
+3. Whether production will authenticate with env credentials or an attached IAM role.
+4. Whether you want an SES configuration set for delivery metrics and event publishing.
+
+When the account is ready, the remaining app-side step is to fill in the SES env vars and switch `EMAIL_DELIVERY_PROVIDER` to `ses`.
+
+## Local Email Testing
+
+When `EMAIL_DELIVERY_PROVIDER` is `mock`:
+
+1. Password reset, magic link, verification, workspace invite, and outbound lead email all write into the local mock inbox.
+2. Review captured messages from the app at `/app/settings/integrations/mock-email`.
+3. Use the mock inbox page to send a probe message or clear the sink between tests.
 
 ## OpenAI Realtime Smoke Test
 

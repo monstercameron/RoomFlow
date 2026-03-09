@@ -171,6 +171,10 @@ export async function handleTransferBillingOwnerAction(
     redirectToSettingsWithDependency(dependencies.redirect, "billing-owner-unchanged");
   }
 
+  if (currentWorkspaceMembership.workspace.billingOwnerUserId === targetUserId) {
+    redirectToSettingsWithDependency(dependencies.redirect, "billing-owner-unchanged");
+  }
+
   const targetMembership = await dependencies.findTargetMembership({
     targetUserId,
     workspaceId: currentWorkspaceMembership.workspaceId,

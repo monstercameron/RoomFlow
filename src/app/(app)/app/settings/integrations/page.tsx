@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/page-header";
 import { CalendarSyncProvider } from "@/generated/prisma/client";
+import Link from "next/link";
 import { updateWorkspaceQuietHoursAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateWorkspaceMessagingThrottleSettingsAction } from "@/app/(app)/app/settings/integrations/actions";
 import { updateOperatorSchedulingAvailabilityAction } from "@/app/(app)/app/settings/integrations/actions";
@@ -20,6 +21,10 @@ import { validateInboundIntegrationConfiguration } from "@/lib/integration-confi
 import { csvExportDatasetDefinitions, outboundWebhookEventDefinitions } from "@/lib/integrations";
 import { onboardingChannelOptions } from "@/lib/onboarding";
 import {
+  getConfiguredEmailDeliveryProvider,
+  getConfiguredEmailDeliveryProviderLabel,
+} from "@/lib/email-delivery";
+import {
   screeningChargeModeOptions,
   screeningConnectionAuthStateOptions,
   screeningProviderOptions,
@@ -27,9 +32,13 @@ import {
 import { calendarConnectionStatusOptions, tourSchedulingModeOptions } from "@/lib/tour-scheduling";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3001";
+const secondaryActionClassName =
+  "inline-flex items-center justify-center rounded-2xl border border-[var(--color-line)] bg-[rgba(255,255,255,0.96)] px-4 py-3 text-sm font-medium !text-[var(--color-ink)] visited:!text-[var(--color-ink)] hover:!text-[var(--color-ink)] focus-visible:!text-[var(--color-ink)] active:!text-[var(--color-ink)] shadow-[0_8px_18px_rgba(93,64,39,0.06)] transition-[border-color,background-color,color,box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 hover:border-[rgba(184,88,51,0.2)] hover:bg-[linear-gradient(180deg,rgba(255,247,239,1),rgba(244,233,221,1))] hover:shadow-[0_12px_24px_rgba(93,64,39,0.1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(184,88,51,0.24)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-panel)]";
 
 export default async function IntegrationsSettingsPage() {
   const messagingSettings = await getMessagingSettingsViewData();
+  const emailDeliveryProvider = getConfiguredEmailDeliveryProvider();
+  const emailDeliveryProviderLabel = getConfiguredEmailDeliveryProviderLabel();
   const directChannels = onboardingChannelOptions.filter(
     (channel) => channel.mode === "direct" && channel.type !== "MANUAL",
   );
@@ -37,12 +46,19 @@ export default async function IntegrationsSettingsPage() {
     (channel) => channel.mode === "source_tag",
   );
   const integrationValidationIssues = validateInboundIntegrationConfiguration({
+    emailDeliveryProvider: process.env.EMAIL_DELIVERY_PROVIDER,
+    emailFromAddress: process.env.EMAIL_FROM_ADDRESS,
     googleClientId: process.env.GOOGLE_CLIENT_ID,
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
     microsoftClientId: process.env.MICROSOFT_CLIENT_ID,
     microsoftClientSecret: process.env.MICROSOFT_CLIENT_SECRET,
     resendApiKey: process.env.RESEND_API_KEY,
     resendFromEmail: process.env.RESEND_FROM_EMAIL,
+    awsRegion: process.env.AWS_REGION,
+    awsDefaultRegion: process.env.AWS_DEFAULT_REGION,
+    awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    sesFromEmail: process.env.SES_FROM_EMAIL,
     twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
     twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
     twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER,
@@ -61,7 +77,33 @@ export default async function IntegrationsSettingsPage() {
         eyebrow="Settings"
         title="Integrations"
         description="Use the integrations hub to track setup state, health, and mapping for inbound, outbound, calendar, and screening connections."
+        actions={
+          emailDeliveryProvider === "mock" ? (
+            <Link className={secondaryActionClassName} href="/app/settings/integrations/mock-email">
+              Open mock email inbox
+            </Link>
+          ) : null
+        }
       />
+
+      <div className="mb-4 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-5 shadow-[var(--shadow-panel)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">Outbound email mode</div>
+            <div className="mt-2 text-lg font-semibold text-[var(--color-ink)]">{emailDeliveryProviderLabel}</div>
+            <p className="mt-2 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
+              {emailDeliveryProvider === "mock"
+                ? "Local mock delivery is active, so auth emails, invites, and outbound email are captured inside the workspace for testing."
+                : "Switch to the mock provider when you want a local inbox before real provider credentials are available."}
+            </p>
+          </div>
+          {emailDeliveryProvider === "mock" ? (
+            <Link className={secondaryActionClassName} href="/app/settings/integrations/mock-email">
+              Review captured email
+            </Link>
+          ) : null}
+        </div>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2">
@@ -131,7 +173,7 @@ export default async function IntegrationsSettingsPage() {
           <div className="mt-4 space-y-3">
             {integrationValidationIssues.length === 0 ? (
               <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm">
-                All inbound email/SMS parsing and signing variables are configured.
+                All current inbound, outbound, and signing variables are configured.
               </div>
             ) : (
               integrationValidationIssues.map((issue) => (

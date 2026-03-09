@@ -24,6 +24,10 @@ test("isProviderConfigurationError detects missing provider configuration errors
     isProviderConfigurationError("TWILIO_AUTH_TOKEN is replace-me and must be updated."),
     true,
   );
+  assert.equal(
+    isProviderConfigurationError("EMAIL_FROM_ADDRESS or SES_FROM_EMAIL is not configured."),
+    true,
+  );
 });
 
 test("isProviderConfigurationError ignores runtime delivery failures", () => {

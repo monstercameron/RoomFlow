@@ -163,6 +163,46 @@ test("handleUpdateWorkspacePlanAction updates capabilities and redirects with do
   assert.deepEqual(upgradeRedirectCapture.redirects, ["/app/settings?planChange=upgraded"]);
 });
 
+test("handleUpdateWorkspacePlanAction allows the current billing owner to change plans even without owner role", async () => {
+  const { handleUpdateWorkspacePlanAction } = getPlanActionsModule();
+  const workspaceUpdates: unknown[] = [];
+  const billingOwnerRedirectCapture = createRedirectCapture();
+  const formData = new FormData();
+  formData.set("targetWorkspacePlanType", WorkspacePlanType.PERSONAL);
+
+  await assert.rejects(
+    handleUpdateWorkspacePlanAction(
+      formData,
+      {
+        getCurrentWorkspaceMembership: async () =>
+          createMembership({
+            billingOwnerUserId: "user-1",
+            enabledCapabilities: [WorkspaceCapability.ORG_MEMBERS],
+            role: MembershipRole.ADMIN,
+            userId: "user-1",
+          }),
+        redirect: billingOwnerRedirectCapture.redirect as never,
+        revalidatePath: () => undefined,
+        resolveDisabledCapabilitiesForWorkspacePlanChange: () => [WorkspaceCapability.ORG_MEMBERS],
+        resolveEnabledCapabilitiesForWorkspacePlanChange: () => [],
+        updateWorkspace: async (input) => {
+          workspaceUpdates.push(input);
+        },
+      },
+    ),
+    billingOwnerRedirectCapture.redirectError,
+  );
+
+  assert.deepEqual(workspaceUpdates, [
+    {
+      workspaceId: "workspace-1",
+      enabledCapabilities: [],
+      planType: WorkspacePlanType.PERSONAL,
+    },
+  ]);
+  assert.deepEqual(billingOwnerRedirectCapture.redirects, ["/app/settings?planChange=downgraded"]);
+});
+
 test("handleTransferBillingOwnerAction validates inputs and transfers billing ownership", async () => {
   const { handleTransferBillingOwnerAction } = getPlanActionsModule();
 
@@ -217,5 +257,36 @@ test("handleTransferBillingOwnerAction validates inputs and transfers billing ow
   assert.deepEqual(revalidatedPaths, ["/app/settings"]);
   assert.deepEqual(successRedirectCapture.redirects, [
     "/app/settings?planChange=billing-owner-transferred",
+  ]);
+});
+
+test("handleTransferBillingOwnerAction treats reselecting the current billing owner as unchanged", async () => {
+  const { handleTransferBillingOwnerAction } = getPlanActionsModule();
+  const unchangedRedirectCapture = createRedirectCapture();
+  const formData = new FormData();
+  formData.set("targetUserId", "user-1");
+
+  await assert.rejects(
+    handleTransferBillingOwnerAction(
+      formData,
+      {
+        findTargetMembership: async () => ({ userId: "user-1" }),
+        getCurrentWorkspaceMembership: async () =>
+          createMembership({
+            billingOwnerUserId: "user-1",
+            userId: "user-1",
+          }),
+        redirect: unchangedRedirectCapture.redirect as never,
+        revalidatePath: () => undefined,
+        updateWorkspaceBillingOwner: async () => {
+          assert.fail("billing owner update should not run when the selection is unchanged");
+        },
+      },
+    ),
+    unchangedRedirectCapture.redirectError,
+  );
+
+  assert.deepEqual(unchangedRedirectCapture.redirects, [
+    "/app/settings?planChange=billing-owner-unchanged",
   ]);
 });

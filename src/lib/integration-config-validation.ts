@@ -4,33 +4,108 @@ type IntegrationValidationIssue = {
   detail: string;
 };
 
+function readConfiguredValue(...candidateValues: Array<string | undefined>) {
+  for (const candidateValue of candidateValues) {
+    if (!candidateValue) {
+      continue;
+    }
+
+    const trimmedValue = candidateValue.trim();
+
+    if (trimmedValue.length > 0 && trimmedValue !== "replace-me") {
+      return trimmedValue;
+    }
+  }
+
+  return null;
+}
+
 export function validateInboundIntegrationConfiguration(params: {
+  emailDeliveryProvider: string | undefined;
+  emailFromAddress: string | undefined;
   googleClientId: string | undefined;
   googleClientSecret: string | undefined;
   microsoftClientId: string | undefined;
   microsoftClientSecret: string | undefined;
   resendApiKey: string | undefined;
   resendFromEmail: string | undefined;
+  awsRegion: string | undefined;
+  awsDefaultRegion: string | undefined;
+  awsAccessKeyId: string | undefined;
+  awsSecretAccessKey: string | undefined;
+  sesFromEmail: string | undefined;
   twilioAccountSid: string | undefined;
   twilioAuthToken: string | undefined;
   twilioPhoneNumber: string | undefined;
   inboundWebhookSigningSecret: string | undefined;
 }) {
   const issues: IntegrationValidationIssue[] = [];
+  const normalizedEmailDeliveryProvider = params.emailDeliveryProvider?.trim().toLowerCase();
+  const usesSesDelivery = normalizedEmailDeliveryProvider === "ses";
+  const usesMockDelivery = normalizedEmailDeliveryProvider === "mock";
+  const usesSupportedEmailProvider =
+    normalizedEmailDeliveryProvider === undefined ||
+    normalizedEmailDeliveryProvider.length === 0 ||
+    normalizedEmailDeliveryProvider === "resend" ||
+    usesSesDelivery ||
+    usesMockDelivery;
 
-  if (!params.resendApiKey || params.resendApiKey === "replace-me") {
+  if (!usesSupportedEmailProvider) {
+    issues.push({
+      key: "EMAIL_DELIVERY_PROVIDER",
+      level: "warning",
+      detail: "Email delivery provider must be `mock`, `resend`, or `ses`; unsupported values fall back to Resend.",
+    });
+  }
+
+  if (usesMockDelivery) {
+    issues.push({
+      key: "EMAIL_DELIVERY_PROVIDER",
+      level: "warning",
+      detail: "Local mock email delivery is active. Messages are captured for testing and never leave the workspace.",
+    });
+  }
+
+  const configuredEmailFromAddress = usesSesDelivery
+    ? readConfiguredValue(params.emailFromAddress, params.sesFromEmail)
+    : usesMockDelivery
+      ? readConfiguredValue(params.emailFromAddress)
+    : readConfiguredValue(params.emailFromAddress, params.resendFromEmail);
+
+  if (!configuredEmailFromAddress && !usesMockDelivery) {
+    issues.push({
+      key: usesSesDelivery ? "EMAIL_FROM_ADDRESS / SES_FROM_EMAIL" : "EMAIL_FROM_ADDRESS / RESEND_FROM_EMAIL",
+      level: "warning",
+      detail: usesSesDelivery
+        ? "Amazon SES needs a verified sender address. Set EMAIL_FROM_ADDRESS or SES_FROM_EMAIL."
+        : "Outbound email needs a sender address. Set EMAIL_FROM_ADDRESS or RESEND_FROM_EMAIL.",
+    });
+  }
+
+  if (usesSesDelivery) {
+    if (!readConfiguredValue(params.awsRegion, params.awsDefaultRegion)) {
+      issues.push({
+        key: "AWS_REGION / AWS_DEFAULT_REGION",
+        level: "warning",
+        detail: "Amazon SES needs an AWS region before delivery can be enabled.",
+      });
+    }
+
+    const hasAwsAccessKeyId = Boolean(readConfiguredValue(params.awsAccessKeyId));
+    const hasAwsSecretAccessKey = Boolean(readConfiguredValue(params.awsSecretAccessKey));
+
+    if (hasAwsAccessKeyId !== hasAwsSecretAccessKey) {
+      issues.push({
+        key: "AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY",
+        level: "warning",
+        detail: "Amazon SES static credentials must include both AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY when env-based credentials are used.",
+      });
+    }
+  } else if (!usesMockDelivery && (!params.resendApiKey || params.resendApiKey === "replace-me")) {
     issues.push({
       key: "RESEND_API_KEY",
       level: "warning",
       detail: "Resend API key is not configured for production email delivery.",
-    });
-  }
-
-  if (!params.resendFromEmail || params.resendFromEmail === "replace-me") {
-    issues.push({
-      key: "RESEND_FROM_EMAIL",
-      level: "warning",
-      detail: "Resend from-address is missing.",
     });
   }
 

@@ -52,7 +52,7 @@ export default async function VerifyEmailPage({ searchParams }: VerifyEmailPageP
           Confirm this operator email before entering the workspace.
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-muted)]">
-          Roomflow holds dashboard and onboarding access until the inbox owner proves they control this email address.
+          Roomflow holds dashboard and onboarding access until the inbox owner proves they control this email address. Open the verification link or paste the security code from that inbox message.
         </p>
         <VerifyEmailPanel
           emailAddress={emailAddress}

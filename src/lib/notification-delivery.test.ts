@@ -14,16 +14,17 @@ function getNotificationDeliveryModule() {
   return require("./notification-delivery") as typeof import("@/lib/notification-delivery");
 }
 
-test("sendOwnerAdminNotificationEmail skips membership lookup when Resend is unavailable", async () => {
+test("sendOwnerAdminNotificationEmail skips membership lookup when email delivery is unavailable", async () => {
   const { sendOwnerAdminNotificationEmail } = getNotificationDeliveryModule();
   let findMembershipsCalled = false;
 
   const dependencies: NotificationEmailDependencies = {
-    createResendClient: () => null,
+    createEmailDeliveryClient: () => null,
     findOwnerAndAdminMemberships: async () => {
       findMembershipsCalled = true;
       return [];
     },
+    getSenderEmailAddress: () => "alerts@roomflow.app",
   };
 
   await sendOwnerAdminNotificationEmail(
@@ -48,11 +49,10 @@ test("sendOwnerAdminNotificationEmail filters blank recipients before sending", 
   }> = [];
 
   const dependencies: NotificationEmailDependencies = {
-    createResendClient: () => ({
-      emails: {
-        send: async (payload) => {
-          sentPayloads.push(payload as { from: string; subject: string; text: string; to: string[] });
-        },
+    createEmailDeliveryClient: () => ({
+      provider: "ses",
+      sendTextEmail: async (payload) => {
+        sentPayloads.push(payload);
       },
     }),
     findOwnerAndAdminMemberships: async () => [
@@ -60,6 +60,7 @@ test("sendOwnerAdminNotificationEmail filters blank recipients before sending", 
       { user: { email: "" } },
       { user: { email: "admin@example.com" } },
     ],
+    getSenderEmailAddress: () => "alerts@roomflow.app",
   };
 
   await sendOwnerAdminNotificationEmail(
@@ -73,7 +74,7 @@ test("sendOwnerAdminNotificationEmail filters blank recipients before sending", 
 
   assert.deepEqual(sentPayloads, [
     {
-      from: "alerts@roomflow.local",
+      from: "alerts@roomflow.app",
       subject: "Lease update",
       text: "Important body",
       to: ["owner@example.com", "admin@example.com"],
@@ -81,17 +82,17 @@ test("sendOwnerAdminNotificationEmail filters blank recipients before sending", 
   ]);
 });
 
-test("sendOwnerAdminNotificationEmail propagates Resend delivery failures", async () => {
+test("sendOwnerAdminNotificationEmail propagates email delivery failures", async () => {
   const { sendOwnerAdminNotificationEmail } = getNotificationDeliveryModule();
   const dependencies: NotificationEmailDependencies = {
-    createResendClient: () => ({
-      emails: {
-        send: async () => {
-          throw new Error("Resend unavailable");
-        },
+    createEmailDeliveryClient: () => ({
+      provider: "resend",
+      sendTextEmail: async () => {
+        throw new Error("Email provider unavailable");
       },
     }),
     findOwnerAndAdminMemberships: async () => [{ user: { email: "owner@example.com" } }],
+    getSenderEmailAddress: () => "alerts@roomflow.app",
   };
 
   await assert.rejects(
@@ -103,7 +104,7 @@ test("sendOwnerAdminNotificationEmail propagates Resend delivery failures", asyn
       },
       dependencies,
     ),
-    /Resend unavailable/,
+    /Email provider unavailable/,
   );
 });
 

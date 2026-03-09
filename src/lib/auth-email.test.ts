@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  buildEmailVerificationApplicationUrl,
-  buildMagicLinkApplicationUrl,
-  buildPasswordResetApplicationUrl,
-} from "@/lib/auth-email";
-import {
   buildAuthEntryPagePath,
   buildAbsoluteApplicationUrl,
   buildEmailVerificationCallbackPath,
@@ -15,7 +10,14 @@ import {
   normalizeApplicationPath,
 } from "@/lib/auth-urls";
 
-test("buildPasswordResetApplicationUrl preserves token and callback destination", () => {
+async function getAuthEmailModule() {
+  process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/postgres";
+
+  return import("@/lib/auth-email");
+}
+
+test("buildPasswordResetApplicationUrl preserves token and callback destination", async () => {
+  const { buildPasswordResetApplicationUrl } = await getAuthEmailModule();
   const passwordResetUrl = buildPasswordResetApplicationUrl({
     callbackUrl: "/app",
     token: "reset-token-123",
@@ -27,7 +29,8 @@ test("buildPasswordResetApplicationUrl preserves token and callback destination"
   assert.equal(parsedResetUrl.searchParams.get("callbackURL"), "/app");
 });
 
-test("buildEmailVerificationApplicationUrl preserves token and next destination", () => {
+test("buildEmailVerificationApplicationUrl preserves token and next destination", async () => {
+  const { buildEmailVerificationApplicationUrl } = await getAuthEmailModule();
   const emailVerificationUrl = buildEmailVerificationApplicationUrl({
     callbackUrl: "/onboarding",
     token: "verification-token-123",
@@ -61,7 +64,8 @@ test("normalizeApplicationPath rejects external origins", () => {
   assert.equal(normalizeApplicationPath("https://evil.invalid/phish"), "/");
 });
 
-test("buildMagicLinkApplicationUrl preserves token, email, and next destination", () => {
+test("buildMagicLinkApplicationUrl preserves token, email, and next destination", async () => {
+  const { buildMagicLinkApplicationUrl } = await getAuthEmailModule();
   const magicLinkUrl = buildMagicLinkApplicationUrl({
     callbackUrl: "/app",
     recipientEmailAddress: "test@roomflow.local",

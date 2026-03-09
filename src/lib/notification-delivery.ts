@@ -1,34 +1,20 @@
-import { Resend } from "resend";
 import { IntegrationProvider, MembershipRole, NotificationType } from "@/generated/prisma/client";
+import {
+  getConfiguredEmailDeliveryClient,
+  getConfiguredSenderEmailAddress,
+  type EmailDeliveryClient,
+} from "@/lib/email-delivery";
 import { parseSlackIntegrationConfig } from "@/lib/integrations";
 import { prisma } from "@/lib/prisma";
 
-function getResendClient() {
-  const apiKey = process.env.RESEND_API_KEY;
-
-  if (!apiKey || apiKey === "replace-me") {
-    return null;
-  }
-
-  return new Resend(apiKey);
-}
-
 export type NotificationEmailDependencies = {
-  createResendClient: () => {
-    emails: {
-      send: (payload: {
-        from: string;
-        subject: string;
-        text: string;
-        to: string[];
-      }) => Promise<unknown>;
-    };
-  } | null;
+  createEmailDeliveryClient: () => EmailDeliveryClient | null;
   findOwnerAndAdminMemberships: (workspaceId: string) => Promise<Array<{ user: { email: string } }>>;
+  getSenderEmailAddress: () => string | null;
 };
 
 const defaultNotificationEmailDependencies: NotificationEmailDependencies = {
-  createResendClient: getResendClient,
+  createEmailDeliveryClient: getConfiguredEmailDeliveryClient,
   findOwnerAndAdminMemberships: (workspaceId) =>
     prisma.membership.findMany({
       where: {
@@ -45,6 +31,7 @@ const defaultNotificationEmailDependencies: NotificationEmailDependencies = {
         },
       },
     }),
+  getSenderEmailAddress: getConfiguredSenderEmailAddress,
 };
 
 export async function sendOwnerAdminNotificationEmail(params: {
@@ -52,9 +39,10 @@ export async function sendOwnerAdminNotificationEmail(params: {
   subject: string;
   body: string;
 }, dependencies: NotificationEmailDependencies = defaultNotificationEmailDependencies) {
-  const resendClient = dependencies.createResendClient();
+  const emailDeliveryClient = dependencies.createEmailDeliveryClient();
+  const senderEmailAddress = dependencies.getSenderEmailAddress();
 
-  if (!resendClient) {
+  if (!emailDeliveryClient || !senderEmailAddress) {
     return;
   }
 
@@ -68,8 +56,8 @@ export async function sendOwnerAdminNotificationEmail(params: {
     return;
   }
 
-  await resendClient.emails.send({
-    from: process.env.RESEND_FROM_EMAIL ?? "alerts@roomflow.local",
+  await emailDeliveryClient.sendTextEmail({
+    from: senderEmailAddress,
     to: recipientEmailAddresses,
     subject: params.subject,
     text: params.body,

@@ -131,6 +131,9 @@ export const auth = betterAuth({
     updateAge: 15 * 60,
   },
   user: {
+    changeEmail: {
+      enabled: true,
+    },
     additionalFields: {
       image: {
         type: "string",

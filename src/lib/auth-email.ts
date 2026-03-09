@@ -1,11 +1,17 @@
 import type { MembershipRole } from "@/generated/prisma/client";
-import { Resend } from "resend";
 import {
   buildEmailVerificationCallbackPath,
   buildEmailVerificationPagePath,
   buildMagicLinkPagePath,
   normalizeApplicationPath,
 } from "@/lib/auth-urls";
+import {
+  getConfiguredEmailDeliveryClient,
+  getConfiguredEmailDeliveryProvider,
+  getConfiguredEmailDeliveryProviderLabel,
+  getConfiguredSenderEmailAddress,
+} from "@/lib/email-delivery";
+import { storeEmailVerificationCode } from "@/lib/email-verification-codes";
 
 function shouldUseRealEmailDelivery() {
   return process.env.NODE_ENV === "production";
@@ -15,14 +21,36 @@ function getApplicationBaseUrl() {
   return process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3001";
 }
 
-function getAuthResendClient() {
-  const resendApiKey = process.env.RESEND_API_KEY;
+async function sendTransactionalEmailOrLog(params: {
+  fallbackLabel: string;
+  fallbackUrl: string;
+  recipientEmailAddress: string;
+  subject: string;
+  text: string;
+}) {
+  const emailDeliveryClient = getConfiguredEmailDeliveryClient();
+  const senderEmailAddress = getConfiguredSenderEmailAddress();
+  const configuredProvider = getConfiguredEmailDeliveryProvider();
 
-  if (!resendApiKey || resendApiKey === "replace-me") {
-    return null;
+  if ((!shouldUseRealEmailDelivery() && configuredProvider !== "mock") || !emailDeliveryClient || !senderEmailAddress) {
+    console.info(`[auth] ${params.fallbackLabel} for ${params.recipientEmailAddress}: ${params.fallbackUrl}`);
+    return;
   }
 
-  return new Resend(resendApiKey);
+  try {
+    await emailDeliveryClient.sendTextEmail({
+      from: senderEmailAddress,
+      to: [params.recipientEmailAddress],
+      subject: params.subject,
+      text: params.text,
+    });
+  } catch (error) {
+    console.error(
+      `[auth] Failed to send ${params.subject} via ${getConfiguredEmailDeliveryProviderLabel()}:`,
+      error,
+    );
+    throw error;
+  }
 }
 
 export function buildPasswordResetApplicationUrl(params: {
@@ -85,44 +113,22 @@ export async function sendPasswordResetEmail(params: {
     callbackUrl: params.callbackUrl,
     token: params.token,
   });
-  const resendClient = getAuthResendClient();
-  const senderEmailAddress = process.env.RESEND_FROM_EMAIL;
-
-  // Non-production environments should stay self-contained, so they expose the
-  // reset link in logs instead of depending on outbound email delivery.
-  if (!shouldUseRealEmailDelivery() || !resendClient || !senderEmailAddress) {
-    console.info(
-      `[auth] Password reset link for ${params.recipientEmailAddress}: ${passwordResetUrl}`,
-    );
-    return;
-  }
-
   const recipientGreetingName = params.recipientName?.trim() || "there";
 
-  try {
-    await resendClient.emails.send({
-      from: senderEmailAddress,
-      to: params.recipientEmailAddress,
-      subject: "Reset your Roomflow password",
-      text: [
-        `Hi ${recipientGreetingName},`,
-        "",
-        "Use the link below to choose a new Roomflow password:",
-        passwordResetUrl,
-        "",
-        "If you did not request this change, you can ignore this message.",
-      ].join("\n"),
-    });
-  } catch (error) {
-    if (shouldUseRealEmailDelivery()) {
-      throw error;
-    }
-
-    console.error("[auth] Failed to send password reset email via Resend:", error);
-    console.info(
-      `[auth] Password reset fallback link for ${params.recipientEmailAddress}: ${passwordResetUrl}`,
-    );
-  }
+  await sendTransactionalEmailOrLog({
+    fallbackLabel: "Password reset link",
+    fallbackUrl: passwordResetUrl,
+    recipientEmailAddress: params.recipientEmailAddress,
+    subject: "Reset your Roomflow password",
+    text: [
+      `Hi ${recipientGreetingName},`,
+      "",
+      "Use the link below to choose a new Roomflow password:",
+      passwordResetUrl,
+      "",
+      "If you did not request this change, you can ignore this message.",
+    ].join("\n"),
+  });
 }
 
 export async function sendEmailVerificationEmail(params: {
@@ -137,45 +143,40 @@ export async function sendEmailVerificationEmail(params: {
     callbackUrl: nextPath,
     token: params.token,
   });
-  const resendClient = getAuthResendClient();
-  const senderEmailAddress = process.env.RESEND_FROM_EMAIL;
-
-  // Non-production environments should stay self-contained, so they expose the
-  // verification link in logs instead of depending on outbound email delivery.
-  if (!shouldUseRealEmailDelivery() || !resendClient || !senderEmailAddress) {
-    console.info(
-      `[auth] Email verification link for ${params.recipientEmailAddress}: ${emailVerificationUrl}`,
-    );
-    return;
-  }
-
   const recipientGreetingName = params.recipientName?.trim() || "there";
   const verificationCallbackPath = buildEmailVerificationCallbackPath({ nextPath });
+  const verificationCode = await storeEmailVerificationCode({
+    callbackUrl: nextPath,
+    recipientEmailAddress: params.recipientEmailAddress,
+    token: params.token,
+  });
+  const verificationEntryUrl = new URL(
+    buildEmailVerificationPagePath({
+      emailAddress: params.recipientEmailAddress,
+      nextPath,
+    }),
+    applicationBaseUrl,
+  ).toString();
 
-  try {
-    await resendClient.emails.send({
-      from: senderEmailAddress,
-      to: params.recipientEmailAddress,
-      subject: "Verify your Roomflow email",
-      text: [
-        `Hi ${recipientGreetingName},`,
-        "",
-        "Use the link below to verify your Roomflow operator account:",
-        emailVerificationUrl,
-        "",
-        `After verification, Roomflow will continue to ${new URL(verificationCallbackPath, applicationBaseUrl).toString()}.`,
-      ].join("\n"),
-    });
-  } catch (error) {
-    if (shouldUseRealEmailDelivery()) {
-      throw error;
-    }
-
-    console.error("[auth] Failed to send verification email via Resend:", error);
-    console.info(
-      `[auth] Email verification fallback link for ${params.recipientEmailAddress}: ${emailVerificationUrl}`,
-    );
-  }
+  await sendTransactionalEmailOrLog({
+    fallbackLabel: "Email verification link",
+    fallbackUrl: emailVerificationUrl,
+    recipientEmailAddress: params.recipientEmailAddress,
+    subject: "Verify your Roomflow email",
+    text: [
+      `Hi ${recipientGreetingName},`,
+      "",
+      "Use either option below to verify your Roomflow operator account:",
+      "",
+      "Verification link:",
+      emailVerificationUrl,
+      "",
+      `Security code: ${verificationCode.formattedCode}`,
+      `Paste that code at ${verificationEntryUrl}.`,
+      "",
+      `After verification, Roomflow will continue to ${new URL(verificationCallbackPath, applicationBaseUrl).toString()}.`,
+    ].join("\n"),
+  });
 }
 
 export async function sendMagicLinkEmail(params: {
@@ -188,36 +189,19 @@ export async function sendMagicLinkEmail(params: {
     recipientEmailAddress: params.recipientEmailAddress,
     token: params.token,
   });
-  const resendClient = getAuthResendClient();
-  const senderEmailAddress = process.env.RESEND_FROM_EMAIL;
 
-  // Non-production environments should stay self-contained, so they expose the
-  // magic link in logs instead of depending on outbound email delivery.
-  if (!shouldUseRealEmailDelivery() || !resendClient || !senderEmailAddress) {
-    console.info(`[auth] Magic link for ${params.recipientEmailAddress}: ${magicLinkUrl}`);
-    return;
-  }
-
-  try {
-    await resendClient.emails.send({
-      from: senderEmailAddress,
-      to: params.recipientEmailAddress,
-      subject: "Your Roomflow sign-in link",
-      text: [
-        "Use the link below to sign in to Roomflow without a password:",
-        magicLinkUrl,
-        "",
-        "This link is single-use and expires quickly for security.",
-      ].join("\n"),
-    });
-  } catch (error) {
-    if (shouldUseRealEmailDelivery()) {
-      throw error;
-    }
-
-    console.error("[auth] Failed to send magic link via Resend:", error);
-    console.info(`[auth] Magic link fallback for ${params.recipientEmailAddress}: ${magicLinkUrl}`);
-  }
+  await sendTransactionalEmailOrLog({
+    fallbackLabel: "Magic link",
+    fallbackUrl: magicLinkUrl,
+    recipientEmailAddress: params.recipientEmailAddress,
+    subject: "Your Roomflow sign-in link",
+    text: [
+      "Use the link below to sign in to Roomflow without a password:",
+      magicLinkUrl,
+      "",
+      "This link is single-use and expires quickly for security.",
+    ].join("\n"),
+  });
 }
 
 function formatMembershipRoleLabel(membershipRole: MembershipRole) {
@@ -231,42 +215,21 @@ export async function sendWorkspaceInviteEmail(params: {
   role: MembershipRole;
   workspaceName: string;
 }) {
-  const resendClient = getAuthResendClient();
-  const senderEmailAddress = process.env.RESEND_FROM_EMAIL;
   const roleLabel = formatMembershipRoleLabel(params.role);
   const inviterName = params.invitedByName?.trim() || "A Roomflow teammate";
 
-  // Non-production environments should stay self-contained, so they expose the
-  // invite link in logs instead of depending on outbound email delivery.
-  if (!shouldUseRealEmailDelivery() || !resendClient || !senderEmailAddress) {
-    console.info(
-      `[auth] Workspace invite for ${params.recipientEmailAddress}: ${params.inviteUrl}`,
-    );
-    return;
-  }
-
-  try {
-    await resendClient.emails.send({
-      from: senderEmailAddress,
-      to: params.recipientEmailAddress,
-      subject: `Join ${params.workspaceName} on Roomflow`,
-      text: [
-        `${inviterName} invited you to join ${params.workspaceName} on Roomflow as a ${roleLabel}.`,
-        "",
-        "Open the invite below to join this workspace using an existing or new account:",
-        params.inviteUrl,
-        "",
-        "If you did not expect this invitation, you can ignore this email.",
-      ].join("\n"),
-    });
-  } catch (error) {
-    if (shouldUseRealEmailDelivery()) {
-      throw error;
-    }
-
-    console.error("[auth] Failed to send workspace invite via Resend:", error);
-    console.info(
-      `[auth] Workspace invite fallback for ${params.recipientEmailAddress}: ${params.inviteUrl}`,
-    );
-  }
+  await sendTransactionalEmailOrLog({
+    fallbackLabel: "Workspace invite",
+    fallbackUrl: params.inviteUrl,
+    recipientEmailAddress: params.recipientEmailAddress,
+    subject: `Join ${params.workspaceName} on Roomflow`,
+    text: [
+      `${inviterName} invited you to join ${params.workspaceName} on Roomflow as a ${roleLabel}.`,
+      "",
+      "Open the invite below to join this workspace using an existing or new account:",
+      params.inviteUrl,
+      "",
+      "If you did not expect this invitation, you can ignore this email.",
+    ].join("\n"),
+  });
 }
