@@ -246,7 +246,9 @@ async function run() {
     await createdLeadRow.getByText(/Ask missing questions/i).first().waitFor({
       timeout: 45_000,
     });
-    await createdLeadRow.getByText(/required/i).first().waitFor({ timeout: 45_000 });
+    await createdLeadRow.getByText(/answers? missing/i).first().waitFor({
+      timeout: 45_000,
+    });
 
     await desktopPage.goto(`${BASE_URL}/app/leads?q=${encodeURIComponent(SEEDED_LEADS.mismatch)}`, {
       timeout: 120_000,
@@ -256,7 +258,7 @@ async function run() {
       .locator("tr")
       .filter({ has: getVisibleLeadLink(desktopPage, SEEDED_LEADS.mismatch) })
       .first();
-    await mismatchRow.getByText(/Review needed/i).waitFor({ timeout: 45_000 });
+    await mismatchRow.getByText(/Review needed/i).first().waitFor({ timeout: 45_000 });
 
     console.log("Checking Workflow 7 missing-info compose flow...");
 
@@ -288,11 +290,22 @@ async function run() {
       missingInfoBody.trim().length > 20,
       "Expected missing-info draft body to be prefilled.",
     );
-    await desktopPage.getByRole("button", { name: "Send manual message" }).click();
+    await Promise.all([
+      desktopPage.waitForURL(
+        (url) => /\/app\/leads\/.+/.test(url.pathname) && url.searchParams.get("compose") !== "missing-info",
+        {
+          timeout: 45_000,
+          waitUntil: "domcontentloaded",
+        },
+      ),
+      desktopPage.getByRole("button", { name: "Send manual message" }).click(),
+    ]);
     await desktopPage.getByText(/Missing-info outreach was last sent/i).waitFor({
       timeout: 45_000,
     });
-    await desktopPage.getByText(/Awaiting response/i).waitFor({ timeout: 45_000 });
+    await desktopPage.getByText(/^Awaiting Response$/).first().waitFor({
+      timeout: 45_000,
+    });
 
     await desktopPage.goto(`${BASE_URL}/app/leads?q=${encodeURIComponent(createdLead.fullName)}`, {
       timeout: 120_000,
@@ -302,7 +315,7 @@ async function run() {
       .locator("tr")
       .filter({ has: getVisibleLeadLink(desktopPage, createdLead.fullName) })
       .first();
-    await updatedCreatedLeadRow.getByText(/Missing-info request sent/i).waitFor({
+    await updatedCreatedLeadRow.getByText(/Missing-info request sent/i).first().waitFor({
       timeout: 45_000,
     });
 
@@ -550,7 +563,13 @@ async function run() {
     await mobileLeadCardLink.waitFor({
       timeout: 45_000,
     });
-    await mobilePage.getByText(/Missing-info request sent/i).waitFor({ timeout: 45_000 });
+    const mobileLeadCard = mobilePage
+      .locator("div.space-y-4.md\\:hidden > div")
+      .filter({ has: mobileLeadCardLink })
+      .first();
+    await mobileLeadCard.getByText(/Missing-info request sent/i).first().waitFor({
+      timeout: 45_000,
+    });
 
     const overflowMetrics = await mobilePage.evaluate(() => ({
       bodyClientWidth: document.body.clientWidth,

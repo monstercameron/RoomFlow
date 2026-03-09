@@ -3785,6 +3785,8 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     tasks: leadTasks.map((task) => ({
       assignedTo: task.assignedMembership?.user.name ?? "Unassigned",
       assignedMembershipId: task.assignedMembershipId ?? null,
+      createdAt: formatDateTime(task.createdAt),
+      createdAtInputValue: formatDateTimeInputValue(task.createdAt),
       description: task.description ?? null,
       dueAt: formatDateTime(task.dueAt),
       dueAtInputValue: formatDateTimeInputValue(task.dueAt),

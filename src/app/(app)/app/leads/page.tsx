@@ -124,7 +124,7 @@ const compactSecondaryActionClassName =
   "inline-flex cursor-pointer items-center justify-center rounded-full border border-[rgba(184,88,51,0.22)] bg-[rgb(240,227,214)] px-3 py-1.5 text-xs font-semibold text-[rgb(113,48,24)] shadow-[0_8px_16px_rgba(141,63,33,0.07),inset_0_1px_0_rgba(255,255,255,0.34)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.32)] hover:bg-[rgb(233,216,200)] hover:text-[rgb(97,39,18)]";
 
 const rowActionButtonClassName =
-  "inline-flex min-w-20 cursor-pointer items-center justify-center rounded-full border border-[rgba(184,88,51,0.22)] bg-[rgb(240,227,214)] px-3 py-2 text-xs font-semibold text-[rgb(113,48,24)] shadow-[0_8px_16px_rgba(141,63,33,0.07),inset_0_1px_0_rgba(255,255,255,0.34)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.32)] hover:bg-[rgb(233,216,200)] hover:text-[rgb(97,39,18)]";
+  "inline-flex min-w-0 whitespace-nowrap cursor-pointer items-center justify-center rounded-full border border-[rgba(184,88,51,0.22)] bg-[rgb(240,227,214)] px-3 py-1.5 text-xs font-semibold text-[rgb(113,48,24)] shadow-[0_8px_16px_rgba(141,63,33,0.07),inset_0_1px_0_rgba(255,255,255,0.34)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.32)] hover:bg-[rgb(233,216,200)] hover:text-[rgb(97,39,18)]";
 
 const filterControlClassName =
   "w-full rounded-2xl border border-[rgba(184,88,51,0.16)] bg-[rgba(255,255,255,0.96)] px-4 py-3 text-sm text-[var(--color-ink)] shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_8px_18px_rgba(62,43,28,0.05)] outline-none transition-[border-color,box-shadow,background-color] duration-150 placeholder:text-[rgba(109,103,93,0.85)] focus:border-[rgba(184,88,51,0.3)] focus:bg-white focus:ring-4 focus:ring-[rgba(184,88,51,0.08)]";
@@ -327,19 +327,9 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
           >
             <div className="text-sm text-[var(--color-muted)]">{summaryCard.label}</div>
             <div className="mt-2 text-3xl font-semibold">{summaryCard.value}</div>
-            <div className="mt-2 text-sm text-[var(--color-muted)]">{summaryCard.helper}</div>
+            <div className="mt-3 text-sm leading-6 text-[var(--color-muted)]">{summaryCard.helper}</div>
           </Link>
         ))}
-      </div>
-
-      <div className="mb-6 flex flex-wrap items-center gap-2 rounded-[1.6rem] border border-[var(--color-line)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm text-[var(--color-muted)] shadow-[0_12px_28px_rgba(62,43,28,0.05)]">
-        <span className="rounded-full border border-[rgba(39,110,78,0.18)] bg-[rgb(225,244,233)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[rgb(39,110,78)]">
-          V1 view
-        </span>
-        <span>List view remains the operational source of truth for v1.</span>
-        <span className="rounded-full border border-[rgba(184,88,51,0.16)] bg-[rgba(184,88,51,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-accent-strong)]">
-          Board view deferred
-        </span>
       </div>
 
       <div className="mb-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-5 shadow-[var(--shadow-panel)]">
@@ -514,7 +504,6 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
 
         <div className="mt-4 flex flex-wrap items-start gap-2">
           <LeadsFilterTabs activeValue={leadList.activeFilter} items={filterTabItems} />
-
           {leadList.archivedCount > 0 ? (
             <Link
               className={`ml-auto inline-flex items-center gap-3 rounded-full border px-4 py-2 text-sm font-medium transition ${
@@ -659,8 +648,8 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                 {leadList.leads.map((lead) => (
                   <tr key={lead.id} className={`border-b border-[rgba(28,26,22,0.08)] align-top transition-colors duration-150 last:border-b-0 ${
                     lead.isArchived
-                      ? "bg-[rgba(244,238,231,0.95)] hover:bg-[rgba(184,88,51,0.05)]"
-                      : "bg-[rgba(255,255,255,0.9)] even:bg-[rgba(255,250,245,0.92)] hover:bg-[rgba(184,88,51,0.08)]"
+                        ? "bg-[rgba(244,238,231,0.95)] hover:bg-[rgba(184,88,51,0.05)]"
+                        : "bg-[rgba(255,255,255,0.9)] even:bg-[rgba(255,250,245,0.92)] hover:bg-[rgba(184,88,51,0.08)]"
                   }`}>
                     <td className="px-5 py-4 transition-colors duration-150">
                       <Link
@@ -740,13 +729,17 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                       <div className="truncate">{lead.lastActivity}</div>
                     </td>
                     <td className="px-5 py-4 transition-colors duration-150">
-                      <div className="flex flex-col items-start gap-2">
+                      <div className="flex flex-col items-start gap-1.5">
                         <Link
                           className={rowActionButtonClassName}
                           href={buildLeadQuickActionHref(lead.id, lead.nextActionKind, currentListParams)}
                           prefetch={false}
+                          title={lead.nextActionLabel}
                         >
-                          {lead.nextActionLabel}
+                          {getLeadRowActionLabel({
+                            actionKind: lead.nextActionKind,
+                            label: lead.nextActionLabel,
+                          })}
                         </Link>
                         {lead.canArchive || lead.canUnarchive ? (
                           <LeadLifecycleActionControl
@@ -862,8 +855,12 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                     className={compactSecondaryActionClassName}
                     href={buildLeadQuickActionHref(lead.id, lead.nextActionKind, currentListParams)}
                     prefetch={false}
+                    title={lead.nextActionLabel}
                   >
-                    {lead.nextActionLabel}
+                    {getLeadRowActionLabel({
+                      actionKind: lead.nextActionKind,
+                      label: lead.nextActionLabel,
+                    })}
                   </Link>
                   <Link
                     className={compactSecondaryActionClassName}
@@ -1053,6 +1050,17 @@ function buildLeadQuickActionHref(
   }
 
   return buildLeadDetailHref(leadId, params);
+}
+
+function getLeadRowActionLabel(params: {
+  actionKind: "missing-info" | "open-lead" | "review";
+  label: string;
+}) {
+  if (params.actionKind === "missing-info") {
+    return "Request info";
+  }
+
+  return params.label;
 }
 
 function getFitChipClassName(fitValue: string) {

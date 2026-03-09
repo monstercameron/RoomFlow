@@ -221,6 +221,41 @@ Defaults:
 - Labels should stay lightweight and consistent across forms.
 - Search, filter, sort, and page-size controls on list pages should look like part of one control group.
 
+### Operational workspace cards
+
+Decision:
+- High-touch operational widgets such as owner, property, and task workspaces should use one shared warm-neutral card system rather than mixing multiple unrelated panel colors inside the same widget.
+
+Style:
+- Use one warm outer-card surface for all sibling panels in the widget.
+- Use one lighter inset-card surface for nested rows, counts, empty states, and editable task items.
+- Inputs and selects inside the widget should keep the elevated white control treatment with warm borders and accent-tinted focus states.
+- Secondary buttons inside the widget should use the same warm neutral fill and border treatment instead of introducing a separate cooler button style.
+
+Rule:
+- If several cards belong to one operational workspace, they should read as one system at a glance. Do not place one card on a noticeably different color family unless that contrast communicates a real semantic state.
+
+### Task workspace pattern
+
+Decision:
+- Task-management panels inside operational workspaces should feel like one coordinated toolset, not a stack of unrelated forms and lists.
+
+Style:
+- When a task form and task list sit side by side, they should share the same overall panel height so the columns align cleanly.
+- The form panel should use a flex-column layout so the primary submit action can sit in a stable footer position.
+- The task-list panel should keep its own internal scroll area instead of growing the full page section.
+- Sort options for the task list should use compact pill controls that live inside the task panel header.
+- The selected sort pill should use the shared accent fill with forced white text; inactive pills should use pale surfaces with accent-strong text.
+- Summary chips such as `overdue`, `due soon`, and `open` should sit alongside the sort control and use the same rounded pill language.
+
+Interaction:
+- Task list sorting should preserve the user inside the task panel instead of jumping them back to the top of the page.
+- Form submissions inside a multi-panel workspace should redirect back to the specific panel the user acted in.
+- Commit actions such as `Create task`, `Update owner`, `Update property`, and `Update status` should use the shared primary CTA treatment.
+
+Rule:
+- In a multi-panel operational workspace, users should never lose their place after changing sort order or submitting a form. Preserve panel context through anchored redirects or equivalent behavior.
+
 ### Toolbar control styling
 
 Decision:

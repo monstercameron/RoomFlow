@@ -628,8 +628,6 @@ const defaultSendManualOutboundMessageActionDependencies: SendManualOutboundMess
       if (workflowIntent === "missing-info" && nextStatus !== lead.status) {
         await transactionClient.leadStatusHistory.create({
           data: {
-            actorType: AuditActorType.USER,
-            actorUserId: actionContext.actorUserId,
             fromStatus: lead.status,
             leadId: lead.id,
             reason:

@@ -62,9 +62,12 @@ type LeadDetailPageProps = {
     status?: string;
     showArchived?: string;
     sort?: string;
+    taskSort?: string;
     workflowError?: string;
   }>;
 };
+
+type LeadDetailTaskSort = "priority" | "age";
 
 const leadListFilterValues: LeadListFilter[] = [
   "all",
@@ -160,6 +163,119 @@ const primaryWorkflowButtonClassName =
 const secondaryWorkflowButtonClassName =
   "inline-flex min-h-11 items-center justify-center rounded-2xl border border-[var(--color-line)] bg-[rgba(255,255,255,0.86)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.2)] hover:bg-[rgba(255,255,255,0.96)] disabled:cursor-not-allowed disabled:opacity-50";
 
+const topActionPanelClassName =
+  "rounded-[1.8rem] border border-[rgba(184,88,51,0.18)] bg-[rgba(255,250,245,0.92)] p-3 shadow-[0_16px_34px_rgba(62,43,28,0.06)]";
+
+const topActionSectionClassName =
+  "rounded-[1.45rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.84)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)]";
+
+const operatorWorkspaceCardClassName =
+  "rounded-[1.6rem] border border-[rgba(184,88,51,0.18)] bg-[rgb(245,236,226)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.32),0_14px_32px_rgba(62,43,28,0.06)]";
+
+const operatorWorkspaceInputClassName =
+  "mt-2 w-full rounded-2xl border border-[rgba(184,88,51,0.2)] bg-[rgba(255,255,255,0.98)] px-4 py-3 text-[var(--color-ink)] shadow-[inset_0_1px_0_rgba(255,255,255,0.86),0_8px_18px_rgba(62,43,28,0.05)] outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-[rgba(184,88,51,0.34)] focus:bg-white focus:ring-4 focus:ring-[rgba(184,88,51,0.08)]";
+
+const operatorWorkspaceMutedTextClassName =
+  "text-[rgba(82,66,52,0.82)]";
+
+const operatorWorkspaceInsetCardClassName =
+  "rounded-[1.35rem] border border-[rgba(184,88,51,0.18)] bg-[rgb(252,244,236)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.36)]";
+
+const operatorWorkspaceSecondaryButtonClassName =
+  "inline-flex min-h-11 items-center justify-center rounded-2xl border border-[rgba(184,88,51,0.2)] bg-[rgb(249,240,231)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.3)] hover:bg-[rgb(245,232,219)]";
+
+const taskSoonThresholdMs = 24 * 60 * 60 * 1000;
+
+type LeadDetailTaskListItem = {
+  assignedTo: string;
+  createdAt: string;
+  createdAtInputValue: string;
+  description: string | null;
+  dueAt: string;
+  dueAtInputValue: string;
+  id: string;
+  isOverdue: boolean;
+  statusValue: string;
+  title: string;
+};
+
+function getTaskPriority(task: LeadDetailTaskListItem, now: number) {
+  if (task.isOverdue) {
+    return {
+      label: "Overdue",
+      rank: 0,
+      toneClassName:
+        "border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] text-[var(--color-accent-strong)]",
+    };
+  }
+
+  const dueAtTimestamp = task.dueAtInputValue ? Date.parse(task.dueAtInputValue) : Number.NaN;
+  if (!Number.isNaN(dueAtTimestamp)) {
+    if (dueAtTimestamp - now <= taskSoonThresholdMs) {
+      return {
+        label: "Due soon",
+        rank: 1,
+        toneClassName:
+          "border-[rgba(184,88,51,0.22)] bg-[rgba(184,88,51,0.12)] text-[rgb(123,54,29)]",
+      };
+    }
+
+    return {
+      label: "Scheduled",
+      rank: 2,
+      toneClassName:
+        "border-[rgba(142,115,91,0.18)] bg-[rgba(255,255,255,0.7)] text-[var(--color-ink)]",
+    };
+  }
+
+  return {
+    label: "No due date",
+    rank: 3,
+    toneClassName:
+      "border-[rgba(142,115,91,0.14)] bg-[rgba(255,255,255,0.58)] text-[rgba(82,66,52,0.82)]",
+  };
+}
+
+function compareLeadDetailTasks(
+  leftTask: LeadDetailTaskListItem,
+  rightTask: LeadDetailTaskListItem,
+  now: number,
+) {
+  const leftPriority = getTaskPriority(leftTask, now);
+  const rightPriority = getTaskPriority(rightTask, now);
+
+  if (leftPriority.rank !== rightPriority.rank) {
+    return leftPriority.rank - rightPriority.rank;
+  }
+
+  const leftDueAt = leftTask.dueAtInputValue ? Date.parse(leftTask.dueAtInputValue) : Number.POSITIVE_INFINITY;
+  const rightDueAt = rightTask.dueAtInputValue ? Date.parse(rightTask.dueAtInputValue) : Number.POSITIVE_INFINITY;
+
+  if (leftDueAt !== rightDueAt) {
+    return leftDueAt - rightDueAt;
+  }
+
+  return leftTask.title.localeCompare(rightTask.title);
+}
+
+function compareLeadDetailTaskAge(
+  leftTask: LeadDetailTaskListItem,
+  rightTask: LeadDetailTaskListItem,
+) {
+  const leftCreatedAt = leftTask.createdAtInputValue
+    ? Date.parse(leftTask.createdAtInputValue)
+    : Number.POSITIVE_INFINITY;
+  const rightCreatedAt = rightTask.createdAtInputValue
+    ? Date.parse(rightTask.createdAtInputValue)
+    : Number.POSITIVE_INFINITY;
+
+  if (leftCreatedAt !== rightCreatedAt) {
+    return leftCreatedAt - rightCreatedAt;
+  }
+
+  return leftTask.title.localeCompare(rightTask.title);
+}
+
 export default async function LeadDetailPage({
   params,
   searchParams,
@@ -212,16 +328,41 @@ export default async function LeadDetailPage({
     showArchived,
     sort: activeSort,
   };
-  const currentListHref = buildLeadsHref(currentListParams);
-  const currentDetailHref = buildLeadDetailHref(lead.id, currentListParams);
-  const messageLeadHref = buildLeadDetailHref(lead.id, {
+  const activeTaskSort = normalizeLeadDetailTaskSort(resolvedSearchParams.taskSort);
+  const currentDetailParams = {
     ...currentListParams,
+    taskSort: activeTaskSort,
+  };
+  const currentListHref = buildLeadsHref(currentListParams);
+  const currentDetailHref = buildLeadDetailHref(lead.id, currentDetailParams);
+  const assignmentPanelHref = `${currentDetailHref}#assignment-panel`;
+  const propertyPanelHref = `${currentDetailHref}#property-panel`;
+  const addTaskPanelHref = `${currentDetailHref}#add-task-panel`;
+  const openTasksPanelHref = `${currentDetailHref}#open-tasks-panel`;
+  const messageLeadHref = buildLeadDetailHref(lead.id, {
+    ...currentDetailParams,
     compose: "manual",
   });
   const askMissingQuestionsHref = buildLeadDetailHref(lead.id, {
-    ...currentListParams,
+    ...currentDetailParams,
     compose: "missing-info",
   });
+  const taskPriorityNow = Date.now();
+  const prioritizedTasks =
+    activeTaskSort === "age"
+      ? [...lead.tasks].sort(compareLeadDetailTaskAge)
+      : [...lead.tasks].sort((leftTask, rightTask) =>
+          compareLeadDetailTasks(leftTask, rightTask, taskPriorityNow),
+        );
+  const overdueTaskCount = prioritizedTasks.filter((task) => task.isOverdue).length;
+  const dueSoonTaskCount = prioritizedTasks.filter((task) => {
+    if (task.isOverdue || !task.dueAtInputValue) {
+      return false;
+    }
+
+    const dueAtTimestamp = Date.parse(task.dueAtInputValue);
+    return !Number.isNaN(dueAtTimestamp) && dueAtTimestamp - taskPriorityNow <= taskSoonThresholdMs;
+  }).length;
   const composeMode = resolvedSearchParams.compose;
   const isManualComposerOpen = composeMode === "manual";
   const isMissingInfoDraftOpen = composeMode === "missing-info";
@@ -272,70 +413,10 @@ export default async function LeadDetailPage({
             ) : null}
           </span>
         }
-        description={`${lead.property} | ${lead.status} | ${lead.contactMethod}`}
+        description={`${lead.property} | Assigned to ${lead.leadOwner.assignedTo} | ${lead.contactMethod}`}
         actions={
-          <div className="flex flex-col items-end gap-3">
+          <div className="flex max-w-[58rem] flex-col gap-3 md:items-end">
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <span className="rounded-full border border-[rgba(21,94,239,0.18)] bg-[rgba(37,99,235,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[rgb(29,78,216)]">
-                Prospect-facing
-              </span>
-              {lead.actions.manualOutbound ? (
-                <Link
-                  className={primaryWorkflowButtonClassName}
-                  href={`${messageLeadHref}#manual-outbound`}
-                >
-                  Message lead
-                </Link>
-              ) : null}
-              {lead.requestInfoActionLabel === "Ask missing questions" ? (
-                lead.askMissingQuestionsAvailability.canOpenComposer ? (
-                  <Link
-                    className={secondaryWorkflowButtonClassName}
-                    href={`${askMissingQuestionsHref}#manual-outbound`}
-                  >
-                    Ask missing questions
-                  </Link>
-                ) : (
-                  <button
-                    className={secondaryWorkflowButtonClassName}
-                    disabled
-                    type="button"
-                  >
-                    Ask missing questions
-                  </button>
-                )
-              ) : lead.actions.requestInfo ? (
-                <form action={requestInfoAction.bind(null, lead.id)}>
-                  <input type="hidden" name="redirectTo" value={currentDetailHref} />
-                  <button className={secondaryWorkflowButtonClassName} type="submit">
-                    Request info
-                  </button>
-                </form>
-              ) : null}
-              <Link className={secondaryWorkflowButtonClassName} href="#shared-thread">
-                Open thread
-              </Link>
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <span className="rounded-full border border-[rgba(184,88,51,0.18)] bg-[rgba(184,88,51,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-accent-strong)]">
-                Internal
-              </span>
-              {canReassignProperty ? (
-                <Link
-                  className={secondaryWorkflowButtonClassName}
-                  href="#assignment-panel"
-                >
-                  Reassign property
-                </Link>
-              ) : null}
-              {lead.actions.overrideFit ? (
-                <Link
-                  className={secondaryWorkflowButtonClassName}
-                  href="#routing-controls"
-                >
-                  Qualify / Move status
-                </Link>
-              ) : null}
               <Link className={navigationActionClassName} href={currentListHref}>
                 <span aria-hidden="true">←</span>
                 Back to leads
@@ -343,7 +424,7 @@ export default async function LeadDetailPage({
               {leadNavigation.previousLead ? (
                 <Link
                   className={navigationActionClassName}
-                  href={buildLeadDetailHref(leadNavigation.previousLead.id, currentListParams)}
+                  href={buildLeadDetailHref(leadNavigation.previousLead.id, currentDetailParams)}
                   title={leadNavigation.previousLead.fullName}
                 >
                   <span aria-hidden="true">←</span>
@@ -358,7 +439,7 @@ export default async function LeadDetailPage({
               {leadNavigation.nextLead ? (
                 <Link
                   className={navigationActionClassName}
-                  href={buildLeadDetailHref(leadNavigation.nextLead.id, currentListParams)}
+                  href={buildLeadDetailHref(leadNavigation.nextLead.id, currentDetailParams)}
                   title={leadNavigation.nextLead.fullName}
                 >
                   Next lead
@@ -370,6 +451,94 @@ export default async function LeadDetailPage({
                   <span aria-hidden="true">→</span>
                 </span>
               )}
+            </div>
+
+            <div className={topActionPanelClassName}>
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)]">
+                <div className={topActionSectionClassName}>
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[rgb(29,78,216)]">
+                    Prospect-facing
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">
+                    Keep the active conversation close to the lead record.
+                  </div>
+                  <div className="mt-1 text-sm text-[var(--color-muted)]">
+                    Start with direct outreach, then use the thread for context and history.
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    {lead.actions.manualOutbound ? (
+                      <Link
+                        className={primaryWorkflowButtonClassName}
+                        href={`${messageLeadHref}#manual-outbound`}
+                      >
+                        Message lead
+                      </Link>
+                    ) : null}
+                    {lead.requestInfoActionLabel === "Ask missing questions" ? (
+                      lead.askMissingQuestionsAvailability.canOpenComposer ? (
+                        <Link
+                          className={secondaryWorkflowButtonClassName}
+                          href={`${askMissingQuestionsHref}#manual-outbound`}
+                        >
+                          Ask missing questions
+                        </Link>
+                      ) : (
+                        <button
+                          className={secondaryWorkflowButtonClassName}
+                          disabled
+                          title={lead.askMissingQuestionsAvailability.disabledReason ?? undefined}
+                          type="button"
+                        >
+                          Ask missing questions
+                        </button>
+                      )
+                    ) : lead.actions.requestInfo ? (
+                      <form action={requestInfoAction.bind(null, lead.id)}>
+                        <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                        <button className={secondaryWorkflowButtonClassName} type="submit">
+                          Request info
+                        </button>
+                      </form>
+                    ) : null}
+                    <Link
+                      className="text-sm font-medium text-[var(--color-accent-strong)] underline decoration-[var(--color-line)] underline-offset-4"
+                      href="#shared-thread"
+                    >
+                      Open thread
+                    </Link>
+                  </div>
+                </div>
+
+                <div className={topActionSectionClassName}>
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-accent-strong)]">
+                    Internal ops
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">
+                    Keep assignment and routing decisions one click away.
+                  </div>
+                  <div className="mt-1 text-sm text-[var(--color-muted)]">
+                    High-touch operational controls stay near the top; lower-frequency tools remain below.
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    {lead.actions.overrideFit ? (
+                      <Link
+                        className={secondaryWorkflowButtonClassName}
+                        href="#routing-controls"
+                      >
+                        Qualify / Move status
+                      </Link>
+                    ) : null}
+                    {canReassignProperty ? (
+                      <Link
+                        className={secondaryWorkflowButtonClassName}
+                        href="#property-panel"
+                      >
+                        Reassign property
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         }
@@ -432,13 +601,16 @@ export default async function LeadDetailPage({
             </div>
           </div>
         </div>
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.88fr)]">
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
+          <div className="grid gap-5">
             <div className={insetPanelClassName}>
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
-                    Lead snapshot
+                    At a glance
+                  </div>
+                  <div className="mt-2 text-sm text-[var(--color-muted)]">
+                    The main facts you need before you decide what to do next.
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span className={getDetailStatusBadgeClassName(lead.statusValue)}>{lead.status}</span>
@@ -447,23 +619,43 @@ export default async function LeadDetailPage({
                       {lead.source}
                     </span>
                   </div>
-                </div>
-                <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.74)] px-4 py-3 text-right">
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
-                    Last activity
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className={metadataTileClassName}>
+                      <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                        Owner
+                      </div>
+                      <div className="mt-2 text-sm font-medium">{lead.leadOwner.assignedTo}</div>
+                    </div>
+                    <div className={metadataTileClassName}>
+                      <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                        Contact
+                      </div>
+                      <div className="mt-2 text-sm font-medium">{lead.contactMethod}</div>
+                    </div>
+                    <div className={metadataTileClassName}>
+                      <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                        Last activity
+                      </div>
+                      <div className="mt-2 text-sm font-medium">{lead.lastActivity}</div>
+                    </div>
+                    <div className={metadataTileClassName}>
+                      <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                        Property
+                      </div>
+                      <div className="mt-2 text-sm font-medium">{lead.property}</div>
+                    </div>
                   </div>
-                  <div className="mt-1 text-sm font-medium text-[var(--color-ink)]">{lead.lastActivity}</div>
+                </div>
+                <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.74)] px-4 py-3 text-left lg:max-w-[18rem]">
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                    Ready check
+                  </div>
+                  <div className="mt-2 text-sm font-medium text-[var(--color-ink)]">
+                    Status, fit, and contact are visible first so the next action is easy to choose.
+                  </div>
                 </div>
               </div>
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <div className={metadataTileClassName}>
-                  <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Primary contact</div>
-                  <div className="mt-2 text-sm font-medium">{lead.contactMethod}</div>
-                </div>
-                <div className={metadataTileClassName}>
-                  <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Assigned property</div>
-                  <div className="mt-2 text-sm font-medium">{lead.property}</div>
-                </div>
                 <div className={metadataTileClassName}>
                   <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Email</div>
                   <div className="mt-2 break-all text-sm font-medium">{lead.email}</div>
@@ -472,29 +664,32 @@ export default async function LeadDetailPage({
                   <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Phone</div>
                   <div className="mt-2 text-sm font-medium">{lead.phone}</div>
                 </div>
-                <div className={metadataTileClassName}>
-                  <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Assigned teammate</div>
-                  <div className="mt-2 text-sm font-medium">{lead.leadOwner.assignedTo}</div>
-                </div>
               </div>
             </div>
 
             <div className={insetPanelClassName}>
-              <div className="text-sm font-semibold">Quick facts</div>
-              <div className="mt-4 grid gap-3">
-                <SnapshotFact label="Assigned owner" value={lead.leadOwner.assignedTo} />
-                <SnapshotFact label="Move-in date" value={lead.moveInDate} />
+              <div className="text-sm font-semibold">Key details</div>
+              <div className="mt-2 text-sm text-[var(--color-muted)]">
+                The details that shape fit, timing, and follow-up.
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <SnapshotFact label="Move-in" value={lead.moveInDate} />
                 <SnapshotFact label="Budget" value={lead.budget} />
                 <SnapshotFact label="Stay length" value={lead.stayLength} />
-                <SnapshotFact label="Work status" value={lead.workStatus} />
+                <SnapshotFact label="Work" value={lead.workStatus} />
               </div>
               <div className="mt-4 rounded-[1.45rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(255,255,255,0.7)] px-4 py-4 text-sm text-[var(--color-muted)]">
+                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                  Notes
+                </div>
+                <div className="mt-2">
                 {lead.notes}
+                </div>
               </div>
             </div>
 
             {extractedInfoRows.length > 0 ? (
-              <div className={`${insetPanelClassName} lg:col-span-2`}>
+              <div className={insetPanelClassName}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold">Extracted lead info</div>
@@ -540,10 +735,13 @@ export default async function LeadDetailPage({
           <div className="grid gap-5">
             <div className="rounded-[2rem] border border-[rgba(184,88,51,0.18)] bg-[linear-gradient(180deg,rgba(255,250,244,0.98),rgba(248,241,234,0.94))] p-5 shadow-[0_22px_54px_rgba(44,32,20,0.08)]">
               <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
-                Workflow focus
+                Next step
               </div>
               <div className="mt-2 text-lg font-semibold leading-tight">
-                Move this lead forward with the smallest next step.
+                Do the next useful thing for this lead.
+              </div>
+              <div className="mt-2 text-sm text-[var(--color-muted)]">
+                Start with fit or missing info, then move to scheduling or application when the lead is ready.
               </div>
               <div className="mt-4 space-y-3">
                 {lead.slaSummary ? (
@@ -563,7 +761,7 @@ export default async function LeadDetailPage({
                   </div>
                 ) : null}
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <form action={evaluateLeadAction.bind(null, lead.id)}>
                   <input type="hidden" name="redirectTo" value={currentDetailHref} />
                   <button
@@ -645,14 +843,17 @@ export default async function LeadDetailPage({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
-                      Routing controls
+                      Move lead
                     </div>
                     <div className="mt-2 text-lg font-semibold leading-tight">
-                      Move status without dropping into the full operator stack.
+                      Update status and fit without dropping into the full operator stack.
+                    </div>
+                    <div className="mt-2 text-sm text-[var(--color-muted)]">
+                      Use a fast move when the next step is obvious. Use the form when you need more control.
                     </div>
                   </div>
                   <div className="rounded-[1.35rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
-                    Recommended next state: <span className="font-semibold text-[var(--color-ink)]">{lead.recommendedStatus}</span>
+                    Recommended: <span className="font-semibold text-[var(--color-ink)]">{lead.recommendedStatus}</span>
                   </div>
                 </div>
 
@@ -667,13 +868,13 @@ export default async function LeadDetailPage({
                   <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(255,255,255,0.8)] px-4 py-4 text-sm text-[var(--color-muted)]">
                     {routingStatusOptions.length > 1
                       ? `${routingStatusOptions.length - 1} valid manual status transition${routingStatusOptions.length === 2 ? "" : "s"} from here.`
-                      : "No forward transitions are available from this status."}
+                      : "No forward moves are available from this status."}
                   </div>
                 </div>
 
                 {routingQuickActions.length > 0 ? (
                   <div className="mt-4">
-                    <div className="text-sm font-semibold">Quick moves</div>
+                    <div className="text-sm font-semibold">Fast moves</div>
                     <div className="mt-3 flex flex-wrap gap-3">
                       {routingQuickActions.map((quickAction) => (
                         <form
@@ -697,7 +898,7 @@ export default async function LeadDetailPage({
                   action={overrideLeadRoutingAction.bind(null, lead.id)}
                   className="mt-5 rounded-[1.45rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
                 >
-                  <div className="text-sm font-semibold">Manual routing update</div>
+                  <div className="text-sm font-semibold">More options</div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <label className="space-y-2">
                       <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
@@ -760,172 +961,264 @@ export default async function LeadDetailPage({
         </div>
       </section>
       <section className={majorPanelClassName}>
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <div className="text-lg font-semibold">Assignment and review SLA</div>
-            <div className="mt-2 text-sm text-[var(--color-muted)]">
-              Current owner: {lead.leadOwner.assignedTo}
-            </div>
-            {lead.slaSummary ? (
-              <div className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs ${lead.slaSummary.isOverdue ? "border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] text-[var(--color-accent-strong)]" : "border-[var(--color-line)] bg-[var(--color-panel-strong)] text-[var(--color-muted)]"}`}>
-                {lead.slaSummary.label} due {lead.slaSummary.dueAtRelative}
+        <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="md:col-span-2 xl:col-span-2">
+            <div>
+              <div className="text-lg font-semibold">Owner and property</div>
+              <div className={`mt-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                Keep the right person and property tied to the lead before you hand off work.
               </div>
-            ) : null}
+              {lead.slaSummary ? (
+                <div className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-medium ${lead.slaSummary.isOverdue ? "border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] text-[var(--color-accent-strong)]" : "border-[var(--color-line)] bg-[var(--color-panel-strong)] text-[var(--color-muted)]"}`}>
+                  Review due {lead.slaSummary.dueAtRelative}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="md:col-span-2 xl:col-span-2">
+            <div>
+              <div className="text-lg font-semibold">Tasks</div>
+              <div className={`mt-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                Add the next piece of work and keep current follow-ups easy to update.
+              </div>
+            </div>
           </div>
 
-          <div id="assignment-panel" className="grid gap-4 lg:grid-cols-2">
-            <form
-              action={assignLeadOwnerAction.bind(null, lead.id)}
-              className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
-            >
-              <div className="text-sm font-medium">Assign lead owner</div>
-              <select
-                className="mt-3 min-w-64 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-                defaultValue={lead.leadOwner.assignedMembershipId ?? "unassigned"}
-                disabled={!lead.actions.assignProperty}
-                name="assignedMembershipId"
-              >
-                {lead.leadAssignmentOptions.map((assignmentOption) => (
-                  <option key={assignmentOption.value} value={assignmentOption.value}>
-                    {assignmentOption.label} | {assignmentOption.summary}
-                  </option>
-                ))}
-              </select>
-              <input type="hidden" name="redirectTo" value={currentDetailHref} />
-              <button
-                className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={!lead.actions.assignProperty}
-                type="submit"
-              >
-                Save owner
-              </button>
-            </form>
-            {canReassignProperty ? (
-              <form
-                action={assignLeadPropertyAction.bind(null, lead.id)}
-                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
-              >
-                <div className="text-sm font-medium">
-                  {lead.property === "Unassigned" ? "Assign property" : "Reassign property"}
+          <div className={`${operatorWorkspaceCardClassName} h-fit`} id="assignment-panel">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">Lead owner</div>
+                <div className={`mt-1 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                  Current owner: {lead.leadOwner.assignedTo}
                 </div>
+              </div>
+            </div>
+            <form action={assignLeadOwnerAction.bind(null, lead.id)} className="mt-4">
+              <label className={`block space-y-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                <span>Assign to</span>
                 <select
-                  className="mt-3 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-                  name="propertyId"
-                  required
-                  defaultValue={lead.propertyId ?? ""}
+                  className={operatorWorkspaceInputClassName}
+                  defaultValue={lead.leadOwner.assignedMembershipId ?? "unassigned"}
+                  disabled={!lead.actions.assignProperty}
+                  name="assignedMembershipId"
                 >
-                  <option disabled={lead.property !== "Unassigned"} value="">
-                    Choose property
-                  </option>
-                  {lead.availableProperties.map((propertyOption) => (
-                    <option key={propertyOption.id} value={propertyOption.id}>
-                      {propertyOption.name}
+                  {lead.leadAssignmentOptions.map((assignmentOption) => (
+                    <option key={assignmentOption.value} value={assignmentOption.value}>
+                      {assignmentOption.label} | {assignmentOption.summary}
                     </option>
                   ))}
                 </select>
-                <input type="hidden" name="redirectTo" value={currentDetailHref} />
-                <button
-                  className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
-                  type="submit"
-                >
-                  {lead.property === "Unassigned" ? "Assign property" : "Save property"}
+              </label>
+              <input type="hidden" name="redirectTo" value={assignmentPanelHref} />
+              <button
+                className={`${primaryWorkflowButtonClassName} mt-4`}
+                disabled={!lead.actions.assignProperty}
+                type="submit"
+              >
+                Update owner
+              </button>
+            </form>
+          </div>
+
+          {canReassignProperty ? (
+            <div className={`${operatorWorkspaceCardClassName} h-fit`} id="property-panel">
+              <div>
+                <div className="text-sm font-medium">
+                  {lead.property === "Unassigned" ? "Property" : "Assigned property"}
+                </div>
+                <div className={`mt-1 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                  Current property: {lead.property}
+                </div>
+              </div>
+              <form action={assignLeadPropertyAction.bind(null, lead.id)} className="mt-4">
+                <label className={`block space-y-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                  <span>{lead.property === "Unassigned" ? "Choose property" : "Move to"}</span>
+                  <select
+                    className={operatorWorkspaceInputClassName}
+                    name="propertyId"
+                    required
+                    defaultValue={lead.propertyId ?? ""}
+                  >
+                    <option disabled={lead.property !== "Unassigned"} value="">
+                      Choose property
+                    </option>
+                    {lead.availableProperties.map((propertyOption) => (
+                      <option key={propertyOption.id} value={propertyOption.id}>
+                        {propertyOption.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <input type="hidden" name="redirectTo" value={propertyPanelHref} />
+                <button className={`${primaryWorkflowButtonClassName} mt-4`} type="submit">
+                  {lead.property === "Unassigned" ? "Assign property" : "Update property"}
                 </button>
               </form>
-            ) : null}
-          </div>
-        </div>
+            </div>
+          ) : (
+            <div className={`${operatorWorkspaceCardClassName} h-fit`} id="property-panel">
+              <div className="text-sm font-medium">Assigned property</div>
+              <div className={`mt-1 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                Current property: {lead.property}
+              </div>
+            </div>
+          )}
 
-        <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <form action={createTaskAction} className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5">
-            <div className="text-sm font-medium">Create follow-up task</div>
-            <label className="mt-3 block text-sm text-[var(--color-muted)]">
-              Title
-              <input
-                className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-                name="title"
-                placeholder="Review duplicate risk before next reply"
-                required
-                type="text"
-              />
-            </label>
-            <label className="mt-3 block text-sm text-[var(--color-muted)]">
-              Description
-              <textarea
-                className="mt-2 min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-                name="description"
-                placeholder="Optional extra context for the assigned teammate."
-              />
-            </label>
-            <label className="mt-3 block text-sm text-[var(--color-muted)]">
-              Due at
-              <input
-                className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-                name="dueAt"
-                type="datetime-local"
-              />
-            </label>
-            <label className="mt-3 block text-sm text-[var(--color-muted)]">
-              Assign to
-              <select
-                className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-                defaultValue={lead.leadOwner.assignedMembershipId ?? "unassigned"}
-                disabled={!lead.actions.assignProperty}
-                name="assignedMembershipId"
-              >
-                {lead.leadAssignmentOptions.map((assignmentOption) => (
-                  <option key={`${lead.id}-${assignmentOption.value}`} value={assignmentOption.value}>
-                    {assignmentOption.label} | {assignmentOption.summary}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <form
+            action={createTaskAction}
+            className={`${operatorWorkspaceCardClassName} flex h-[34rem] min-h-0 flex-col`}
+            id="add-task-panel"
+          >
+            <div className="text-sm font-medium">Add task</div>
+            <div className="flex-1">
+              <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                Title
+                <input
+                  className={operatorWorkspaceInputClassName}
+                  name="title"
+                  placeholder="Review duplicate risk before next reply"
+                  required
+                  type="text"
+                />
+              </label>
+              <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                Details
+                <textarea
+                  className={`${operatorWorkspaceInputClassName} min-h-24`}
+                  name="description"
+                  placeholder="Optional extra context for the teammate handling it."
+                />
+              </label>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <label className={`block text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                  Due
+                  <input
+                    className={operatorWorkspaceInputClassName}
+                    name="dueAt"
+                    type="datetime-local"
+                  />
+                </label>
+                <label className={`block text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                  Assign to
+                  <select
+                    className={operatorWorkspaceInputClassName}
+                    defaultValue={lead.leadOwner.assignedMembershipId ?? "unassigned"}
+                    disabled={!lead.actions.assignProperty}
+                    name="assignedMembershipId"
+                  >
+                    {lead.leadAssignmentOptions.map((assignmentOption) => (
+                      <option key={`${lead.id}-${assignmentOption.value}`} value={assignmentOption.value}>
+                        {assignmentOption.label} | {assignmentOption.summary}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
             <input type="hidden" name="leadId" value={lead.id} />
-            <input type="hidden" name="redirectTo" value={currentDetailHref} />
-            <button
-              className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
-              type="submit"
-            >
+            <input type="hidden" name="redirectTo" value={addTaskPanelHref} />
+            <button className={`${primaryWorkflowButtonClassName} mt-4 self-start`} type="submit">
               Create task
             </button>
           </form>
 
-          <div className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5">
-            <div className="text-sm font-medium">Open tasks</div>
-            {lead.tasks.length === 0 ? (
-              <div className="mt-4 text-sm text-[var(--color-muted)]">
-                No follow-up tasks on this lead yet.
+          <div
+            className={`${operatorWorkspaceCardClassName} flex h-[34rem] min-h-0 flex-col overflow-hidden`}
+            id="open-tasks-panel"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">Open tasks</div>
+                <div className={`mt-1 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                  {activeTaskSort === "age"
+                    ? "Oldest tasks stay at the top."
+                    : "Time-sensitive work stays at the top."}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap rounded-full border border-[rgba(184,88,51,0.18)] bg-[rgba(255,255,255,0.54)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.34)]">
+                  {([
+                    {
+                      href: buildLeadDetailHref(lead.id, {
+                        ...currentDetailParams,
+                        taskSort: "priority",
+                      }),
+                      label: "Priority first",
+                      value: "priority",
+                    },
+                    {
+                      href: buildLeadDetailHref(lead.id, {
+                        ...currentDetailParams,
+                        taskSort: "age",
+                      }),
+                      label: "Oldest first",
+                      value: "age",
+                    },
+                  ] as const).map((taskSortOption) => (
+                    <Link
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors duration-150 ${
+                        activeTaskSort === taskSortOption.value
+                          ? "bg-[var(--color-accent)] !text-white visited:!text-white hover:!text-white shadow-[0_8px_18px_rgba(141,63,33,0.18)]"
+                          : "text-[var(--color-accent-strong)] hover:bg-[rgba(249,240,231,0.92)] hover:text-[var(--color-accent-strong)]"
+                      }`}
+                      href={`${taskSortOption.href}#open-tasks-panel`}
+                      key={taskSortOption.value}
+                    >
+                      {taskSortOption.label}
+                    </Link>
+                  ))}
+                </div>
+                {overdueTaskCount > 0 ? (
+                  <div className="rounded-full border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] px-3 py-1 text-xs font-medium text-[var(--color-accent-strong)]">
+                    {overdueTaskCount} overdue
+                  </div>
+                ) : null}
+                {dueSoonTaskCount > 0 ? (
+                  <div className="rounded-full border border-[rgba(184,88,51,0.22)] bg-[rgba(184,88,51,0.12)] px-3 py-1 text-xs font-medium text-[rgb(123,54,29)]">
+                    {dueSoonTaskCount} due soon
+                  </div>
+                ) : null}
+                <div className={`${operatorWorkspaceInsetCardClassName} px-3 py-1 text-xs font-medium ${operatorWorkspaceMutedTextClassName}`}>
+                  {prioritizedTasks.length} open
+                </div>
+              </div>
+            </div>
+            {prioritizedTasks.length === 0 ? (
+              <div className={`mt-4 ${operatorWorkspaceInsetCardClassName} text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                No tasks yet. Add one when the next step should stay with the team.
               </div>
             ) : (
-              <div className="mt-4 space-y-3">
-                {lead.tasks.map((task) => (
+              <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                {prioritizedTasks.map((task) => {
+                  const taskPriority = getTaskPriority(task, taskPriorityNow);
+
+                  return (
                   <form
                     action={updateTaskStatusAction.bind(null, task.id)}
-                    className="rounded-2xl border border-[var(--color-line)] bg-white p-4"
+                    className={operatorWorkspaceInsetCardClassName}
                     key={task.id}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="font-medium">{task.title}</div>
-                        <div className="mt-1 text-sm text-[var(--color-muted)]">
+                        <div className={`mt-1 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                           {task.assignedTo} {task.dueAt !== "Not set" ? `| due ${task.dueAt}` : "| no due date"}
                         </div>
                         {task.description ? (
-                          <div className="mt-2 text-sm text-[var(--color-muted)]">
+                          <div className={`mt-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                             {task.description}
                           </div>
                         ) : null}
                       </div>
-                      {task.isOverdue ? (
-                        <div className="rounded-full border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] px-3 py-1 text-xs text-[var(--color-accent-strong)]">
-                          Overdue
-                        </div>
-                      ) : null}
+                      <div className={`rounded-full border px-3 py-1 text-xs font-medium ${taskPriority.toneClassName}`}>
+                        {taskPriority.label}
+                      </div>
                     </div>
                     <div className="mt-4 flex flex-wrap items-end gap-3">
                       <label className="space-y-2 text-sm font-medium">
                         <span>Status</span>
                         <select
-                          className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 outline-none"
+                          className={operatorWorkspaceInputClassName}
                           defaultValue={task.statusValue}
                           name="status"
                         >
@@ -935,16 +1228,14 @@ export default async function LeadDetailPage({
                           <option value="CANCELED">Canceled</option>
                         </select>
                       </label>
-                        <input type="hidden" name="redirectTo" value={currentDetailHref} />
-                      <button
-                        className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium"
-                        type="submit"
-                      >
-                        Save task
+                      <input type="hidden" name="redirectTo" value={openTasksPanelHref} />
+                      <button className={primaryWorkflowButtonClassName} type="submit">
+                        Update status
                       </button>
                     </div>
                   </form>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -2856,6 +3147,7 @@ function buildLeadDetailHref(
     status?: string;
     showArchived: boolean;
     sort: LeadListSort;
+    taskSort?: LeadDetailTaskSort;
   },
 ) {
   const listHref = buildLeadsHref(params);
@@ -2863,6 +3155,10 @@ function buildLeadDetailHref(
 
   if (params.compose) {
     searchParameters.set("compose", params.compose);
+  }
+
+  if (params.taskSort && params.taskSort !== "priority") {
+    searchParameters.set("taskSort", params.taskSort);
   }
 
   const queryString = searchParameters.toString();
@@ -2878,6 +3174,10 @@ function isLeadListFilter(value: string | undefined): value is LeadListFilter {
 
 function isLeadListSort(value: string | undefined): value is LeadListSort {
   return leadListSortValues.includes(value as LeadListSort);
+}
+
+function normalizeLeadDetailTaskSort(value: string | undefined): LeadDetailTaskSort {
+  return value === "age" ? "age" : "priority";
 }
 
 function normalizeLeadListSort(value: string | undefined): LeadListSort {

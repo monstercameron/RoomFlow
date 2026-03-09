@@ -418,6 +418,7 @@ Reviewed untested core lib modules:
 - [x] Add server-action tests for `src/lib/workflow-actions.ts`: workflow create/update/publish flows, node and edge validation, versioning, and capability gating.
 - [ ] Add server-action tests for `src/lib/ai-actions.ts`: artifact schema validation, capability checks, provider failure handling, and persisted AI artifact writes.
 - [ ] Expand direct tests for `src/lib/lead-workflow.ts`: notification fan-out and outbound webhook queuing are covered. Workflow context loading and deeper workflow action side effects remain.
+
 - [x] Add direct tests for `src/lib/notification-delivery.ts`: recipient filtering, missing-provider behavior, Resend failures, Slack gating, and Slack webhook failure handling.
 - [x] Add direct tests for `src/lib/tour-communications.ts`: scheduled, cancelled, and rescheduled message generation and channel selection.
 - [x] Add direct tests for `src/lib/workflow-data.ts`: workflow list aggregation, version status formatting, and builder view-data shaping.
@@ -744,6 +745,7 @@ These are not part of the original narrow launch slice, but they are now broken 
 - [x] Add a Playwright test for unverified-email resend and verification completion behavior.
 - [x] Add a Playwright test for OAuth conflict handling with the expected account-linking or login guidance.
 - [x] Add a Playwright test for the signed-out invite page state on `src/app/invite/[token]/page.tsx`.
+
 - [x] Add a Playwright test for the wrong-account invite state on `src/app/invite/[token]/page.tsx`.
 - [x] Add a Playwright test for the matching-account invite acceptance state on `src/app/invite/[token]/page.tsx`.
 - [x] Add a Playwright test for an already accepted invite on `src/app/invite/[token]/page.tsx`.
@@ -1094,66 +1096,86 @@ These tasks come from a direct comparison of `reference/WORKFLOW7.md` against th
 - [x] Build an assignment filter for `/app/leads` that supports `unassigned` and specific teammate ownership in Org workspaces.
 - [x] Preserve the existing archived toggle while making it compose correctly with the new property, status, fit, source, and assignment filters.
 - [x] Extend `LeadListFilter` and its query-param parsing so the leads list can represent the new filters without overloading the current summary tabs.
-- [ ] Keep the current summary-card shortcuts and tab shortcuts, but separate them from the new filter-toolbar state so quick buckets and field filters do not conflict.
-- [ ] Add a row-level `next action` or `missing info` indicator to the desktop leads table.
-- [ ] Add the same `next action` or `missing info` indicator to the mobile leads cards.
-- [ ] Surface useful row badges called out by Workflow 7 where data exists: awaiting response, review needed, duplicate possible, stale, and screening pending.
-- [ ] Decide whether the leads list should stay list-only for v1 or expose a deferred board-view toggle with an explicit placeholder.
+- [x] Keep the current summary-card shortcuts and tab shortcuts, but separate them from the new filter-toolbar state so quick buckets and field filters do not conflict.
+- [x] Add a row-level `next action` or `missing info` indicator to the desktop leads table.
+- [x] Add the same `next action` or `missing info` indicator to the mobile leads cards.
+- [x] Surface useful row badges called out by Workflow 7 where data exists: awaiting response, review needed, duplicate possible, stale, and screening pending.
+- [x] Decide whether the leads list should stay list-only for v1 or expose a deferred board-view toggle with an explicit placeholder. Resolved for v1: list view remains the source of truth and `/app/leads` carries the explicit board-view deferral note.
 
 ### Lead detail header and layout parity gaps
 
-- [ ] Rework the lead detail header strip so it shows the assigned teammate directly in the top summary area instead of only lower on the page.
-- [ ] Move or duplicate the most-used lead actions into the header strip: message lead, request missing info, reassign property, qualify or move status, and more actions.
-- [ ] Add a dedicated `Message lead` primary action in the header that jumps to or opens the manual outbound composer.
-- [ ] Add a dedicated `Reassign property` primary action in the header when the user has permission, instead of leaving property assignment only in lower operator controls.
-- [ ] Add a dedicated `Qualify / Move status` action in the header that points to the routing override controls or a new focused routing panel.
-- [ ] Review the detail-page information hierarchy so the summary card, quick actions, and qualification state are visible earlier without scrolling past lower-priority controls.
-- [ ] Make internal-only actions and external prospect-facing actions visually distinct in the top action area.
+- [x] Rework the lead detail header strip so it shows the assigned teammate directly in the top summary area instead of only lower on the page.
+- [x] Move or duplicate the most-used lead actions into the header strip: message lead, request missing info, reassign property, qualify or move status, and more actions.
+- [x] Add a dedicated `Message lead` primary action in the header that jumps to or opens the manual outbound composer.
+- [x] Add a dedicated `Reassign property` primary action in the header when the user has permission, instead of leaving property assignment only in lower operator controls.
+- [x] Add a dedicated `Qualify / Move status` action in the header that points to the routing override controls or a new focused routing panel.
+- [x] Review the detail-page information hierarchy so the summary card, quick actions, and qualification state are visible earlier without scrolling past lower-priority controls.
+- [x] Make internal-only actions and external prospect-facing actions visually distinct in the top action area.
 
 ### Qualification and missing-info UX gaps
 
-- [ ] Add a first-class missing-info checklist section to lead detail that shows only required unanswered fields and explicitly useful optional gaps.
-- [ ] Feed the missing-info checklist from the existing `resolveMissingRequiredQuestionsForLead` workflow logic instead of duplicating qualification rules in the UI.
-- [ ] Group missing-info checklist entries by blocker severity so required blockers are visually stronger than optional follow-up opportunities.
-- [ ] Add per-item labels for common missing qualification fields such as budget, stay length, bathroom-sharing comfort, smoking, pets, parking, guests, and work schedule.
-- [ ] Surface an aggregate completeness state on the lead detail page so operators can tell at a glance whether the lead is ready for routing.
-- [ ] Add an explicit `Ask missing questions` action tied to the missing-info checklist rather than relying only on the generic `Request info` button.
+- [x] Add a first-class missing-info checklist section to lead detail that shows only required unanswered fields and explicitly useful optional gaps.
+- [x] Feed the missing-info checklist from the existing `resolveMissingRequiredQuestionsForLead` workflow logic instead of duplicating qualification rules in the UI.
+- [x] Group missing-info checklist entries by blocker severity so required blockers are visually stronger than optional follow-up opportunities.
+- [x] Add per-item labels for common missing qualification fields such as budget, stay length, bathroom-sharing comfort, smoking, pets, parking, guests, and work schedule.
+- [x] Surface an aggregate completeness state on the lead detail page so operators can tell at a glance whether the lead is ready for routing.
+- [x] Add an explicit `Ask missing questions` action tied to the missing-info checklist rather than relying only on the generic `Request info` button.
 - [x] Change the missing-info flow so clicking `Ask missing questions` opens a draft-first composer instead of sending the workflow action immediately.
 - [x] Prepopulate that draft-first composer with the missing items returned by the qualification workflow engine.
 - [x] Allow the operator to edit the generated missing-info draft before sending.
-- [ ] After sending the missing-info draft, keep the current routing behavior that moves the lead into `AWAITING_RESPONSE` or `INCOMPLETE`, but make that transition visible in the UI confirmation.
-- [ ] Add an explicit `Mark as under review` action near the qualification controls instead of forcing operators to use the lower manual override form for the common review case.
-- [ ] Add an explicit `Continue manually` affordance in the qualification area that jumps to manual outbound, internal note, and override controls.
-- [ ] Decide whether v1 needs an `intentionally unknown` state for missing-info checklist items; if yes, model and persist it, and if no, document the deferral.
+- [x] After sending the missing-info draft, keep the current routing behavior that moves the lead into `AWAITING_RESPONSE` or `INCOMPLETE`, but make that transition visible in the UI confirmation.
+- [x] Add an explicit `Mark as under review` action near the qualification controls instead of forcing operators to use the lower manual override form for the common review case.
+- [x] Add an explicit `Continue manually` affordance in the qualification area that jumps to manual outbound, internal note, and override controls.
+- [x] Decide whether v1 needs an `intentionally unknown` state for missing-info checklist items; if yes, model and persist it, and if no, document the deferral. Resolved for v1: defer a separate `intentionally unknown` state and continue to treat unanswered items as outstanding checklist gaps.
 
 ### Extracted info and fit explanation gaps
 
-- [ ] Add a focused `Extracted lead info` panel that presents normalized lead fields as a single operator-readable section instead of splitting them between snapshot tiles, qualification answers, and extraction confidence rows.
-- [ ] Ensure the extracted-info panel includes the Workflow 7 normalized fields where available: email, phone, move-in date, budget, intended stay, smoking, pets, bathroom sharing, parking, guest expectations, and work schedule notes.
-- [ ] Keep confidence, evidence, and accepted or edited state visible for extracted fields, but tighten the presentation so operators do not have to parse multiple sections to understand one field.
-- [ ] Add a dedicated fit-explanation summary near qualification controls that explains why the lead is currently `PASS`, `CAUTION`, `MISMATCH`, or `UNKNOWN`.
-- [ ] Promote the current evaluation summary and issue list higher in the layout so fit reasoning is adjacent to the missing-info and routing controls.
+- [x] Add a focused `Extracted lead info` panel that presents normalized lead fields as a single operator-readable section instead of splitting them between snapshot tiles, qualification answers, and extraction confidence rows.
+- [x] Ensure the extracted-info panel includes the Workflow 7 normalized fields where available: email, phone, move-in date, budget, intended stay, smoking, pets, bathroom sharing, parking, guest expectations, and work schedule notes.
+- [x] Keep confidence, evidence, and accepted or edited state visible for extracted fields, but tighten the presentation so operators do not have to parse multiple sections to understand one field.
+- [x] Add a dedicated fit-explanation summary near qualification controls that explains why the lead is currently `PASS`, `CAUTION`, `MISMATCH`, or `UNKNOWN`.
+- [x] Promote the current evaluation summary and issue list higher in the layout so fit reasoning is adjacent to the missing-info and routing controls.
 
 ### Conversation and action-flow refinements
 
-- [ ] Audit the shared-thread section against Workflow 7 messaging requirements and add any missing message metadata presentation, especially clearer delivery and read markers where available.
-- [ ] Add a direct anchor or jump link from the top action area into the shared thread and manual outbound composer.
-- [ ] Verify that internal notes, manual outbound, automated sends, status changes, duplicate review, scheduling events, and screening events all remain legible as one operational thread at common lead volumes.
-- [ ] Decide whether a separate activity timeline view is still needed in addition to the shared thread, or whether the shared thread is the accepted v1 interpretation of the spec.
+- [x] Audit the shared-thread section against Workflow 7 messaging requirements and add any missing message metadata presentation, especially clearer delivery and read markers where available.
+- [x] Add a direct anchor or jump link from the top action area into the shared thread and manual outbound composer.
+- [x] Verify that internal notes, manual outbound, automated sends, status changes, duplicate review, scheduling events, and screening events all remain legible as one operational thread at common lead volumes.
+- [x] Decide whether a separate activity timeline view is still needed in addition to the shared thread, or whether the shared thread is the accepted v1 interpretation of the spec. Resolved for v1: keep the shared thread as the primary operational timeline and defer a separate activity-timeline surface.
 
 ### Routing, ownership, and operator-control refinements
 
-- [ ] Add a clearer `Move status` UX for the common statuses `UNDER_REVIEW`, `INCOMPLETE`, `QUALIFIED`, `DECLINED`, and `ARCHIVED` so operators do not need the generic override form for every routine routing change.
-- [ ] Split routine routing controls from exception-only override controls so manual override stays available but is not the only visible path.
+- [x] Add a clearer `Move status` UX for the common statuses `UNDER_REVIEW`, `INCOMPLETE`, `QUALIFIED`, `DECLINED`, and `ARCHIVED` so operators do not need the generic override form for every routine routing change.
+- [x] Split routine routing controls from exception-only override controls so manual override stays available but is not the only visible path.
 - [x] Expose property reassignment for already-assigned leads, not only unassigned leads, when permissions allow.
-- [ ] Keep owner assignment in place, but decide whether lead owner and property reassignment belong in one shared `assignment` panel.
+- [x] Keep owner assignment in place, but decide whether lead owner and property reassignment belong in one shared `assignment` panel.
 
 ### Validation and regression coverage for Workflow 7 parity
 
-- [ ] Add server-side tests for any new leads-list filter combinations so property, status, fit, source, assignment, archived, search, and sort states compose correctly.
-- [ ] Add Playwright coverage for the new leads-list filter toolbar, including query-param persistence and reset behavior.
-- [ ] Add Playwright coverage for the new lead-row next-action or missing-info indicators on both desktop and mobile layouts.
-- [ ] Add Playwright coverage for the lead-detail header actions, especially message lead, request missing info, property reassignment, and status movement.
-- [ ] Add Playwright coverage for the missing-info checklist flow from checklist render to draft generation to send to status update.
-- [ ] Add regression coverage proving the focused `Ask missing questions` flow still respects opt-out, channel availability, throttle windows, and permission checks.
-- [ ] Update product docs or inline implementation notes wherever the final v1 behavior intentionally differs from the exact Workflow 7 spec.
+- [x] Add server-side tests for any new leads-list filter combinations so property, status, fit, source, assignment, archived, search, and sort states compose correctly.
+- [x] Add Playwright coverage for the new leads-list filter toolbar, including query-param persistence and reset behavior.
+- [x] Add Playwright coverage for the new lead-row next-action or missing-info indicators on both desktop and mobile layouts.
+- [x] Add Playwright coverage for the lead-detail header actions, especially message lead, request missing info, property reassignment, and status movement.
+- [x] Add Playwright coverage for the missing-info checklist flow from checklist render to draft generation to send to status update.
+- [x] Add regression coverage proving the focused `Ask missing questions` flow still respects opt-out, channel availability, throttle windows, and permission checks.
+- [x] Update product docs or inline implementation notes wherever the final v1 behavior intentionally differs from the exact Workflow 7 spec.
+
+### Codex lead-detail UI redesign backlog (March 9, 2026)
+
+Lead detail has too many competing actions and too little structural hierarchy. Rework it from the style guide instead of incrementally polishing the current layout.
+
+Design constraints for this redesign:
+
+- [ ] Keep the workflow chart in the redesigned lead-detail experience.
+- [ ] Keep the highest-touch, highest-frequency reading and action surfaces near the top of the page.
+- [ ] Target world-class SaaS UX: fast scanning, clear hierarchy, easy operation, and low-friction decision-making.
+
+- [ ] Collapse the header action cluster into a clearer hierarchy with one primary prospect-facing CTA, one secondary supporting CTA, and a separate internal-ops group.
+- [ ] Rebuild the top-of-page information architecture so snapshot, workflow state, and next-step controls read in one pass without jumping between panels.
+- [ ] Redesign routing controls into a single coherent decision surface that combines recommended move, quick actions, and manual override without duplicate wording.
+- [ ] Simplify assignment, property reassignment, and follow-up task creation into a more compact operator workspace with shared control sizing and clearer section ownership.
+- [ ] Rework the missing-info checklist so blockers, optional follow-up, throttle state, and resulting status are visually distinct and easier to act on.
+- [ ] Redesign operator messaging controls so internal note, manual outbound, opt-out management, and scheduling handoff are easier to differentiate by purpose.
+- [ ] Demote low-frequency utilities and status-heavy support panels so screening, AI assist, extraction review, and translation stop competing with core lead progression actions.
+- [ ] Apply the style guide consistently across all lead-detail controls: fewer button variants, stronger semantic button roles, shared padding/radius, warmer secondary surfaces, and clearer disabled states.
+- [ ] Validate the redesigned lead-detail page across desktop and mobile, then update targeted tests or Playwright coverage for any changed labels or flows.
