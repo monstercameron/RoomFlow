@@ -1260,6 +1260,7 @@ export default async function IntegrationsSettingsPage() {
         <form
           action={updateCsvImportIntegrationAction}
           className="rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-6 shadow-[var(--shadow-panel)] lg:col-span-2"
+          id="csv-import"
         >
           <div className="text-xl font-semibold">CSV import</div>
           <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">

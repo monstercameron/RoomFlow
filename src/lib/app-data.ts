@@ -2,6 +2,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import {
   CalendarSyncProvider,
+  ContactChannel,
   IntegrationAuthState,
   IntegrationHealthState,
   IntegrationProvider,
@@ -52,6 +53,7 @@ import { parseDeliveryStatus } from "@/lib/delivery-status";
 import { resolveInternalNoteMentions } from "@/lib/internal-note-mentions";
 import {
   formatMessageChannelLabel,
+  isLeadChannelOptedOut,
   resolveLeadChannelOptOutState,
   resolveLeadOptOutSummary,
 } from "@/lib/lead-channel-opt-outs";
@@ -108,9 +110,74 @@ import {
   getLocalizedMembershipRoleLabel,
   type LeadsPageLocale,
 } from "@/lib/leads-page-i18n";
+import {
+  buildLeadListArchivedVisibilityClause,
+  buildLeadListFilterClauses,
+  buildLeadListSearchClause,
+  buildLeadListWhereClause,
+  buildLeadListWorkflowFilterClauses,
+  type LeadListWorkflowFilters,
+} from "@/lib/lead-list-filters";
 import { workspaceHasCapability } from "@/lib/workspace-plan";
 import { activeWorkspaceCookieName, ensureWorkspaceForUser } from "@/lib/workspaces";
 import { sortTimelineEventsDeterministically } from "@/lib/workflow-events";
+
+function hasStructuredIntegrationMappingConfig(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return Object.keys(value).length > 0;
+}
+
+function resolveScreeningIntegrationProvider(provider: ScreeningProvider) {
+  switch (provider) {
+    case ScreeningProvider.CHECKR:
+      return IntegrationProvider.CHECKR;
+    case ScreeningProvider.TRANSUNION:
+      return IntegrationProvider.TRANSUNION;
+    case ScreeningProvider.ZUMPER:
+      return IntegrationProvider.ZUMPER;
+  }
+}
+
+function formatAiArtifactView<T>(
+  artifact:
+    | {
+        createdAt: Date;
+        data: T;
+        status: "ready";
+      }
+    | {
+        createdAt: Date;
+        error: string;
+        status: "failed";
+      }
+    | null,
+) {
+  if (!artifact) {
+    return null;
+  }
+
+  if (artifact.status === "failed") {
+    return {
+      error: artifact.error,
+      generatedAt: formatRelativeTime(artifact.createdAt),
+      status: artifact.status,
+    };
+  }
+
+  return {
+    data: artifact.data,
+    generatedAt: formatRelativeTime(artifact.createdAt),
+    status: artifact.status,
+  };
+}
+
 function formatCurrency(value: number | null, locale: LeadsPageLocale = "en") {
   const copy = getLeadsPageCopy(locale);
 
@@ -389,66 +456,197 @@ function formatEnumLabel(value: string) {
     .join(" ");
 }
 
-function hasStructuredIntegrationMappingConfig(value: unknown) {
-  if (Array.isArray(value)) {
-    return value.length > 0;
-  }
+function formatFieldKeyLabel(fieldKey: string) {
+  const normalizedLabel = fieldKey
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .toLowerCase();
 
-  if (!value || typeof value !== "object") {
-    return false;
+  switch (normalizedLabel) {
+    case "monthly budget":
+      return "Budget";
+    case "stay length months":
+      return "Stay length";
+    case "bathroom sharing comfort":
+      return "Bathroom sharing";
+    case "parking need":
+      return "Parking";
+    case "guest expectations":
+      return "Guest expectations";
+    case "work schedule notes":
+      return "Work schedule";
+    default:
+      return normalizedLabel
+        .split(" ")
+        .filter((part) => part.length > 0)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
   }
-
-  return Object.keys(value).length > 0;
 }
 
-function resolveCalendarIntegrationProvider(provider: CalendarSyncProvider) {
-  return provider === CalendarSyncProvider.GOOGLE
-    ? IntegrationProvider.GOOGLE_CALENDAR
-    : IntegrationProvider.OUTLOOK_CALENDAR;
-}
-
-function resolveScreeningIntegrationProvider(provider: ScreeningProvider) {
-  switch (provider) {
-    case ScreeningProvider.CHECKR:
-      return IntegrationProvider.CHECKR;
-    case ScreeningProvider.TRANSUNION:
-      return IntegrationProvider.TRANSUNION;
-    case ScreeningProvider.ZUMPER:
-      return IntegrationProvider.ZUMPER;
-  }
-}
-
-function formatAiArtifactView<T>(
-  artifact:
-    | {
-        createdAt: Date;
-        data: T;
-        status: "ready";
-      }
-    | {
-        createdAt: Date;
-        error: string;
-        status: "failed";
-      }
-    | null,
-) {
-  if (!artifact) {
-    return null;
-  }
-
-  if (artifact.status === "failed") {
+function buildLeadRoutingReadinessSummary(params: {
+  fitResult: QualificationFit;
+  hasProperty: boolean;
+  missingRequiredQuestionCount: number;
+}) {
+  if (!params.hasProperty) {
     return {
-      error: artifact.error,
-      generatedAt: formatRelativeTime(artifact.createdAt),
-      status: artifact.status,
+      detail:
+        "Assign a property before routing or qualification follow-up can move forward cleanly.",
+      label: "Property still missing",
+      tone: "pending" as const,
+    };
+  }
+
+  if (params.missingRequiredQuestionCount > 0) {
+    return {
+      detail:
+        "Required qualification answers are still missing before the lead is ready for a routing decision.",
+      label:
+        params.missingRequiredQuestionCount === 1
+          ? "1 required answer still missing"
+          : `${params.missingRequiredQuestionCount} required answers still missing`,
+      tone: "pending" as const,
+    };
+  }
+
+  if (params.fitResult === QualificationFit.UNKNOWN) {
+    return {
+      detail:
+        "Required answers are in place. Run fit evaluation before routing this lead further.",
+      label: "Ready for fit evaluation",
+      tone: "review" as const,
     };
   }
 
   return {
-    data: artifact.data,
-    generatedAt: formatRelativeTime(artifact.createdAt),
-    status: artifact.status,
+    detail:
+      "Required answers and fit context are in place, so the lead can move through review, scheduling, or application steps.",
+    label: "Ready for routing",
+    tone: "ready" as const,
   };
+}
+
+function buildAskMissingQuestionsDraft(params: {
+  leadName: string;
+  propertyName: string | null;
+  missingFieldLabels: string[];
+  preferredChannel: ContactChannel | MessageChannel | null;
+}) {
+  if (params.missingFieldLabels.length === 0 || !params.preferredChannel) {
+    return null;
+  }
+
+  const propertyReference = params.propertyName ? ` for ${params.propertyName}` : "";
+  const firstName = params.leadName.trim().split(/\s+/)[0] ?? "there";
+  const body = [
+    `Hi ${firstName},`,
+    "",
+    `Thanks for your interest${propertyReference}. Before I can move your inquiry forward, I still need a few details:`,
+    ...params.missingFieldLabels.map((label) => `- ${label}`),
+    "",
+    "Reply here with what you can, and I’ll keep things moving on my side.",
+  ].join("\n");
+
+  return {
+    body,
+    channel: params.preferredChannel,
+    subject: params.propertyName
+      ? `A few details for your ${params.propertyName} inquiry`
+      : "A few details for your inquiry",
+  };
+}
+
+function isAnswerValuePresentForChecklist(answerValue: unknown): boolean {
+  if (answerValue === null || answerValue === undefined) {
+    return false;
+  }
+
+  if (typeof answerValue === "string") {
+    return answerValue.trim().length > 0;
+  }
+
+  if (typeof answerValue === "number") {
+    return Number.isFinite(answerValue);
+  }
+
+  if (typeof answerValue === "boolean") {
+    return true;
+  }
+
+  if (Array.isArray(answerValue)) {
+    return answerValue.some((entry) => isAnswerValuePresentForChecklist(entry));
+  }
+
+  if (typeof answerValue === "object") {
+    return Object.keys(answerValue).length > 0;
+  }
+
+  return false;
+}
+
+function resolveMissingInfoDraftChannel(params: {
+  contactEmailAddress: string | null;
+  contactPhoneNumber: string | null;
+  lead: {
+    emailOptOutAt?: Date | null;
+    instagramOptOutAt?: Date | null;
+    optOutAt?: Date | null;
+    phone?: string | null;
+    smsOptOutAt?: Date | null;
+    whatsappOptOutAt?: Date | null;
+  };
+  leadEmailAddress: string | null;
+  leadPhoneNumber: string | null;
+  preferredChannel: ContactChannel | MessageChannel | null;
+}) {
+  const candidateChannels: MessageChannel[] = [];
+
+  const pushCandidateChannel = (channel: MessageChannel | null) => {
+    if (!channel || candidateChannels.includes(channel)) {
+      return;
+    }
+
+    candidateChannels.push(channel);
+  };
+
+  let preferredMessageChannel: MessageChannel | null = null;
+
+  if (
+    params.preferredChannel === ContactChannel.EMAIL ||
+    params.preferredChannel === MessageChannel.EMAIL
+  ) {
+    preferredMessageChannel = MessageChannel.EMAIL;
+  } else if (
+    params.preferredChannel === ContactChannel.SMS ||
+    params.preferredChannel === MessageChannel.SMS
+  ) {
+    preferredMessageChannel = MessageChannel.SMS;
+  }
+
+  pushCandidateChannel(preferredMessageChannel);
+  pushCandidateChannel(MessageChannel.EMAIL);
+  pushCandidateChannel(MessageChannel.SMS);
+
+  for (const candidateChannel of candidateChannels) {
+    const hasChannelAddress =
+      candidateChannel === MessageChannel.EMAIL
+        ? Boolean(params.contactEmailAddress ?? params.leadEmailAddress)
+        : Boolean(params.contactPhoneNumber ?? params.leadPhoneNumber);
+
+    if (!hasChannelAddress) {
+      continue;
+    }
+
+    if (isLeadChannelOptedOut(params.lead, candidateChannel)) {
+      continue;
+    }
+
+    return candidateChannel;
+  }
+
+  return null;
 }
 
 function formatFitLabel(value: QualificationFit, locale: LeadsPageLocale = "en") {
@@ -2058,98 +2256,6 @@ export type LeadListSort =
   | "budget-high"
   | "budget-low";
 
-function buildLeadListFilterClauses(overdueLeadIds: Set<string>) {
-  return {
-    all: null,
-    "awaiting-response": {
-      status: {
-        in: [LeadStatus.NEW, LeadStatus.AWAITING_RESPONSE, LeadStatus.INCOMPLETE],
-      },
-    },
-    archived: {
-      status: LeadStatus.ARCHIVED,
-    },
-    overdue:
-      overdueLeadIds.size > 0
-        ? {
-            id: {
-              in: [...overdueLeadIds],
-            },
-          }
-        : {
-            id: {
-              in: ["__no_matching_overdue_leads__"],
-            },
-          },
-    qualified: {
-      fitResult: QualificationFit.PASS,
-    },
-    review: {
-      OR: [
-        {
-          fitResult: QualificationFit.CAUTION,
-        },
-        {
-          fitResult: QualificationFit.MISMATCH,
-        },
-        {
-          status: LeadStatus.UNDER_REVIEW,
-        },
-      ],
-    },
-    unassigned: {
-      assignedMembershipId: null,
-    },
-  } satisfies Record<LeadListFilter, Prisma.LeadWhereInput | null>;
-}
-
-function buildLeadListSearchClause(activeQuery: string): Prisma.LeadWhereInput | null {
-  return activeQuery
-    ? {
-        OR: [
-          {
-            fullName: {
-              contains: activeQuery,
-              mode: "insensitive" as const,
-            },
-          },
-          {
-            email: {
-              contains: activeQuery,
-              mode: "insensitive" as const,
-            },
-          },
-          {
-            phone: {
-              contains: activeQuery,
-              mode: "insensitive" as const,
-            },
-          },
-          {
-            property: {
-              is: {
-                name: {
-                  contains: activeQuery,
-                  mode: "insensitive" as const,
-                },
-              },
-            },
-          },
-          {
-            leadSource: {
-              is: {
-                name: {
-                  contains: activeQuery,
-                  mode: "insensitive" as const,
-                },
-              },
-            },
-          },
-        ],
-      }
-    : null;
-}
-
 function buildLeadListSortOrder(sort: LeadListSort) {
   switch (sort) {
     case "assignee-asc":
@@ -2272,10 +2378,15 @@ function buildLeadListSortOrder(sort: LeadListSort) {
 
 export async function getLeadListViewData(params?: {
   filter?: LeadListFilter;
+  fit?: QualificationFit;
   locale?: LeadsPageLocale;
   page?: number;
   pageSize?: number;
+  property?: string;
   query?: string;
+  source?: string;
+  assignment?: string;
+  status?: LeadStatus;
   showArchived?: boolean;
   sort?: LeadListSort;
 }) {
@@ -2285,6 +2396,13 @@ export async function getLeadListViewData(params?: {
     membershipRole: membership.role,
   });
   const activeFilter = params?.filter ?? "all";
+  const activeWorkflowFilters: LeadListWorkflowFilters = {
+    assignment: params?.assignment?.trim() || undefined,
+    fit: params?.fit,
+    property: params?.property?.trim() || undefined,
+    source: params?.source?.trim() || undefined,
+    status: params?.status,
+  };
   const activeQuery = params?.query?.trim() ?? "";
   const locale = params?.locale ?? "en";
   const leadsPageCopy = getLeadsPageCopy(locale);
@@ -2296,13 +2414,14 @@ export async function getLeadListViewData(params?: {
   const roleActionPermissions = getLeadActionPermissionsForMembershipRole(
     membership.role,
   );
+  const hasOrgMembersCapability = workspaceHasCapability(
+    membership.workspace.enabledCapabilities,
+    WorkspaceCapability.ORG_MEMBERS,
+  );
   const canAssignLeadOwner =
     roleActionPermissions.assignProperty &&
-    workspaceHasCapability(
-      membership.workspace.enabledCapabilities,
-      WorkspaceCapability.ORG_MEMBERS,
-    );
-  const assignableMemberships = canAssignLeadOwner
+    hasOrgMembersCapability;
+  const assignableMemberships = hasOrgMembersCapability
     ? await prisma.membership.findMany({
         where: {
           workspaceId: membership.workspaceId,
@@ -2331,6 +2450,33 @@ export async function getLeadListViewData(params?: {
       value: workspaceMembership.id,
     })),
   ];
+  const [propertyOptions, sourceOptions] = await Promise.all([
+    prisma.property.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+        ...buildScopedPropertyAccessFilter(scopedPropertyIds),
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    }),
+    prisma.leadSource.findMany({
+      where: {
+        workspaceId: membership.workspaceId,
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    }),
+  ]);
   const baseWhere = {
     workspaceId: membership.workspaceId,
     ...buildScopedLeadAccessFilter(scopedPropertyIds),
@@ -2373,21 +2519,14 @@ export async function getLeadListViewData(params?: {
       .map((lead) => lead.id),
   );
 
-  const filterClauses = buildLeadListFilterClauses(overdueLeadIds);
-  const searchClause = buildLeadListSearchClause(activeQuery);
-  const archivedVisibilityClause: Prisma.LeadWhereInput | null = showArchived
-    ? null
-    : {
-        status: {
-          not: LeadStatus.ARCHIVED,
-        },
-      };
-  const where: Prisma.LeadWhereInput = {
-    ...baseWhere,
-    AND: [archivedVisibilityClause, filterClauses[activeFilter], searchClause].filter(
-      (clause): clause is Prisma.LeadWhereInput => clause !== null,
-    ),
-  };
+  const where = buildLeadListWhereClause({
+    activeFilter,
+    activeQuery,
+    activeWorkflowFilters,
+    baseWhere,
+    overdueLeadIds,
+    showArchived,
+  });
   const activeSort = params?.sort ?? "last-activity-desc";
   const sortOrder = buildLeadListSortOrder(activeSort);
   const totalCount = await prisma.lead.count({ where });
@@ -2396,6 +2535,18 @@ export async function getLeadListViewData(params?: {
   const leads = await prisma.lead.findMany({
     where,
     include: {
+      answers: {
+        select: {
+          questionId: true,
+          value: true,
+        },
+      },
+      auditEvents: {
+        select: {
+          createdAt: true,
+          eventType: true,
+        },
+      },
       assignedMembership: {
         select: {
           user: {
@@ -2408,11 +2559,34 @@ export async function getLeadListViewData(params?: {
       property: {
         select: {
           name: true,
+          questionSets: {
+            include: {
+              questions: {
+                orderBy: {
+                  sortOrder: "asc",
+                },
+                select: {
+                  fieldKey: true,
+                  id: true,
+                  label: true,
+                  required: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
         },
       },
       leadSource: {
         select: {
           name: true,
+        },
+      },
+      screeningRequests: {
+        select: {
+          status: true,
         },
       },
     },
@@ -2423,7 +2597,196 @@ export async function getLeadListViewData(params?: {
 
   return {
     activeFilter,
+    activeWorkflowFilters,
+    filterOptions: {
+      assignments: [
+        {
+          label: leadsPageCopy.common.unassigned,
+          value: "unassigned",
+        },
+        ...assignmentOptions
+          .filter((assignmentOption) => assignmentOption.value !== "unassigned")
+          .map((assignmentOption) => ({
+            label: assignmentOption.label,
+            value: assignmentOption.value,
+          })),
+      ],
+      fits: [
+        {
+          label: formatFitLabel(QualificationFit.UNKNOWN, locale),
+          value: QualificationFit.UNKNOWN,
+        },
+        {
+          label: formatFitLabel(QualificationFit.PASS, locale),
+          value: QualificationFit.PASS,
+        },
+        {
+          label: formatFitLabel(QualificationFit.CAUTION, locale),
+          value: QualificationFit.CAUTION,
+        },
+        {
+          label: formatFitLabel(QualificationFit.MISMATCH, locale),
+          value: QualificationFit.MISMATCH,
+        },
+      ],
+      properties: [
+        {
+          label: leadsPageCopy.common.unassigned,
+          value: "unassigned",
+        },
+        ...propertyOptions.map((propertyOption) => ({
+          label: propertyOption.name,
+          value: propertyOption.id,
+        })),
+      ],
+      sources: [
+        {
+          label: leadsPageCopy.common.manual,
+          value: "manual",
+        },
+        ...sourceOptions.map((sourceOption) => ({
+          label: sourceOption.name,
+          value: sourceOption.id,
+        })),
+      ],
+      statuses: [
+        LeadStatus.NEW,
+        LeadStatus.AWAITING_RESPONSE,
+        LeadStatus.INCOMPLETE,
+        LeadStatus.UNDER_REVIEW,
+        LeadStatus.QUALIFIED,
+        LeadStatus.CAUTION,
+        LeadStatus.TOUR_SCHEDULED,
+        LeadStatus.APPLICATION_SENT,
+        LeadStatus.DECLINED,
+        LeadStatus.ARCHIVED,
+        LeadStatus.CLOSED,
+      ].map((statusValue) => ({
+        label: formatStatusLabel(statusValue, locale),
+        value: statusValue,
+      })),
+    },
     leads: leads.map((lead) => ({
+      ...(() => {
+        const activeQuestionSet = lead.property
+          ? resolveActiveQualificationQuestionSet(lead.property.questionSets)
+          : null;
+        const missingRequiredQuestions = activeQuestionSet
+          ? resolveMissingRequiredQualificationQuestions({
+              propertyQuestionSets: [activeQuestionSet],
+              leadAnswers: lead.answers,
+            })
+          : [];
+        const mostRecentMissingInfoRequestAt = resolveMostRecentMissingInfoRequestTimestamp(
+          lead.auditEvents,
+        );
+        const missingInfoPromptIsThrottled = isMissingInfoPromptThrottled({
+          mostRecentMissingInfoRequestAt,
+          referenceTime: new Date(),
+          throttleWindowMinutes: resolveMissingInfoPromptThrottleWindowMinutes(
+            membership.workspace.missingInfoPromptThrottleMinutes,
+          ),
+        });
+        const needsReview =
+          lead.fitResult === QualificationFit.CAUTION ||
+          lead.fitResult === QualificationFit.MISMATCH ||
+          lead.status === LeadStatus.UNDER_REVIEW ||
+          lead.auditEvents.some(
+            (auditEvent) =>
+              auditEvent.eventType === "possible_duplicate_flagged" ||
+              auditEvent.eventType === "lead_conflict_detected",
+          );
+        const hasDuplicateFlag = lead.auditEvents.some(
+          (auditEvent) => auditEvent.eventType === "possible_duplicate_flagged",
+        );
+        const hasPendingScreening = lead.screeningRequests.some(
+          (screeningRequest) =>
+            screeningRequest.status !== ScreeningRequestStatus.REVIEWED &&
+            screeningRequest.status !== ScreeningRequestStatus.ADVERSE_ACTION_RECORDED,
+        );
+        const isAwaitingResponseStatus =
+          lead.status === LeadStatus.NEW ||
+          lead.status === LeadStatus.AWAITING_RESPONSE ||
+          lead.status === LeadStatus.INCOMPLETE;
+        const isStale = Boolean(
+          overdueLeadIds.has(lead.id) ||
+            (lead.lastActivityAt ?? lead.updatedAt).getTime() <
+              Date.now() - 72 * 60 * 60 * 1000,
+        );
+        const badges: Array<{
+          label: string;
+          tone: "attention" | "muted" | "review";
+        }> = [];
+
+        if (isAwaitingResponseStatus) {
+          badges.push({
+            label: leadsPageCopy.indicators.awaitingResponse,
+            tone: "muted",
+          });
+        }
+
+        if (needsReview) {
+          badges.push({
+            label: leadsPageCopy.indicators.reviewNeeded,
+            tone: "review",
+          });
+        }
+
+        if (hasDuplicateFlag) {
+          badges.push({
+            label: leadsPageCopy.indicators.duplicatePossible,
+            tone: "review",
+          });
+        }
+
+        if (isStale) {
+          badges.push({
+            label: leadsPageCopy.indicators.stale,
+            tone: "attention",
+          });
+        }
+
+        if (hasPendingScreening) {
+          badges.push({
+            label: leadsPageCopy.indicators.screeningPending,
+            tone: "attention",
+          });
+        }
+
+        const nextActionLabel = missingRequiredQuestions.length > 0
+          ? missingInfoPromptIsThrottled
+            ? leadsPageCopy.indicators.missingInfoRequested
+            : leadsPageCopy.indicators.askMissingQuestions
+          : needsReview
+            ? leadsPageCopy.indicators.reviewLead
+            : leadsPageCopy.actions.openLead;
+
+        const nextActionDetail = missingRequiredQuestions.length > 0
+          ? leadsPageCopy.indicators.missingInfo(missingRequiredQuestions.length)
+          : needsReview
+            ? leadsPageCopy.indicators.reviewNeeded
+            : null;
+
+        return {
+          badges,
+          nextActionDetail,
+          nextActionKind:
+            missingRequiredQuestions.length > 0 &&
+            !missingInfoPromptIsThrottled &&
+            roleActionPermissions.requestInfo
+              ? "missing-info"
+              : needsReview && roleActionPermissions.overrideFit
+                ? "review"
+                : "open-lead",
+          nextActionLabel,
+          nextActionTone:
+            missingRequiredQuestions.length > 0
+              ? "attention"
+              : needsReview
+                ? "review"
+                : "muted",
+        };
+      })(),
       assignedMembershipId: lead.assignedMembershipId,
       assignedTo: lead.assignedMembership?.user.name ?? leadsPageCopy.common.unassigned,
       assignmentOptions,
@@ -2504,9 +2867,14 @@ export async function getLeadListViewData(params?: {
 }
 
 export async function getLeadDetailNavigationData(params: {
+  assignment?: string;
   filter?: LeadListFilter;
+  fit?: QualificationFit;
   leadId: string;
+  property?: string;
   query?: string;
+  source?: string;
+  status?: LeadStatus;
   showArchived?: boolean;
   sort?: LeadListSort;
 }) {
@@ -2516,6 +2884,13 @@ export async function getLeadDetailNavigationData(params: {
     membershipRole: membership.role,
   });
   const activeFilter = params.filter ?? "all";
+  const activeWorkflowFilters: LeadListWorkflowFilters = {
+    assignment: params.assignment?.trim() || undefined,
+    fit: params.fit,
+    property: params.property?.trim() || undefined,
+    source: params.source?.trim() || undefined,
+    status: params.status,
+  };
   const activeQuery = params.query?.trim() ?? "";
   const activeSort = params.sort ?? "last-activity-desc";
   const showArchived = (params.showArchived ?? false) || activeFilter === "archived";
@@ -2560,6 +2935,9 @@ export async function getLeadDetailNavigationData(params: {
   );
   const filterClauses = buildLeadListFilterClauses(overdueLeadIds);
   const searchClause = buildLeadListSearchClause(activeQuery);
+  const workflowFilterClauses = buildLeadListWorkflowFilterClauses(
+    activeWorkflowFilters,
+  );
   const archivedVisibilityClause: Prisma.LeadWhereInput | null = showArchived
     ? null
     : {
@@ -2569,9 +2947,12 @@ export async function getLeadDetailNavigationData(params: {
       };
   const where: Prisma.LeadWhereInput = {
     ...baseWhere,
-    AND: [archivedVisibilityClause, filterClauses[activeFilter], searchClause].filter(
-      (clause): clause is Prisma.LeadWhereInput => clause !== null,
-    ),
+    AND: [
+      archivedVisibilityClause,
+      filterClauses[activeFilter],
+      searchClause,
+      ...workflowFilterClauses,
+    ].filter((clause): clause is Prisma.LeadWhereInput => clause !== null),
   };
   const orderedLeads = await prisma.lead.findMany({
     where,
@@ -2732,6 +3113,57 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       label: answer.question.label,
       value: formatAnswerValue(answer.value),
     }));
+  const activeQuestionSet = lead.property
+    ? resolveActiveQualificationQuestionSet(lead.property.questionSets)
+    : null;
+  const missingRequiredQuestions = activeQuestionSet
+    ? resolveMissingRequiredQualificationQuestions({
+        propertyQuestionSets: [activeQuestionSet],
+        leadAnswers: lead.answers.map((answer) => ({
+          questionId: answer.questionId,
+          value: answer.value,
+        })),
+      })
+    : [];
+  const answerValueByQuestionId = new Map(
+    lead.answers.map((answer) => [answer.questionId, answer.value]),
+  );
+  const missingOptionalQuestions = activeQuestionSet
+    ? activeQuestionSet.questions
+        .filter((question) => !question.required)
+        .filter(
+          (question) =>
+            !isAnswerValuePresentForChecklist(answerValueByQuestionId.get(question.id)),
+        )
+        .map((question) => ({
+          fieldKey: question.fieldKey,
+          label: question.label,
+          questionId: question.id,
+        }))
+    : [];
+  const totalRequiredQuestionCount = activeQuestionSet
+    ? activeQuestionSet.questions.filter((question) => question.required).length
+    : 0;
+  const mostRecentMissingInfoRequestAt = resolveMostRecentMissingInfoRequestTimestamp(
+    lead.auditEvents.map((auditEvent) => ({
+      eventType: auditEvent.eventType,
+      createdAt: auditEvent.createdAt,
+    })),
+  );
+  const missingInfoPromptThrottleWindowMinutes =
+    resolveMissingInfoPromptThrottleWindowMinutes(
+      membership.workspace.missingInfoPromptThrottleMinutes,
+    );
+  const missingInfoPromptIsThrottled = isMissingInfoPromptThrottled({
+    mostRecentMissingInfoRequestAt,
+    referenceTime: new Date(),
+    throttleWindowMinutes: missingInfoPromptThrottleWindowMinutes,
+  });
+  const routingReadiness = buildLeadRoutingReadinessSummary({
+    fitResult: lead.fitResult,
+    hasProperty: Boolean(lead.propertyId),
+    missingRequiredQuestionCount: missingRequiredQuestions.length,
+  });
 
   const timeline = buildLeadTimeline(lead);
   const manualOutboundChannels = [
@@ -2921,6 +3353,36 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     lead.preferredContactChannel ??
     lead.contact?.preferredChannel ??
     (lead.email ? "EMAIL" : lead.phone ? "SMS" : null);
+  const missingInfoDraftChannel = resolveMissingInfoDraftChannel({
+    contactEmailAddress: lead.contact?.email ?? null,
+    contactPhoneNumber: lead.contact?.phone ?? null,
+    lead,
+    leadEmailAddress: lead.email ?? null,
+    leadPhoneNumber: lead.phone ?? null,
+    preferredChannel: preferredContact,
+  });
+  const askMissingQuestionsDraft = buildAskMissingQuestionsDraft({
+    leadName: lead.fullName,
+    propertyName: lead.property?.name ?? null,
+    missingFieldLabels: missingRequiredQuestions.map((question) =>
+      formatFieldKeyLabel(question.fieldKey),
+    ),
+    preferredChannel: missingInfoDraftChannel,
+  });
+  const canOpenAskMissingQuestionsComposer = Boolean(
+    roleActionPermissions.requestInfo &&
+      askMissingQuestionsDraft &&
+      !missingInfoPromptIsThrottled,
+  );
+  const askMissingQuestionsDisabledReason = missingInfoPromptIsThrottled
+    ? `Wait for the ${missingInfoPromptThrottleWindowMinutes}-minute throttle window before sending another missing-info request.`
+    : !askMissingQuestionsDraft
+      ? "A contactable, non-opted-out email or SMS channel is required before sending a missing-info draft."
+      : null;
+  const missingInfoStatusAfterSend =
+    lead.status === LeadStatus.INCOMPLETE
+      ? formatStatusLabel(LeadStatus.INCOMPLETE)
+      : formatStatusLabel(LeadStatus.AWAITING_RESPONSE);
   const latestConversationMessage = lead.conversation?.messages.at(-1) ?? null;
   const leadInsightsArtifact = hasAiAssist
     ? formatAiArtifactView(
@@ -3147,6 +3609,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     phone: lead.phone ?? "Not set",
     lastActivity: formatRelativeTime(lead.lastActivityAt ?? lead.updatedAt),
     property: lead.property?.name ?? "Unassigned",
+    propertyId: lead.propertyId,
     availableProperties: await prisma.property.findMany({
       where: {
         workspaceId: membership.workspaceId,
@@ -3272,6 +3735,44 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
     schedulingUrl: lead.property?.schedulingUrl ?? null,
     fit: formatFitLabel(lead.fitResult),
     fitValue: lead.fitResult,
+    requestInfoActionLabel:
+      missingRequiredQuestions.length > 0 ? "Ask missing questions" : "Request info",
+    askMissingQuestionsDraft,
+    askMissingQuestionsAvailability: {
+      canOpenComposer: canOpenAskMissingQuestionsComposer,
+      disabledReason: askMissingQuestionsDisabledReason,
+      statusAfterSend: missingInfoStatusAfterSend,
+    },
+    missingInfoChecklist: {
+      isRequestThrottled: missingInfoPromptIsThrottled,
+      items: [
+        ...missingRequiredQuestions.map((question) => ({
+          fieldKey: question.fieldKey,
+          fieldLabel: formatFieldKeyLabel(question.fieldKey),
+          kind: "required" as const,
+          label: question.label,
+          questionId: question.questionId,
+          severityLabel: "Required blocker",
+        })),
+        ...missingOptionalQuestions.map((question) => ({
+          fieldKey: question.fieldKey,
+          fieldLabel: formatFieldKeyLabel(question.fieldKey),
+          kind: "optional" as const,
+          label: question.label,
+          questionId: question.questionId,
+          severityLabel: "Optional follow-up",
+        })),
+      ],
+      mostRecentRequestAt: mostRecentMissingInfoRequestAt
+        ? formatRelativeTime(mostRecentMissingInfoRequestAt)
+        : null,
+      readiness: routingReadiness,
+      statusAfterSend: missingInfoStatusAfterSend,
+      throttleSummary: missingInfoPromptIsThrottled
+        ? `Missing-info outreach is throttled for ${missingInfoPromptThrottleWindowMinutes} minutes after the last request.`
+        : null,
+      totalRequiredCount: totalRequiredQuestionCount,
+    },
     evaluationSummary: evaluation.summary,
     evaluationIssues: evaluation.issues.map((issue) => ({
       label: issue.label,
@@ -3280,6 +3781,7 @@ export const getLeadDetailViewData = cache(async (leadId: string) => {
       outcome: formatEnumLabel(issue.outcome),
     })),
     recommendedStatus: formatStatusLabel(evaluation.recommendedStatus),
+    recommendedStatusValue: evaluation.recommendedStatus,
     tasks: leadTasks.map((task) => ({
       assignedTo: task.assignedMembership?.user.name ?? "Unassigned",
       assignedMembershipId: task.assignedMembershipId ?? null,

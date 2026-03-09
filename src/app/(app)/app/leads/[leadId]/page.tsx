@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { LeadStatus, QualificationFit } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/page-header";
 import {
   getLeadDetailNavigationData,
@@ -16,6 +17,7 @@ import {
   getLeadWorkflowErrorUserMessage,
   parseLeadWorkflowErrorCode,
 } from "@/lib/lead-workflow-errors";
+import { canTransitionLeadStatus } from "@/lib/lead-status-machine";
 import {
   cancelTourAction,
   completeTourAction,
@@ -48,10 +50,16 @@ type LeadDetailPageProps = {
     leadId: string;
   }>;
   searchParams: Promise<{
+    assignment?: string;
+    compose?: string;
     filter?: string;
+    fit?: string;
     page?: string;
     pageSize?: string;
+    property?: string;
     q?: string;
+    source?: string;
+    status?: string;
     showArchived?: string;
     sort?: string;
     workflowError?: string;
@@ -174,26 +182,77 @@ export default async function LeadDetailPage({
     ? resolvedSearchParams.filter
     : "all";
   const activeSort = normalizeLeadListSort(resolvedSearchParams.sort);
+  const activeAssignment = normalizeLeadListScopedFilterValue(
+    resolvedSearchParams.assignment,
+  );
   const activePage = parsePositiveInteger(resolvedSearchParams.page) ?? 1;
   const activePageSize = parsePositiveInteger(resolvedSearchParams.pageSize) ?? 10;
+  const activeFit = normalizeLeadListFitValue(resolvedSearchParams.fit);
+  const activeProperty = normalizeLeadListScopedFilterValue(
+    resolvedSearchParams.property,
+  );
   const activeQuery = resolvedSearchParams.q ?? "";
+  const activeSource = normalizeLeadListScopedFilterValue(
+    resolvedSearchParams.source,
+  );
+  const activeStatus = normalizeLeadListStatusValue(resolvedSearchParams.status);
   const showArchived =
     parseBooleanSearchParam(resolvedSearchParams.showArchived) ||
     activeFilter === "archived";
   const currentListParams = {
+    assignment: activeAssignment,
     filter: activeFilter,
+    fit: activeFit,
     page: activePage,
     pageSize: activePageSize,
+    property: activeProperty,
     query: activeQuery,
+    source: activeSource,
+    status: activeStatus,
     showArchived,
     sort: activeSort,
   };
   const currentListHref = buildLeadsHref(currentListParams);
   const currentDetailHref = buildLeadDetailHref(lead.id, currentListParams);
+  const messageLeadHref = buildLeadDetailHref(lead.id, {
+    ...currentListParams,
+    compose: "manual",
+  });
+  const askMissingQuestionsHref = buildLeadDetailHref(lead.id, {
+    ...currentListParams,
+    compose: "missing-info",
+  });
+  const composeMode = resolvedSearchParams.compose;
+  const isManualComposerOpen = composeMode === "manual";
+  const isMissingInfoDraftOpen = composeMode === "missing-info";
+  const canMarkAsUnderReview =
+    lead.actions.overrideFit &&
+    lead.statusValue !== "UNDER_REVIEW" &&
+    canTransitionLeadStatus(lead.statusValue, "UNDER_REVIEW");
+  const canReassignProperty =
+    lead.actions.assignProperty && lead.availableProperties.length > 0;
+  const routingQuickActions = lead.actions.overrideFit
+    ? getLeadRoutingQuickActions({
+        currentFitValue: lead.fitValue,
+        currentStatusValue: lead.statusValue,
+        recommendedStatusValue: lead.recommendedStatusValue,
+      })
+    : [];
+  const routingStatusOptions = lead.actions.overrideFit
+    ? getLeadRoutingStatusOptions(lead.statusValue)
+    : [];
+  const extractedInfoRows = getPriorityExtractedInfoRows(
+    lead.normalizedFieldMetadataRows,
+  );
   const leadNavigation = await getLeadDetailNavigationData({
+    assignment: activeAssignment,
     filter: activeFilter,
+    fit: activeFit,
     leadId,
+    property: activeProperty,
     query: activeQuery,
+    source: activeSource,
+    status: activeStatus,
     showArchived,
     sort: activeSort,
   });
@@ -215,41 +274,103 @@ export default async function LeadDetailPage({
         }
         description={`${lead.property} | ${lead.status} | ${lead.contactMethod}`}
         actions={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link className={navigationActionClassName} href={currentListHref}>
-              <span aria-hidden="true">←</span>
-              Back to leads
-            </Link>
-            {leadNavigation.previousLead ? (
-              <Link
-                className={navigationActionClassName}
-                href={buildLeadDetailHref(leadNavigation.previousLead.id, currentListParams)}
-                title={leadNavigation.previousLead.fullName}
-              >
-                <span aria-hidden="true">←</span>
-                Previous lead
-              </Link>
-            ) : (
-              <span aria-disabled="true" className={navigationActionDisabledClassName}>
-                <span aria-hidden="true">←</span>
-                Previous lead
+          <div className="flex flex-col items-end gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="rounded-full border border-[rgba(21,94,239,0.18)] bg-[rgba(37,99,235,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[rgb(29,78,216)]">
+                Prospect-facing
               </span>
-            )}
-            {leadNavigation.nextLead ? (
-              <Link
-                className={navigationActionClassName}
-                href={buildLeadDetailHref(leadNavigation.nextLead.id, currentListParams)}
-                title={leadNavigation.nextLead.fullName}
-              >
-                Next lead
-                <span aria-hidden="true">→</span>
+              {lead.actions.manualOutbound ? (
+                <Link
+                  className={primaryWorkflowButtonClassName}
+                  href={`${messageLeadHref}#manual-outbound`}
+                >
+                  Message lead
+                </Link>
+              ) : null}
+              {lead.requestInfoActionLabel === "Ask missing questions" ? (
+                lead.askMissingQuestionsAvailability.canOpenComposer ? (
+                  <Link
+                    className={secondaryWorkflowButtonClassName}
+                    href={`${askMissingQuestionsHref}#manual-outbound`}
+                  >
+                    Ask missing questions
+                  </Link>
+                ) : (
+                  <button
+                    className={secondaryWorkflowButtonClassName}
+                    disabled
+                    type="button"
+                  >
+                    Ask missing questions
+                  </button>
+                )
+              ) : lead.actions.requestInfo ? (
+                <form action={requestInfoAction.bind(null, lead.id)}>
+                  <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                  <button className={secondaryWorkflowButtonClassName} type="submit">
+                    Request info
+                  </button>
+                </form>
+              ) : null}
+              <Link className={secondaryWorkflowButtonClassName} href="#shared-thread">
+                Open thread
               </Link>
-            ) : (
-              <span aria-disabled="true" className={navigationActionDisabledClassName}>
-                Next lead
-                <span aria-hidden="true">→</span>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="rounded-full border border-[rgba(184,88,51,0.18)] bg-[rgba(184,88,51,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-accent-strong)]">
+                Internal
               </span>
-            )}
+              {canReassignProperty ? (
+                <Link
+                  className={secondaryWorkflowButtonClassName}
+                  href="#assignment-panel"
+                >
+                  Reassign property
+                </Link>
+              ) : null}
+              {lead.actions.overrideFit ? (
+                <Link
+                  className={secondaryWorkflowButtonClassName}
+                  href="#routing-controls"
+                >
+                  Qualify / Move status
+                </Link>
+              ) : null}
+              <Link className={navigationActionClassName} href={currentListHref}>
+                <span aria-hidden="true">←</span>
+                Back to leads
+              </Link>
+              {leadNavigation.previousLead ? (
+                <Link
+                  className={navigationActionClassName}
+                  href={buildLeadDetailHref(leadNavigation.previousLead.id, currentListParams)}
+                  title={leadNavigation.previousLead.fullName}
+                >
+                  <span aria-hidden="true">←</span>
+                  Previous lead
+                </Link>
+              ) : (
+                <span aria-disabled="true" className={navigationActionDisabledClassName}>
+                  <span aria-hidden="true">←</span>
+                  Previous lead
+                </span>
+              )}
+              {leadNavigation.nextLead ? (
+                <Link
+                  className={navigationActionClassName}
+                  href={buildLeadDetailHref(leadNavigation.nextLead.id, currentListParams)}
+                  title={leadNavigation.nextLead.fullName}
+                >
+                  Next lead
+                  <span aria-hidden="true">→</span>
+                </Link>
+              ) : (
+                <span aria-disabled="true" className={navigationActionDisabledClassName}>
+                  Next lead
+                  <span aria-hidden="true">→</span>
+                </span>
+              )}
+            </div>
           </div>
         }
       />
@@ -351,6 +472,10 @@ export default async function LeadDetailPage({
                   <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Phone</div>
                   <div className="mt-2 text-sm font-medium">{lead.phone}</div>
                 </div>
+                <div className={metadataTileClassName}>
+                  <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Assigned teammate</div>
+                  <div className="mt-2 text-sm font-medium">{lead.leadOwner.assignedTo}</div>
+                </div>
               </div>
             </div>
 
@@ -367,81 +492,269 @@ export default async function LeadDetailPage({
                 {lead.notes}
               </div>
             </div>
+
+            {extractedInfoRows.length > 0 ? (
+              <div className={`${insetPanelClassName} lg:col-span-2`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">Extracted lead info</div>
+                    <div className="mt-2 text-sm text-[var(--color-muted)]">
+                      The normalized fields currently driving qualification and follow-up decisions.
+                    </div>
+                  </div>
+                  <Link
+                    className="text-sm font-medium text-[var(--color-accent-strong)] underline decoration-[var(--color-line)] underline-offset-4"
+                    href="#qualification-details"
+                  >
+                    Open fit explanation
+                  </Link>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {extractedInfoRows.map((fieldRow) => (
+                    <div
+                      key={fieldRow.key}
+                      className="rounded-[1.35rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(255,255,255,0.74)] px-4 py-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                          {fieldRow.label}
+                        </div>
+                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                          {fieldRow.confidencePercent}%
+                        </div>
+                      </div>
+                      <div className="mt-2 text-sm font-medium text-[var(--color-ink)]">
+                        {fieldRow.value}
+                      </div>
+                      <div className="mt-2 text-xs text-[var(--color-muted)]">
+                        {fieldRow.source}
+                        {fieldRow.isSuggested ? " | suggested review" : ""}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
 
-          <div className="rounded-[2rem] border border-[rgba(184,88,51,0.18)] bg-[linear-gradient(180deg,rgba(255,250,244,0.98),rgba(248,241,234,0.94))] p-5 shadow-[0_22px_54px_rgba(44,32,20,0.08)]">
-            <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
-              Workflow focus
-            </div>
-            <div className="mt-2 text-lg font-semibold leading-tight">
-              Move this lead forward with the smallest next step.
-            </div>
-            <div className="mt-4 space-y-3">
-              {lead.slaSummary ? (
-                <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm text-[var(--color-muted)]">
-                  <span className="font-medium text-[var(--color-ink)]">{lead.slaSummary.label}</span> due {lead.slaSummary.dueAtRelative}
-                </div>
+          <div className="grid gap-5">
+            <div className="rounded-[2rem] border border-[rgba(184,88,51,0.18)] bg-[linear-gradient(180deg,rgba(255,250,244,0.98),rgba(248,241,234,0.94))] p-5 shadow-[0_22px_54px_rgba(44,32,20,0.08)]">
+              <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
+                Workflow focus
+              </div>
+              <div className="mt-2 text-lg font-semibold leading-tight">
+                Move this lead forward with the smallest next step.
+              </div>
+              <div className="mt-4 space-y-3">
+                {lead.slaSummary ? (
+                  <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                    <span className="font-medium text-[var(--color-ink)]">{lead.slaSummary.label}</span> due {lead.slaSummary.dueAtRelative}
+                  </div>
+                ) : null}
+                {lead.possibleDuplicateCandidate ? (
+                  <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.18)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm text-[var(--color-accent-strong)]">
+                    Possible duplicate found with {lead.possibleDuplicateCandidate.name}.
+                  </div>
+                ) : null}
+                {lead.optOutSummary.isOptedOut ? (
+                  <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                    Latest opt-out {lead.optOutSummary.optedOutAt}
+                    {lead.optOutSummary.optedOutReason ? ` | ${lead.optOutSummary.optedOutReason}` : ""}
+                  </div>
+                ) : null}
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <form action={evaluateLeadAction.bind(null, lead.id)}>
+                  <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                  <button
+                    className={primaryWorkflowButtonClassName}
+                    disabled={!lead.actions.evaluateFit}
+                    type="submit"
+                  >
+                    Evaluate fit
+                  </button>
+                </form>
+                {lead.requestInfoActionLabel === "Ask missing questions" ? (
+                  lead.actions.manualOutbound && lead.askMissingQuestionsDraft ? (
+                    <Link
+                      className={secondaryWorkflowButtonClassName}
+                      href={`${askMissingQuestionsHref}#manual-outbound`}
+                    >
+                      {lead.requestInfoActionLabel}
+                    </Link>
+                  ) : (
+                    <button
+                      className={secondaryWorkflowButtonClassName}
+                      disabled
+                      type="button"
+                    >
+                      {lead.requestInfoActionLabel}
+                    </button>
+                  )
+                ) : (
+                  <form action={requestInfoAction.bind(null, lead.id)}>
+                    <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                    <button
+                      className={secondaryWorkflowButtonClassName}
+                      disabled={!lead.actions.requestInfo}
+                      type="submit"
+                    >
+                      {lead.requestInfoActionLabel}
+                    </button>
+                  </form>
+                )}
+                <form action={scheduleTourAction.bind(null, lead.id)}>
+                  <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                  <button
+                    className={secondaryWorkflowButtonClassName}
+                    disabled={!lead.actions.scheduleTour}
+                    type="submit"
+                  >
+                    Send scheduling handoff
+                  </button>
+                </form>
+                <form action={sendApplicationAction.bind(null, lead.id)}>
+                  <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                  <button
+                    className={secondaryWorkflowButtonClassName}
+                    disabled={!lead.actions.sendApplication}
+                    type="submit"
+                  >
+                    Send application
+                  </button>
+                </form>
+              </div>
+              {lead.actions.archiveLead || lead.actions.unarchiveLead ? (
+                <form className="mt-3" action={(lead.actions.unarchiveLead ? unarchiveLeadAction : archiveLeadAction).bind(null, lead.id)}>
+                  <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                  <button
+                    className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-[rgba(184,88,51,0.18)] bg-[rgba(255,255,255,0.9)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.28)] hover:bg-[rgba(255,255,255,0.98)]"
+                    type="submit"
+                  >
+                    {lead.actions.unarchiveLead ? "Unarchive lead" : "Archive lead"}
+                  </button>
+                </form>
               ) : null}
-              {lead.possibleDuplicateCandidate ? (
-                <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.18)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm text-[var(--color-accent-strong)]">
-                  Possible duplicate found with {lead.possibleDuplicateCandidate.name}.
-                </div>
-              ) : null}
-              {lead.optOutSummary.isOptedOut ? (
-                <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.14)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm text-[var(--color-muted)]">
-                  Latest opt-out {lead.optOutSummary.optedOutAt}
-                  {lead.optOutSummary.optedOutReason ? ` | ${lead.optOutSummary.optedOutReason}` : ""}
-                </div>
-              ) : null}
             </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <form action={evaluateLeadAction.bind(null, lead.id)}>
-                <button
-                  className={primaryWorkflowButtonClassName}
-                  disabled={!lead.actions.evaluateFit}
-                  type="submit"
+
+            {lead.actions.overrideFit ? (
+              <div
+                className="rounded-[2rem] border border-[rgba(184,88,51,0.18)] bg-[rgba(255,255,255,0.9)] p-5 shadow-[0_20px_48px_rgba(44,32,20,0.07)]"
+                id="routing-controls"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">
+                      Routing controls
+                    </div>
+                    <div className="mt-2 text-lg font-semibold leading-tight">
+                      Move status without dropping into the full operator stack.
+                    </div>
+                  </div>
+                  <div className="rounded-[1.35rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-muted)]">
+                    Recommended next state: <span className="font-semibold text-[var(--color-ink)]">{lead.recommendedStatus}</span>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(249,240,231,0.6)] px-4 py-4">
+                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Current</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <span className={getDetailStatusBadgeClassName(lead.statusValue)}>{lead.status}</span>
+                      <span className={getDetailFitBadgeClassName(lead.fitValue)}>{lead.fit}</span>
+                    </div>
+                  </div>
+                  <div className="rounded-[1.35rem] border border-[rgba(184,88,51,0.12)] bg-[rgba(255,255,255,0.8)] px-4 py-4 text-sm text-[var(--color-muted)]">
+                    {routingStatusOptions.length > 1
+                      ? `${routingStatusOptions.length - 1} valid manual status transition${routingStatusOptions.length === 2 ? "" : "s"} from here.`
+                      : "No forward transitions are available from this status."}
+                  </div>
+                </div>
+
+                {routingQuickActions.length > 0 ? (
+                  <div className="mt-4">
+                    <div className="text-sm font-semibold">Quick moves</div>
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      {routingQuickActions.map((quickAction) => (
+                        <form
+                          action={overrideLeadRoutingAction.bind(null, lead.id)}
+                          key={quickAction.statusValue}
+                        >
+                          <input type="hidden" name="overrideStatus" value={quickAction.statusValue} />
+                          <input type="hidden" name="overrideFit" value={quickAction.fitValue} />
+                          <input type="hidden" name="overrideReason" value={quickAction.reason} />
+                          <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                          <button className={secondaryWorkflowButtonClassName} type="submit">
+                            {quickAction.label}
+                          </button>
+                        </form>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <form
+                  action={overrideLeadRoutingAction.bind(null, lead.id)}
+                  className="mt-5 rounded-[1.45rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
                 >
-                  Evaluate fit
-                </button>
-              </form>
-              <form action={requestInfoAction.bind(null, lead.id)}>
-                <button
-                  className={secondaryWorkflowButtonClassName}
-                  disabled={!lead.actions.requestInfo}
-                  type="submit"
-                >
-                  Request info
-                </button>
-              </form>
-              <form action={scheduleTourAction.bind(null, lead.id)}>
-                <button
-                  className={secondaryWorkflowButtonClassName}
-                  disabled={!lead.actions.scheduleTour}
-                  type="submit"
-                >
-                  Send scheduling handoff
-                </button>
-              </form>
-              <form action={sendApplicationAction.bind(null, lead.id)}>
-                <button
-                  className={secondaryWorkflowButtonClassName}
-                  disabled={!lead.actions.sendApplication}
-                  type="submit"
-                >
-                  Send application
-                </button>
-              </form>
-            </div>
-            {lead.actions.archiveLead || lead.actions.unarchiveLead ? (
-              <form className="mt-3" action={(lead.actions.unarchiveLead ? unarchiveLeadAction : archiveLeadAction).bind(null, lead.id)}>
-                <input type="hidden" name="redirectTo" value={currentDetailHref} />
-                <button
-                  className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-[rgba(184,88,51,0.18)] bg-[rgba(255,255,255,0.9)] px-4 py-3 text-sm font-medium text-[var(--color-ink)] transition-colors duration-150 hover:border-[rgba(184,88,51,0.28)] hover:bg-[rgba(255,255,255,0.98)]"
-                  type="submit"
-                >
-                  {lead.actions.unarchiveLead ? "Unarchive lead" : "Archive lead"}
-                </button>
-              </form>
+                  <div className="text-sm font-semibold">Manual routing update</div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-2">
+                      <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                        Status
+                      </span>
+                      <select
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={lead.recommendedStatusValue}
+                        name="overrideStatus"
+                        required
+                      >
+                        {routingStatusOptions.map((statusOption) => (
+                          <option key={statusOption} value={statusOption}>
+                            {formatLeadStatusOptionLabel(statusOption)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-2">
+                      <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                        Fit
+                      </span>
+                      <select
+                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        defaultValue={resolveRoutingPanelFitDefault(
+                          lead.fitValue,
+                          lead.recommendedStatusValue,
+                        )}
+                        name="overrideFit"
+                        required
+                      >
+                        {["UNKNOWN", "PASS", "CAUTION", "MISMATCH"].map((fitOption) => (
+                          <option key={fitOption} value={fitOption}>
+                            {formatLeadStatusOptionLabel(fitOption)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <label className="mt-3 block space-y-2">
+                    <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                      Reason
+                    </span>
+                    <input
+                      className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      defaultValue="Routed from the Workflow 7 status controls."
+                      name="overrideReason"
+                      required
+                      type="text"
+                    />
+                  </label>
+                  <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                  <button className="mt-3 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white" type="submit">
+                    Save routing update
+                  </button>
+                </form>
+              </div>
             ) : null}
           </div>
         </div>
@@ -449,7 +762,7 @@ export default async function LeadDetailPage({
       <section className={majorPanelClassName}>
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <div className="text-lg font-semibold">Ownership and review SLA</div>
+            <div className="text-lg font-semibold">Assignment and review SLA</div>
             <div className="mt-2 text-sm text-[var(--color-muted)]">
               Current owner: {lead.leadOwner.assignedTo}
             </div>
@@ -460,32 +773,66 @@ export default async function LeadDetailPage({
             ) : null}
           </div>
 
-          <form
-            action={assignLeadOwnerAction.bind(null, lead.id)}
-            className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
-          >
-            <div className="text-sm font-medium">Assign lead owner</div>
-            <select
-              className="mt-3 min-w-64 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-              defaultValue={lead.leadOwner.assignedMembershipId ?? "unassigned"}
-              disabled={!lead.actions.assignProperty}
-              name="assignedMembershipId"
+          <div id="assignment-panel" className="grid gap-4 lg:grid-cols-2">
+            <form
+              action={assignLeadOwnerAction.bind(null, lead.id)}
+              className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
             >
-              {lead.leadAssignmentOptions.map((assignmentOption) => (
-                <option key={assignmentOption.value} value={assignmentOption.value}>
-                  {assignmentOption.label} | {assignmentOption.summary}
-                </option>
-              ))}
-            </select>
-            <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
-            <button
-              className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={!lead.actions.assignProperty}
-              type="submit"
-            >
-              Save owner
-            </button>
-          </form>
+              <div className="text-sm font-medium">Assign lead owner</div>
+              <select
+                className="mt-3 min-w-64 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                defaultValue={lead.leadOwner.assignedMembershipId ?? "unassigned"}
+                disabled={!lead.actions.assignProperty}
+                name="assignedMembershipId"
+              >
+                {lead.leadAssignmentOptions.map((assignmentOption) => (
+                  <option key={assignmentOption.value} value={assignmentOption.value}>
+                    {assignmentOption.label} | {assignmentOption.summary}
+                  </option>
+                ))}
+              </select>
+              <input type="hidden" name="redirectTo" value={currentDetailHref} />
+              <button
+                className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!lead.actions.assignProperty}
+                type="submit"
+              >
+                Save owner
+              </button>
+            </form>
+            {canReassignProperty ? (
+              <form
+                action={assignLeadPropertyAction.bind(null, lead.id)}
+                className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+              >
+                <div className="text-sm font-medium">
+                  {lead.property === "Unassigned" ? "Assign property" : "Reassign property"}
+                </div>
+                <select
+                  className="mt-3 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                  name="propertyId"
+                  required
+                  defaultValue={lead.propertyId ?? ""}
+                >
+                  <option disabled={lead.property !== "Unassigned"} value="">
+                    Choose property
+                  </option>
+                  {lead.availableProperties.map((propertyOption) => (
+                    <option key={propertyOption.id} value={propertyOption.id}>
+                      {propertyOption.name}
+                    </option>
+                  ))}
+                </select>
+                <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                <button
+                  className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
+                  type="submit"
+                >
+                  {lead.property === "Unassigned" ? "Assign property" : "Save property"}
+                </button>
+              </form>
+            ) : null}
+          </div>
         </div>
 
         <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
@@ -533,7 +880,7 @@ export default async function LeadDetailPage({
               </select>
             </label>
             <input type="hidden" name="leadId" value={lead.id} />
-            <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+            <input type="hidden" name="redirectTo" value={currentDetailHref} />
             <button
               className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
               type="submit"
@@ -588,7 +935,7 @@ export default async function LeadDetailPage({
                           <option value="CANCELED">Canceled</option>
                         </select>
                       </label>
-                      <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                        <input type="hidden" name="redirectTo" value={currentDetailHref} />
                       <button
                         className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium"
                         type="submit"
@@ -729,7 +1076,7 @@ export default async function LeadDetailPage({
                     placeholder="Your tour has been moved to a new time."
                   />
                 </label>
-                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <button
                   className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!lead.actions.manageScheduledTour}
@@ -777,7 +1124,7 @@ export default async function LeadDetailPage({
                     <option value="UNDER_REVIEW">Under review</option>
                   </select>
                 </label>
-                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <button
                   className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.14)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!lead.actions.manageScheduledTour}
@@ -795,9 +1142,8 @@ export default async function LeadDetailPage({
                 <p className="mt-3 text-sm text-[var(--color-muted)]">
                   Mark the scheduled tour as completed and move the lead back to qualified follow-up.
                 </p>
-                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <button
-                  className="mt-4 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!lead.actions.manageScheduledTour}
                   type="submit"
                 >
@@ -819,7 +1165,7 @@ export default async function LeadDetailPage({
                     placeholder="Prospect did not attend."
                   />
                 </label>
-                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <button
                   className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.14)] px-4 py-3 text-sm font-medium text-[var(--color-accent-strong)] disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!lead.actions.manageScheduledTour}
@@ -873,7 +1219,7 @@ export default async function LeadDetailPage({
                 <input defaultChecked name="notifyProspect" type="checkbox" />
                 Send confirmation to prospect
               </label>
-              <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+              <input type="hidden" name="redirectTo" value={currentDetailHref} />
               <button
                 className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!lead.actions.manualScheduleTour}
@@ -1005,7 +1351,7 @@ export default async function LeadDetailPage({
                     />
                   </label>
                   <input name="screeningConnectionId" type="hidden" value={screeningConnection.id} />
-                  <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                    <input type="hidden" name="redirectTo" value={currentDetailHref} />
                   <button
                     className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={!lead.actions.launchScreening}
@@ -1298,7 +1644,7 @@ export default async function LeadDetailPage({
                         name="adverseActionNotes"
                       />
                     </label>
-                    <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                    <input type="hidden" name="redirectTo" value={currentDetailHref} />
                     <div className="md:col-span-2 flex justify-end">
                       <button
                         className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
@@ -1328,7 +1674,7 @@ export default async function LeadDetailPage({
                   </p>
                 </div>
                 <form action={generateLeadInsightsAction.bind(null, lead.id)}>
-                  <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                  <input type="hidden" name="redirectTo" value={currentDetailHref} />
                   <button
                     className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
                     type="submit"
@@ -1430,7 +1776,10 @@ export default async function LeadDetailPage({
                 <div className="font-medium">
                   <Link
                     className="underline decoration-[var(--color-line)] underline-offset-4"
-                    href={`/app/leads/${lead.possibleDuplicateCandidate.id}`}
+                    href={buildLeadDetailHref(
+                      lead.possibleDuplicateCandidate.id,
+                      currentListParams,
+                    )}
                   >
                     {lead.possibleDuplicateCandidate.name}
                   </Link>
@@ -1451,7 +1800,7 @@ export default async function LeadDetailPage({
                   name="candidateLeadId"
                   value={lead.possibleDuplicateCandidate.id}
                 />
-                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <button
                   className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!lead.actions.confirmDuplicate}
@@ -1464,6 +1813,150 @@ export default async function LeadDetailPage({
           ) : null}
 
           <div className={sectionPanelClassName}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold">Missing-info checklist</div>
+                <p className="mt-2 max-w-2xl text-sm text-[var(--color-muted)]">
+                  Use the current qualification rules to see what is still blocking routing and ask only for the unanswered fields that matter.
+                </p>
+              </div>
+              <div className={getReadinessBadgeClassName(lead.missingInfoChecklist.readiness.tone)}>
+                {lead.missingInfoChecklist.readiness.label}
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-[1.45rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-[var(--color-ink)]">
+                    {lead.missingInfoChecklist.totalRequiredCount > 0
+                      ? `${lead.missingInfoChecklist.items.filter((item) => item.kind === "required").length} of ${lead.missingInfoChecklist.totalRequiredCount} required answers still missing`
+                      : "No required qualification questions are configured for this property yet."}
+                  </div>
+                  <div className="mt-2 text-sm text-[var(--color-muted)]">
+                    {lead.missingInfoChecklist.readiness.detail}
+                  </div>
+                </div>
+                {lead.missingInfoChecklist.mostRecentRequestAt ? (
+                  <div className="rounded-full border border-[var(--color-line)] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                    Last requested {lead.missingInfoChecklist.mostRecentRequestAt}
+                  </div>
+                ) : null}
+              </div>
+
+              {lead.missingInfoChecklist.throttleSummary ? (
+                <div className="mt-4 rounded-2xl border border-[rgba(184,88,51,0.2)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm text-[var(--color-accent-strong)]">
+                  {lead.missingInfoChecklist.throttleSummary}
+                </div>
+              ) : null}
+              {lead.missingInfoChecklist.mostRecentRequestAt ? (
+                <div className="mt-4 rounded-2xl border border-[rgba(21,94,239,0.18)] bg-[rgba(37,99,235,0.08)] px-4 py-3 text-sm text-[rgb(29,78,216)]">
+                  Missing-info outreach was last sent {lead.missingInfoChecklist.mostRecentRequestAt}. This lead now sits in {lead.missingInfoChecklist.statusAfterSend} while you wait for the next reply.
+                </div>
+              ) : null}
+
+              {lead.missingInfoChecklist.items.length > 0 ? (
+                <div className="mt-4 space-y-4">
+                  {(["required", "optional"] as const).map((itemKind) => {
+                    const checklistItems = lead.missingInfoChecklist.items.filter(
+                      (item) => item.kind === itemKind,
+                    );
+
+                    if (checklistItems.length === 0) {
+                      return null;
+                    }
+
+                    return (
+                      <div key={itemKind}>
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                          {itemKind === "required" ? "Required blockers" : "Useful optional follow-up"}
+                        </div>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          {checklistItems.map((item) => (
+                            <div
+                              key={item.questionId}
+                              className="rounded-2xl border border-[rgba(184,88,51,0.14)] bg-white px-4 py-4"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="text-sm font-semibold text-[var(--color-ink)]">
+                                  {item.fieldLabel}
+                                </div>
+                                <div className={`rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${
+                                  item.kind === "required"
+                                    ? "border border-[rgba(184,88,51,0.18)] bg-[rgba(184,88,51,0.08)] text-[var(--color-accent-strong)]"
+                                    : "border border-[rgba(107,114,128,0.18)] bg-[rgba(148,163,184,0.12)] text-[rgb(71,85,105)]"
+                                }`}>
+                                  {item.severityLabel}
+                                </div>
+                              </div>
+                              <div className="mt-2 text-sm text-[var(--color-muted)]">{item.label}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-2xl border border-[var(--color-line)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
+                  All required qualification fields currently have answers. Continue with fit evaluation or move the lead forward.
+                </div>
+              )}
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                {lead.requestInfoActionLabel === "Ask missing questions" ? (
+                  lead.askMissingQuestionsAvailability.canOpenComposer ? (
+                    <Link
+                      className={primaryWorkflowButtonClassName}
+                      href={`${askMissingQuestionsHref}#manual-outbound`}
+                    >
+                      {lead.requestInfoActionLabel}
+                    </Link>
+                  ) : (
+                    <button
+                      className={primaryWorkflowButtonClassName}
+                      disabled
+                      title={lead.askMissingQuestionsAvailability.disabledReason ?? undefined}
+                      type="button"
+                    >
+                      {lead.requestInfoActionLabel}
+                    </button>
+                  )
+                ) : (
+                  <form action={requestInfoAction.bind(null, lead.id)}>
+                    <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                    <button
+                      className={primaryWorkflowButtonClassName}
+                      disabled={!lead.actions.requestInfo}
+                      type="submit"
+                    >
+                      {lead.requestInfoActionLabel}
+                    </button>
+                  </form>
+                )}
+                {canMarkAsUnderReview ? (
+                  <form action={overrideLeadRoutingAction.bind(null, lead.id)}>
+                    <input type="hidden" name="overrideStatus" value="UNDER_REVIEW" />
+                    <input type="hidden" name="overrideFit" value={lead.fitValue} />
+                    <input
+                      type="hidden"
+                      name="overrideReason"
+                      value="Moved into review from the missing-info checklist."
+                    />
+                    <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                    <button className={secondaryWorkflowButtonClassName} type="submit">
+                      Mark as under review
+                    </button>
+                  </form>
+                ) : null}
+                <Link className={secondaryWorkflowButtonClassName} href="#operator-controls">
+                  Continue manually
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div className={sectionPanelClassName} id="operator-controls">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold">Operator controls</div>
@@ -1538,7 +2031,7 @@ export default async function LeadDetailPage({
                         name="isOptedOut"
                         value={channelOptOut.isOptedOut ? "false" : "true"}
                       />
-                      <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                      <input type="hidden" name="redirectTo" value={currentDetailHref} />
                       <label className="mt-3 block space-y-2">
                         <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
                           {channelOptOut.isOptedOut ? "Optional note" : "Reason"}
@@ -1559,115 +2052,18 @@ export default async function LeadDetailPage({
                 </div>
               </div>
             ) : null}
-            {lead.availableProperties.length > 0 &&
-            lead.property === "Unassigned" &&
-            lead.actions.assignProperty ? (
-              <form
-                action={assignLeadPropertyAction.bind(null, lead.id)}
-                className="mt-6 flex flex-wrap items-end gap-3"
-              >
-                <label className="min-w-56 space-y-2">
-                  <span className="text-sm font-medium">Assign property</span>
-                  <select
-                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-                    name="propertyId"
-                    required
-                    defaultValue=""
-                  >
-                    <option disabled value="">
-                      Choose property
-                    </option>
-                    {lead.availableProperties.map((propertyOption) => (
-                      <option key={propertyOption.id} value={propertyOption.id}>
-                        {propertyOption.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
-                <button
-                  className="rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
-                  type="submit"
-                >
-                  Assign property
-                </button>
-              </form>
-            ) : null}
-
             {lead.actions.overrideFit ? (
-              <form
-                action={overrideLeadRoutingAction.bind(null, lead.id)}
-                className="mt-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
-              >
-                <div className="text-sm font-semibold">Manual override</div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-2">
-                    <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
-                      Status
-                    </span>
-                    <select
-                      className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-                      name="overrideStatus"
-                      defaultValue={lead.statusValue}
-                      required
-                    >
-                      {[
-                        "NEW",
-                        "AWAITING_RESPONSE",
-                        "INCOMPLETE",
-                        "UNDER_REVIEW",
-                        "CAUTION",
-                        "QUALIFIED",
-                        "TOUR_SCHEDULED",
-                        "APPLICATION_SENT",
-                        "DECLINED",
-                        "ARCHIVED",
-                        "CLOSED",
-                      ].map((statusOption) => (
-                        <option key={statusOption} value={statusOption}>
-                          {statusOption.replaceAll("_", " ")}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-2">
-                    <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
-                      Fit
-                    </span>
-                    <select
-                      className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-                      name="overrideFit"
-                      defaultValue={lead.fitValue}
-                      required
-                    >
-                      {["UNKNOWN", "PASS", "CAUTION", "MISMATCH"].map((fitOption) => (
-                        <option key={fitOption} value={fitOption}>
-                          {fitOption}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+              <div className="mt-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4 text-sm text-[var(--color-muted)]">
+                Status and fit overrides now live in the dedicated routing panel near the top of the page.
+                <div className="mt-3">
+                  <Link
+                    className="font-medium text-[var(--color-accent-strong)] underline decoration-[var(--color-line)] underline-offset-4"
+                    href="#routing-controls"
+                  >
+                    Open routing controls
+                  </Link>
                 </div>
-                <label className="mt-3 block space-y-2">
-                  <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
-                    Reason
-                  </span>
-                  <input
-                    className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
-                    name="overrideReason"
-                    placeholder="Explain why this override is needed."
-                    required
-                    type="text"
-                  />
-                </label>
-                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
-                <button
-                  className="mt-3 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium"
-                  type="submit"
-                >
-                  Apply override
-                </button>
-              </form>
+              </div>
             ) : null}
 
             {lead.actions.declineLead ? (
@@ -1715,7 +2111,7 @@ export default async function LeadDetailPage({
                     type="text"
                   />
                 </label>
-                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <button
                   className="mt-3 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
                   type="submit"
@@ -1740,7 +2136,7 @@ export default async function LeadDetailPage({
                   </p>
                 ) : null}
                 <input type="hidden" name="manualChannel" value="INTERNAL_NOTE" />
-                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <input type="hidden" name="redirectTo" value={currentDetailHref} />
                 <label className="mt-3 block space-y-2">
                   <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
                     Note
@@ -1764,12 +2160,23 @@ export default async function LeadDetailPage({
             {lead.actions.manualOutbound ? (
               <form
                 action={sendManualOutboundMessageAction.bind(null, lead.id)}
+                id="manual-outbound"
                 className="mt-4 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-4"
               >
                 <div className="text-sm font-semibold">Manual outbound</div>
                 <p className="mt-1 text-xs text-[var(--color-muted)]">
                   Operator-initiated messages stay available even when automation is blocked.
                 </p>
+                {isManualComposerOpen ? (
+                  <div className="mt-3 rounded-2xl border border-[rgba(184,88,51,0.18)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm text-[var(--color-accent-strong)]">
+                    Compose a direct reply from here without leaving the lead record.
+                  </div>
+                ) : null}
+                {isMissingInfoDraftOpen && lead.askMissingQuestionsDraft ? (
+                  <div className="mt-3 rounded-2xl border border-[rgba(21,94,239,0.18)] bg-[rgba(37,99,235,0.08)] px-4 py-3 text-sm text-[rgb(29,78,216)]">
+                    Review this missing-info draft before sending. It reflects the current checklist instead of firing the workflow automation immediately.
+                  </div>
+                ) : null}
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <label className="space-y-2">
                     <span className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">
@@ -1779,7 +2186,11 @@ export default async function LeadDetailPage({
                       className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
                       name="manualChannel"
                       required
-                      defaultValue="EMAIL"
+                      defaultValue={
+                        isMissingInfoDraftOpen && lead.askMissingQuestionsDraft
+                          ? lead.askMissingQuestionsDraft.channel
+                          : "EMAIL"
+                      }
                     >
                       {lead.manualOutboundChannels.map((manualChannelOption) => (
                         <option
@@ -1797,6 +2208,11 @@ export default async function LeadDetailPage({
                     </span>
                     <input
                       className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      defaultValue={
+                        isMissingInfoDraftOpen && lead.askMissingQuestionsDraft
+                          ? lead.askMissingQuestionsDraft.subject
+                          : ""
+                      }
                       name="manualSubject"
                       placeholder="Optional subject"
                       type="text"
@@ -1809,12 +2225,20 @@ export default async function LeadDetailPage({
                   </span>
                   <textarea
                     className="min-h-28 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                    defaultValue={
+                      isMissingInfoDraftOpen && lead.askMissingQuestionsDraft
+                        ? lead.askMissingQuestionsDraft.body
+                        : ""
+                    }
                     name="manualBody"
                     placeholder="Write the manual outbound message."
                     required
                   />
                 </label>
-                <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                <input type="hidden" name="redirectTo" value={currentDetailHref} />
+                {isMissingInfoDraftOpen ? (
+                  <input type="hidden" name="manualWorkflowIntent" value="missing-info" />
+                ) : null}
                 <button
                   className="mt-3 rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 text-sm font-medium"
                   type="submit"
@@ -1834,7 +2258,6 @@ export default async function LeadDetailPage({
               <div className="mt-4 space-y-3">
                 {lead.normalizedFieldMetadataRows.map((fieldRow) => (
                   <div
-                    key={fieldRow.key}
                     className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3"
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -1865,7 +2288,7 @@ export default async function LeadDetailPage({
                           Review suggestion
                         </div>
                         <input type="hidden" name="fieldKey" value={fieldRow.key} />
-                        <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                        <input type="hidden" name="redirectTo" value={currentDetailHref} />
                         <input
                           className="mt-3 w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-3 outline-none"
                           defaultValue={fieldRow.value}
@@ -1919,7 +2342,7 @@ export default async function LeadDetailPage({
                   action={generateLeadTranslationAction.bind(null, lead.id)}
                   className="flex flex-wrap items-end gap-3"
                 >
-                  <input type="hidden" name="redirectTo" value={`/app/leads/${lead.id}`} />
+                  <input type="hidden" name="redirectTo" value={currentDetailHref} />
                   <input type="hidden" name="sourceText" value={lead.latestMessageForTranslation.body} />
                   <input
                     type="hidden"
@@ -1966,7 +2389,7 @@ export default async function LeadDetailPage({
             </div>
           ) : null}
 
-          <div className={sectionPanelClassName}>
+          <div className={sectionPanelClassName} id="qualification-details">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold">Qualification details</div>
@@ -2018,7 +2441,7 @@ export default async function LeadDetailPage({
         </section>
 
         <section className="space-y-6">
-          <div className={sectionPanelClassName}>
+          <div className={sectionPanelClassName} id="shared-thread">
             <div className="text-lg font-semibold">Shared thread</div>
             <p className="mt-2 text-sm text-[var(--color-muted)]">
               A single chronological thread for messages, notes, status changes, and system events.
@@ -2082,6 +2505,58 @@ function SnapshotFact(params: { label: string; value: string }) {
       <div className="mt-1.5 text-sm font-medium text-[var(--color-ink)]">{params.value}</div>
     </div>
   );
+}
+
+function getPriorityExtractedInfoRows(
+  rows: Array<{
+    confidencePercent: number;
+    isSuggested: boolean;
+    key: string;
+    label: string;
+    source: string;
+    value: string;
+  }>,
+) {
+  const preferredOrder = [
+    "email",
+    "phone",
+    "moveInDate",
+    "monthlyBudget",
+    "stayLengthMonths",
+    "smoking",
+    "pets",
+    "bathroomSharingComfort",
+    "parkingNeed",
+    "guestExpectations",
+    "workScheduleNotes",
+  ];
+  const orderIndexByKey = new Map(
+    preferredOrder.map((key, index) => [key, index]),
+  );
+
+  return [...rows]
+    .sort((leftRow, rightRow) => {
+      const leftOrder = orderIndexByKey.get(leftRow.key) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = orderIndexByKey.get(rightRow.key) ?? Number.MAX_SAFE_INTEGER;
+
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+
+      return leftRow.label.localeCompare(rightRow.label);
+    })
+    .slice(0, 9);
+}
+
+function getReadinessBadgeClassName(tone: "pending" | "review" | "ready") {
+  switch (tone) {
+    case "ready":
+      return "inline-flex items-center rounded-full border border-[rgba(39,110,78,0.24)] bg-[rgb(225,244,233)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[rgb(39,110,78)]";
+    case "review":
+      return "inline-flex items-center rounded-full border border-[rgba(21,94,239,0.28)] bg-[rgba(37,99,235,0.12)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[rgb(29,78,216)]";
+    default:
+      return "inline-flex items-center rounded-full border border-[rgba(184,88,51,0.24)] bg-[rgba(184,88,51,0.08)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-accent-strong)]";
+  }
 }
 
 function getDetailStatusBadgeClassName(statusValue: string) {
@@ -2170,6 +2645,101 @@ function getWorkflowChartStatusDescription(statusValue: string) {
   }
 }
 
+function formatLeadStatusOptionLabel(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function resolveRoutingPanelFitDefault(
+  currentFitValue: QualificationFit,
+  recommendedStatusValue: LeadStatus,
+) {
+  if (
+    recommendedStatusValue === LeadStatus.QUALIFIED ||
+    recommendedStatusValue === LeadStatus.TOUR_SCHEDULED ||
+    recommendedStatusValue === LeadStatus.APPLICATION_SENT ||
+    recommendedStatusValue === LeadStatus.CLOSED
+  ) {
+    return QualificationFit.PASS;
+  }
+
+  if (recommendedStatusValue === LeadStatus.CAUTION) {
+    return QualificationFit.CAUTION;
+  }
+
+  return currentFitValue;
+}
+
+function getLeadRoutingStatusOptions(currentStatusValue: LeadStatus) {
+  const statusOrder: LeadStatus[] = [
+    LeadStatus.NEW,
+    LeadStatus.AWAITING_RESPONSE,
+    LeadStatus.INCOMPLETE,
+    LeadStatus.UNDER_REVIEW,
+    LeadStatus.CAUTION,
+    LeadStatus.QUALIFIED,
+    LeadStatus.TOUR_SCHEDULED,
+    LeadStatus.APPLICATION_SENT,
+    LeadStatus.DECLINED,
+    LeadStatus.ARCHIVED,
+    LeadStatus.CLOSED,
+  ];
+
+  return statusOrder.filter((statusValue) =>
+    canTransitionLeadStatus(currentStatusValue, statusValue),
+  );
+}
+
+function getLeadRoutingQuickActions(params: {
+  currentFitValue: QualificationFit;
+  currentStatusValue: LeadStatus;
+  recommendedStatusValue: LeadStatus;
+}) {
+  const preferredStatusOrder: LeadStatus[] = [
+    params.recommendedStatusValue,
+    LeadStatus.UNDER_REVIEW,
+    LeadStatus.QUALIFIED,
+    LeadStatus.AWAITING_RESPONSE,
+    LeadStatus.INCOMPLETE,
+    LeadStatus.TOUR_SCHEDULED,
+    LeadStatus.APPLICATION_SENT,
+    LeadStatus.DECLINED,
+    LeadStatus.ARCHIVED,
+  ];
+  const seenStatuses = new Set<LeadStatus>();
+
+  return preferredStatusOrder
+    .filter((statusValue) => {
+      if (seenStatuses.has(statusValue)) {
+        return false;
+      }
+
+      seenStatuses.add(statusValue);
+      return canTransitionLeadStatus(params.currentStatusValue, statusValue);
+    })
+    .slice(0, 4)
+    .map((statusValue) => ({
+      fitValue:
+        statusValue === LeadStatus.QUALIFIED ||
+        statusValue === LeadStatus.TOUR_SCHEDULED ||
+        statusValue === LeadStatus.APPLICATION_SENT ||
+        statusValue === LeadStatus.CLOSED
+          ? QualificationFit.PASS
+          : statusValue === LeadStatus.CAUTION
+            ? QualificationFit.CAUTION
+            : params.currentFitValue,
+      label:
+        statusValue === params.recommendedStatusValue
+          ? `Use recommended: ${formatLeadStatusOptionLabel(statusValue)}`
+          : `Move to ${formatLeadStatusOptionLabel(statusValue)}`,
+      reason: `Moved to ${formatLeadStatusOptionLabel(statusValue)} from the Workflow 7 routing controls.`,
+      statusValue,
+    }));
+}
+
 function getLeadWorkflowChart(statusValue: string, statusLabel: string) {
   const currentStageIndex = Math.max(
     0,
@@ -2208,10 +2778,15 @@ function getLeadWorkflowChart(statusValue: string, statusLabel: string) {
 }
 
 function buildLeadsHref(params: {
+  assignment?: string;
   filter: LeadListFilter;
+  fit?: string;
   page: number;
   pageSize: number;
+  property?: string;
   query: string;
+  source?: string;
+  status?: string;
   showArchived: boolean;
   sort: LeadListSort;
 }) {
@@ -2233,6 +2808,26 @@ function buildLeadsHref(params: {
     searchParameters.set("q", params.query.trim());
   }
 
+  if (params.property) {
+    searchParameters.set("property", params.property);
+  }
+
+  if (params.status) {
+    searchParameters.set("status", params.status);
+  }
+
+  if (params.fit) {
+    searchParameters.set("fit", params.fit);
+  }
+
+  if (params.source) {
+    searchParameters.set("source", params.source);
+  }
+
+  if (params.assignment) {
+    searchParameters.set("assignment", params.assignment);
+  }
+
   if (params.showArchived) {
     searchParameters.set("showArchived", "1");
   }
@@ -2249,16 +2844,28 @@ function buildLeadsHref(params: {
 function buildLeadDetailHref(
   leadId: string,
   params: {
+    assignment?: string;
+    compose?: string;
     filter: LeadListFilter;
+    fit?: string;
     page: number;
     pageSize: number;
+    property?: string;
     query: string;
+    source?: string;
+    status?: string;
     showArchived: boolean;
     sort: LeadListSort;
   },
 ) {
   const listHref = buildLeadsHref(params);
-  const queryString = listHref.split("?")[1] ?? "";
+  const searchParameters = new URLSearchParams(listHref.split("?")[1] ?? "");
+
+  if (params.compose) {
+    searchParameters.set("compose", params.compose);
+  }
+
+  const queryString = searchParameters.toString();
 
   return queryString.length > 0
     ? `/app/leads/${leadId}?${queryString}`
@@ -2294,4 +2901,34 @@ function parsePositiveInteger(value: string | undefined) {
   const parsedValue = Number.parseInt(value, 10);
 
   return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : null;
+}
+
+function normalizeLeadListScopedFilterValue(value: string | undefined) {
+  const trimmedValue = value?.trim();
+
+  return trimmedValue ? trimmedValue : undefined;
+}
+
+function normalizeLeadListStatusValue(value: string | undefined) {
+  return [
+    "NEW",
+    "AWAITING_RESPONSE",
+    "INCOMPLETE",
+    "UNDER_REVIEW",
+    "QUALIFIED",
+    "CAUTION",
+    "TOUR_SCHEDULED",
+    "APPLICATION_SENT",
+    "DECLINED",
+    "ARCHIVED",
+    "CLOSED",
+  ].includes(value ?? "")
+    ? value
+    : undefined;
+}
+
+function normalizeLeadListFitValue(value: string | undefined) {
+  return ["UNKNOWN", "PASS", "CAUTION", "MISMATCH"].includes(value ?? "")
+    ? value
+    : undefined;
 }

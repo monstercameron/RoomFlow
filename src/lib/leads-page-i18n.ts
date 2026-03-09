@@ -14,6 +14,7 @@ const leadsPageCopyByLocale = {
       addLead: "Add lead",
       apply: "Apply",
       archive: "Archive",
+      importLeads: "Import leads",
       openInbox: "Open inbox",
       openInboxInstead: "Open inbox instead",
       openLead: "Open lead",
@@ -75,11 +76,21 @@ const leadsPageCopyByLocale = {
       PASS: "Pass",
     },
     form: {
+      allAssignments: "All assignees",
+      allFits: "All fits",
+      allProperties: "All properties",
+      allSources: "All sources",
+      allStatuses: "All statuses",
+      assignment: "Assignment",
       filter: "Filter",
+      fit: "Fit",
+      property: "Property",
       rows: "Rows",
       rowsPerPage: (count: number) => `${count} per page`,
       search: "Search",
       searchPlaceholder: "Search by lead, source, phone, email, or property",
+      source: "Source",
+      status: "Status",
       sort: "Sort",
     },
     header: {
@@ -88,11 +99,24 @@ const leadsPageCopyByLocale = {
       eyebrow: "Leads",
       title: "Qualification queue",
     },
+    indicators: {
+      askMissingQuestions: "Ask missing questions",
+      awaitingResponse: "Awaiting response",
+      duplicatePossible: "Duplicate possible",
+      missingInfo: (count: number) =>
+        count === 1 ? "1 answer missing" : `${count} answers missing`,
+      missingInfoRequested: "Missing-info request sent",
+      reviewLead: "Review lead",
+      reviewNeeded: "Review needed",
+      screeningPending: "Screening pending",
+      stale: "Stale",
+    },
     mobile: {
       assignee: "Assignee",
       budget: "Budget",
       lastActivity: "Last activity",
       moveIn: "Move-in",
+      nextAction: "Next action",
     },
     pagination: {
       go: "Go",
@@ -170,6 +194,7 @@ const leadsPageCopyByLocale = {
       fit: "Fit",
       lastActivity: "Last activity",
       lead: "Lead",
+      nextAction: "Next action",
       property: "Property",
       sla: "SLA",
       status: "Status",
@@ -182,6 +207,7 @@ const leadsPageCopyByLocale = {
       addLead: "Agregar lead",
       apply: "Aplicar",
       archive: "Archivar",
+      importLeads: "Importar leads",
       openInbox: "Abrir bandeja",
       openInboxInstead: "Abrir bandeja en su lugar",
       openLead: "Abrir lead",
@@ -243,11 +269,21 @@ const leadsPageCopyByLocale = {
       PASS: "Compatible",
     },
     form: {
+      allAssignments: "Todos los responsables",
+      allFits: "Todas las compatibilidades",
+      allProperties: "Todas las propiedades",
+      allSources: "Todas las fuentes",
+      allStatuses: "Todos los estados",
+      assignment: "Responsable",
       filter: "Filtro",
+      fit: "Compatibilidad",
+      property: "Propiedad",
       rows: "Filas",
       rowsPerPage: (count: number) => `${count} por página`,
       search: "Buscar",
       searchPlaceholder: "Buscar por lead, fuente, teléfono, correo o propiedad",
+      source: "Fuente",
+      status: "Estado",
       sort: "Ordenar",
     },
     header: {
@@ -256,11 +292,24 @@ const leadsPageCopyByLocale = {
       eyebrow: "Leads",
       title: "Cola de calificación",
     },
+    indicators: {
+      askMissingQuestions: "Solicitar datos faltantes",
+      awaitingResponse: "Esperando respuesta",
+      duplicatePossible: "Posible duplicado",
+      missingInfo: (count: number) =>
+        count === 1 ? "Falta 1 respuesta" : `Faltan ${count} respuestas`,
+      missingInfoRequested: "Solicitud de datos ya enviada",
+      reviewLead: "Revisar lead",
+      reviewNeeded: "Revisión necesaria",
+      screeningPending: "Screening pendiente",
+      stale: "Vencido",
+    },
     mobile: {
       assignee: "Asignado",
       budget: "Presupuesto",
       lastActivity: "Última actividad",
       moveIn: "Mudanza",
+      nextAction: "Siguiente acción",
     },
     pagination: {
       go: "Ir",
@@ -338,6 +387,7 @@ const leadsPageCopyByLocale = {
       fit: "Compatibilidad",
       lastActivity: "Última actividad",
       lead: "Lead",
+      nextAction: "Siguiente acción",
       property: "Propiedad",
       sla: "SLA",
       status: "Estado",
@@ -361,6 +411,17 @@ const leadsPageCopyByLocale = {
       sort: string;
     };
     header: Record<string, string>;
+    indicators: {
+      askMissingQuestions: string;
+      awaitingResponse: string;
+      duplicatePossible: string;
+      missingInfo: (count: number) => string;
+      missingInfoRequested: string;
+      reviewLead: string;
+      reviewNeeded: string;
+      screeningPending: string;
+      stale: string;
+    };
     mobile: Record<string, string>;
     pagination: {
       go: string;

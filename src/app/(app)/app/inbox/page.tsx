@@ -30,6 +30,7 @@ type InboxPageProps = {
 export default async function InboxPage({ searchParams }: InboxPageProps) {
   const resolvedSearchParams = await searchParams;
   const queueFilter = resolvedSearchParams.queue ?? "all";
+  const currentInboxHref = `/app/inbox?queue=${queueFilter}`;
   const inbox = await getInboxViewData(queueFilter);
   const threads = inbox.threads;
   const workflowErrorCode = parseLeadWorkflowErrorCode(
@@ -175,7 +176,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="text-sm font-medium">AI summary</div>
                         <form action={generateLeadInsightsAction.bind(null, thread.id)}>
-                          <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
+                          <input type="hidden" name="redirectTo" value={currentInboxHref} />
                           <button
                             className="rounded-2xl border border-[var(--color-line)] bg-white px-3 py-2 text-xs font-medium"
                             type="submit"
@@ -211,7 +212,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                         action={generateLeadTranslationAction.bind(null, thread.id)}
                         className="mt-3 flex flex-wrap items-end gap-3"
                       >
-                        <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
+                        <input type="hidden" name="redirectTo" value={currentInboxHref} />
                         <input type="hidden" name="sourceSummary" value={thread.translationSourceSummary} />
                         <input type="hidden" name="sourceText" value={thread.latestMessage} />
                         <label className="space-y-2">
@@ -279,7 +280,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                     </p>
                   ) : null}
                   <input type="hidden" name="manualChannel" value="INTERNAL_NOTE" />
-                  <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
+                  <input type="hidden" name="redirectTo" value={currentInboxHref} />
                   <textarea
                     className="mt-3 min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
                     name="manualBody"
@@ -297,7 +298,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
 
               <div className="flex min-w-72 flex-col gap-3">
                 <form action={evaluateLeadAction.bind(null, thread.id)}>
-                  <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
+                  <input type="hidden" name="redirectTo" value={currentInboxHref} />
                   <button
                     className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium"
                     type="submit"
@@ -306,6 +307,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                   </button>
                 </form>
                 <form action={requestInfoAction.bind(null, thread.id)}>
+                  <input type="hidden" name="redirectTo" value={currentInboxHref} />
                   <button
                     className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={!thread.canRequestInfo}
@@ -315,6 +317,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                   </button>
                 </form>
                 <form action={scheduleTourAction.bind(null, thread.id)}>
+                  <input type="hidden" name="redirectTo" value={currentInboxHref} />
                   <button
                     className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={!thread.canScheduleTour}
@@ -324,6 +327,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                   </button>
                 </form>
                 <form action={sendApplicationAction.bind(null, thread.id)}>
+                  <input type="hidden" name="redirectTo" value={currentInboxHref} />
                   <button
                     className="w-full rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={!thread.canSendApplication}
@@ -334,8 +338,8 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                 </form>
                 <form action={declineLeadAction.bind(null, thread.id)}>
                   <input type="hidden" name="declineReason" value="OPERATOR_DECISION" />
-                  <input type="hidden" name="declineNote" value="Declined from review queue." />
-                  <input type="hidden" name="redirectTo" value="/app/inbox?queue=review" />
+                  <input type="hidden" name="declineNote" value="Declined from inbox triage." />
+                  <input type="hidden" name="redirectTo" value={currentInboxHref} />
                   <button
                     className="w-full rounded-2xl border border-[rgba(184,88,51,0.28)] bg-[rgba(184,88,51,0.08)] px-4 py-3 text-sm font-medium"
                     type="submit"
@@ -361,7 +365,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                       </option>
                     ))}
                   </select>
-                  <input type="hidden" name="redirectTo" value={`/app/inbox?queue=${queueFilter}`} />
+                    <input type="hidden" name="redirectTo" value={currentInboxHref} />
                   <button
                     className="mt-3 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={!thread.canAssignOwner}
@@ -392,7 +396,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                         </option>
                       ))}
                     </select>
-                    <input type="hidden" name="redirectTo" value="/app/inbox" />
+                    <input type="hidden" name="redirectTo" value={currentInboxHref} />
                     <button
                       className="mt-3 w-full rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white"
                       type="submit"

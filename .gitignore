@@ -37,6 +37,11 @@ out.txt
 /.server.err.log
 /pglite.log
 /pglite.err
+/.manual-qa-server.log
+/.manual-qa-server.err.log
+/.workflow*-server.log
+/.workflow*-server.err.log
+/workflow*-playwright-failures.txt
 
 # debug
 npm-debug.log*

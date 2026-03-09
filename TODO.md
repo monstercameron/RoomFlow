@@ -453,7 +453,7 @@ Reviewed pages and user-facing routes:
 
 - [x] Add Playwright coverage for auth pages: `src/app/(auth)/login/page.tsx`, `signup/page.tsx`, `forgot-password/page.tsx`, `reset-password/page.tsx`, `magic-link/page.tsx`, `verify-email/page.tsx`.
 - [ ] Add Playwright coverage for onboarding pages: `src/app/(auth)/onboarding/page.tsx`, `property/page.tsx`, `house-rules/page.tsx`, `channels/page.tsx`.
-- [ ] Expand Playwright coverage for core app pages. Current smoke coverage hits `src/app/(app)/app/page.tsx`, `leads/page.tsx`, `leads/[leadId]/page.tsx`, `properties/page.tsx`, `properties/[propertyId]/page.tsx`, `properties/[propertyId]/rules/page.tsx`, `workflows/page.tsx`, `workflows/[workflowId]/page.tsx`, `settings/page.tsx`, `settings/integrations/page.tsx`, `settings/members/page.tsx`, and `settings/security/page.tsx`. Remaining runtime gaps are `properties/[propertyId]/questions/page.tsx`, `inbox/page.tsx`, `templates/page.tsx`, `calendar/page.tsx`, and `invite/[token]/page.tsx`, plus deeper action coverage on already-visited pages.
+- [ ] Expand Playwright coverage for core app pages. Current runtime coverage now hits `src/app/(app)/app/page.tsx`, `leads/page.tsx`, `leads/[leadId]/page.tsx`, `inbox/page.tsx`, `properties/page.tsx`, `properties/[propertyId]/page.tsx`, `properties/[propertyId]/rules/page.tsx`, `workflows/page.tsx`, `workflows/[workflowId]/page.tsx`, `settings/page.tsx`, `settings/integrations/page.tsx`, `settings/members/page.tsx`, and `settings/security/page.tsx`. Remaining runtime gaps are `properties/[propertyId]/questions/page.tsx`, `templates/page.tsx`, `calendar/page.tsx`, and `invite/[token]/page.tsx`, plus deeper action coverage on already-visited pages.
 - [ ] Keep `src/app/layout.tsx`, `src/app/(app)/app/layout.tsx`, and `src/app/(marketing)/page.tsx` on Playwright/transitive coverage unless layout-specific regressions appear.
 
 Reviewed components:
@@ -1086,14 +1086,14 @@ These tasks come from a direct comparison of `reference/WORKFLOW7.md` against th
 
 ### Leads list parity gaps
 
-- [ ] Add the missing `Import leads` secondary CTA to `/app/leads` header beside `Add lead`.
-- [ ] Build a property filter for `/app/leads` so operators can narrow the list by assigned property without relying on search.
-- [ ] Build an explicit status filter for `/app/leads` instead of requiring operators to infer status from the current preset filter buckets.
-- [ ] Build a fit filter for `/app/leads` covering at least `UNKNOWN`, `PASS`, `CAUTION`, and `MISMATCH`.
-- [ ] Build a source filter for `/app/leads` so manual, email, SMS, CSV, web form, and channel-derived leads can be segmented directly.
-- [ ] Build an assignment filter for `/app/leads` that supports `unassigned` and specific teammate ownership in Org workspaces.
-- [ ] Preserve the existing archived toggle while making it compose correctly with the new property, status, fit, source, and assignment filters.
-- [ ] Extend `LeadListFilter` and its query-param parsing so the leads list can represent the new filters without overloading the current summary tabs.
+- [x] Add the missing `Import leads` secondary CTA to `/app/leads` header beside `Add lead`.
+- [x] Build a property filter for `/app/leads` so operators can narrow the list by assigned property without relying on search.
+- [x] Build an explicit status filter for `/app/leads` instead of requiring operators to infer status from the current preset filter buckets.
+- [x] Build a fit filter for `/app/leads` covering at least `UNKNOWN`, `PASS`, `CAUTION`, and `MISMATCH`.
+- [x] Build a source filter for `/app/leads` so manual, email, SMS, CSV, web form, and channel-derived leads can be segmented directly.
+- [x] Build an assignment filter for `/app/leads` that supports `unassigned` and specific teammate ownership in Org workspaces.
+- [x] Preserve the existing archived toggle while making it compose correctly with the new property, status, fit, source, and assignment filters.
+- [x] Extend `LeadListFilter` and its query-param parsing so the leads list can represent the new filters without overloading the current summary tabs.
 - [ ] Keep the current summary-card shortcuts and tab shortcuts, but separate them from the new filter-toolbar state so quick buckets and field filters do not conflict.
 - [ ] Add a row-level `next action` or `missing info` indicator to the desktop leads table.
 - [ ] Add the same `next action` or `missing info` indicator to the mobile leads cards.
@@ -1118,9 +1118,9 @@ These tasks come from a direct comparison of `reference/WORKFLOW7.md` against th
 - [ ] Add per-item labels for common missing qualification fields such as budget, stay length, bathroom-sharing comfort, smoking, pets, parking, guests, and work schedule.
 - [ ] Surface an aggregate completeness state on the lead detail page so operators can tell at a glance whether the lead is ready for routing.
 - [ ] Add an explicit `Ask missing questions` action tied to the missing-info checklist rather than relying only on the generic `Request info` button.
-- [ ] Change the missing-info flow so clicking `Ask missing questions` opens a draft-first composer instead of sending the workflow action immediately.
-- [ ] Prepopulate that draft-first composer with the missing items returned by the qualification workflow engine.
-- [ ] Allow the operator to edit the generated missing-info draft before sending.
+- [x] Change the missing-info flow so clicking `Ask missing questions` opens a draft-first composer instead of sending the workflow action immediately.
+- [x] Prepopulate that draft-first composer with the missing items returned by the qualification workflow engine.
+- [x] Allow the operator to edit the generated missing-info draft before sending.
 - [ ] After sending the missing-info draft, keep the current routing behavior that moves the lead into `AWAITING_RESPONSE` or `INCOMPLETE`, but make that transition visible in the UI confirmation.
 - [ ] Add an explicit `Mark as under review` action near the qualification controls instead of forcing operators to use the lower manual override form for the common review case.
 - [ ] Add an explicit `Continue manually` affordance in the qualification area that jumps to manual outbound, internal note, and override controls.
@@ -1145,7 +1145,7 @@ These tasks come from a direct comparison of `reference/WORKFLOW7.md` against th
 
 - [ ] Add a clearer `Move status` UX for the common statuses `UNDER_REVIEW`, `INCOMPLETE`, `QUALIFIED`, `DECLINED`, and `ARCHIVED` so operators do not need the generic override form for every routine routing change.
 - [ ] Split routine routing controls from exception-only override controls so manual override stays available but is not the only visible path.
-- [ ] Expose property reassignment for already-assigned leads, not only unassigned leads, when permissions allow.
+- [x] Expose property reassignment for already-assigned leads, not only unassigned leads, when permissions allow.
 - [ ] Keep owner assignment in place, but decide whether lead owner and property reassignment belong in one shared `assignment` panel.
 
 ### Validation and regression coverage for Workflow 7 parity

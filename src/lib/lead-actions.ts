@@ -37,6 +37,11 @@ import {
   isLeadChannelOptedOut,
 } from "@/lib/lead-channel-opt-outs";
 import {
+  isMissingInfoPromptThrottled,
+  resolveMissingInfoPromptThrottleWindowMinutes,
+  resolveMostRecentMissingInfoRequestTimestamp,
+} from "@/lib/lead-qualification-guard";
+import {
   isProviderConfigurationError,
   markMessageDeliveryFailure,
   markMessageProviderUnresolved,
@@ -431,6 +436,10 @@ type ManualOutboundWorkspaceMember = {
 };
 
 type ManualOutboundLead = {
+  auditEvents: Array<{
+    createdAt: Date;
+    eventType: string;
+  }>;
   contact: {
     email: string | null;
     phone: string | null;
@@ -443,6 +452,7 @@ type ManualOutboundLead = {
   id: string;
   propertyId: string | null;
   phone: string | null;
+  status: LeadStatus;
   optOutAt?: Date | null;
   optOutReason?: string | null;
   emailOptOutAt?: Date | null;
@@ -453,6 +463,9 @@ type ManualOutboundLead = {
   whatsappOptOutReason?: string | null;
   instagramOptOutAt?: Date | null;
   instagramOptOutReason?: string | null;
+  workspace: {
+    missingInfoPromptThrottleMinutes: number | null;
+  };
 };
 
 export type SendManualOutboundMessageActionDependencies = {
@@ -494,9 +507,15 @@ export type SendManualOutboundMessageActionDependencies = {
   markMessageProviderUnresolved: typeof markMessageProviderUnresolved;
   persistManualOutboundActivity: (input: {
     actionContext: LeadActionContext;
-    lead: { id: string; propertyId: string | null; optOutAt?: Date | null };
+    lead: {
+      id: string;
+      optOutAt?: Date | null;
+      propertyId: string | null;
+      status: LeadStatus;
+    };
     messageId: string;
     outboundMessageChannel: MessageChannel;
+    workflowIntent: "missing-info" | null;
   }) => Promise<void>;
   resolveInternalNoteMentions: typeof resolveInternalNoteMentions;
   sendQueuedMessage: typeof sendQueuedMessage;
@@ -532,8 +551,19 @@ const defaultSendManualOutboundMessageActionDependencies: SendManualOutboundMess
         workspaceId,
       },
       include: {
+        auditEvents: {
+          select: {
+            createdAt: true,
+            eventType: true,
+          },
+        },
         contact: true,
         conversation: true,
+        workspace: {
+          select: {
+            missingInfoPromptThrottleMinutes: true,
+          },
+        },
       },
     }),
   findWorkspaceMembersForInternalNotes: async ({ workspaceId, actorUserId }) => {
@@ -575,16 +605,39 @@ const defaultSendManualOutboundMessageActionDependencies: SendManualOutboundMess
     lead,
     messageId,
     outboundMessageChannel,
+    workflowIntent,
   }) => {
     await prisma.$transaction(async (transactionClient) => {
+      const nextStatus =
+        workflowIntent === "missing-info"
+          ? lead.status === LeadStatus.INCOMPLETE
+            ? LeadStatus.INCOMPLETE
+            : LeadStatus.AWAITING_RESPONSE
+          : lead.status;
+
       await transactionClient.lead.update({
         where: {
           id: lead.id,
         },
         data: {
           lastActivityAt: new Date(),
+          status: nextStatus,
         },
       });
+
+      if (workflowIntent === "missing-info" && nextStatus !== lead.status) {
+        await transactionClient.leadStatusHistory.create({
+          data: {
+            actorType: AuditActorType.USER,
+            actorUserId: actionContext.actorUserId,
+            fromStatus: lead.status,
+            leadId: lead.id,
+            reason:
+              "Requested the remaining qualification details from the draft-first missing-info composer.",
+            toStatus: nextStatus,
+          },
+        });
+      }
 
       await transactionClient.auditEvent.create({
         data: {
@@ -601,6 +654,24 @@ const defaultSendManualOutboundMessageActionDependencies: SendManualOutboundMess
           },
         },
       });
+
+      if (workflowIntent === "missing-info") {
+        await transactionClient.auditEvent.create({
+          data: {
+            workspaceId: actionContext.workspaceId,
+            leadId: lead.id,
+            propertyId: lead.propertyId,
+            actorUserId: actionContext.actorUserId,
+            actorType: AuditActorType.USER,
+            eventType: "missing information requested",
+            payload: {
+              channel: outboundMessageChannel,
+              messageId,
+              statusAfterSend: nextStatus,
+            },
+          },
+        });
+      }
     });
   },
   resolveInternalNoteMentions,
@@ -2289,11 +2360,17 @@ export async function evaluateLeadAction(leadId: string, formData?: FormData) {
   return handleEvaluateLeadAction(leadId, formData);
 }
 
-export async function requestInfoAction(leadId: string) {
+export async function requestInfoAction(leadId: string, formData?: FormData) {
   const actionContext = await getActionContext(leadId);
+  const redirectTargetValue = formData?.get("redirectTo");
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : getLeadDetailPath(leadId);
 
   await executeWorkflowActionWithErrorRedirect({
     leadId,
+    redirectPath,
     executeAction: async () => {
       await assertLeadActionPermission({
         ...actionContext,
@@ -2307,11 +2384,17 @@ export async function requestInfoAction(leadId: string) {
   });
 }
 
-export async function scheduleTourAction(leadId: string) {
+export async function scheduleTourAction(leadId: string, formData?: FormData) {
   const actionContext = await getActionContext(leadId);
+  const redirectTargetValue = formData?.get("redirectTo");
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : getLeadDetailPath(leadId);
 
   await executeWorkflowActionWithErrorRedirect({
     leadId,
+    redirectPath,
     executeAction: async () => {
       await assertLeadActionPermission({
         ...actionContext,
@@ -2527,11 +2610,17 @@ export async function createManualTourAction(leadId: string, formData: FormData)
   return handleCreateManualTourAction(leadId, formData);
 }
 
-export async function sendApplicationAction(leadId: string) {
+export async function sendApplicationAction(leadId: string, formData?: FormData) {
   const actionContext = await getActionContext(leadId);
+  const redirectTargetValue = formData?.get("redirectTo");
+  const redirectPath =
+    typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
+      ? redirectTargetValue
+      : getLeadDetailPath(leadId);
 
   await executeWorkflowActionWithErrorRedirect({
     leadId,
+    redirectPath,
     executeAction: async () => {
       await assertLeadActionPermission({
         ...actionContext,
@@ -3691,12 +3780,15 @@ export async function handleSendManualOutboundMessageAction(
   );
   const outboundMessageSubjectValue = formData.get("manualSubject");
   const outboundMessageBodyValue = formData.get("manualBody");
+  const workflowIntentValue = formData.get("manualWorkflowIntent");
   const redirectTargetValue = formData.get("redirectTo");
   const fallbackRedirectPath = getLeadDetailPath(leadId);
   const redirectPath =
     typeof redirectTargetValue === "string" && redirectTargetValue.length > 0
       ? redirectTargetValue
       : fallbackRedirectPath;
+  const workflowIntent =
+    workflowIntentValue === "missing-info" ? "missing-info" : null;
 
   await dependencies.executeWorkflowActionWithErrorRedirect({
     leadId,
@@ -3758,6 +3850,26 @@ export async function handleSendManualOutboundMessageAction(
           "ACTION_BLOCKED_OPT_OUT",
           `Lead has opted out of ${formatMessageChannelLabel(outboundMessageChannel)} messaging.`,
         );
+      }
+
+      if (workflowIntent === "missing-info") {
+        const mostRecentMissingInfoRequestAt = resolveMostRecentMissingInfoRequestTimestamp(
+          lead.auditEvents,
+        );
+        const missingInfoPromptIsThrottled = isMissingInfoPromptThrottled({
+          mostRecentMissingInfoRequestAt,
+          referenceTime: new Date(),
+          throttleWindowMinutes: resolveMissingInfoPromptThrottleWindowMinutes(
+            lead.workspace.missingInfoPromptThrottleMinutes,
+          ),
+        });
+
+        if (missingInfoPromptIsThrottled) {
+          throw new LeadWorkflowError(
+            "MISSING_INFO_PROMPT_THROTTLED",
+            "A missing-information prompt was sent recently. Wait for the throttle window before sending another.",
+          );
+        }
       }
 
       const normalizedSubject =
@@ -3825,6 +3937,7 @@ export async function handleSendManualOutboundMessageAction(
         lead,
         messageId: messageRecord.id,
         outboundMessageChannel,
+        workflowIntent,
       });
     },
   });

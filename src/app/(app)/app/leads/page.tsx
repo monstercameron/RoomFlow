@@ -138,10 +138,15 @@ const pageSizeOptions = [5, 10, 25, 50];
 
 type LeadsPageProps = {
   searchParams: Promise<{
+    assignment?: string;
     filter?: string;
+    fit?: string;
     page?: string;
     pageSize?: string;
+    property?: string;
     q?: string;
+    source?: string;
+    status?: string;
     showArchived?: string;
     sort?: string;
   }>;
@@ -157,48 +162,80 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
     ? resolvedSearchParams.filter
     : "all";
   const activeSort = normalizeLeadListSort(resolvedSearchParams.sort);
+  const activeAssignment = normalizeLeadListScopedFilterValue(
+    resolvedSearchParams.assignment,
+  );
+  const activeFit = normalizeLeadListFitValue(resolvedSearchParams.fit);
   const activePageSize = parsePositiveInteger(resolvedSearchParams.pageSize) ?? 10;
   const activePage = parsePositiveInteger(resolvedSearchParams.page) ?? 1;
+  const activeProperty = normalizeLeadListScopedFilterValue(
+    resolvedSearchParams.property,
+  );
   const showArchived =
     parseBooleanSearchParam(resolvedSearchParams.showArchived) ||
     activeFilter === "archived";
+  const activeSource = normalizeLeadListScopedFilterValue(
+    resolvedSearchParams.source,
+  );
+  const activeStatus = normalizeLeadListStatusValue(resolvedSearchParams.status);
   const leadList = await getLeadListViewData({
+    assignment: activeAssignment,
     filter: activeFilter,
+    fit: activeFit,
     locale,
     page: activePage,
     pageSize: activePageSize,
+    property: activeProperty,
     query: resolvedSearchParams.q ?? "",
+    source: activeSource,
+    status: activeStatus,
     showArchived,
     sort: activeSort,
   });
   const resetHref = "/app/leads";
   const resetIsActive =
+    Boolean(leadList.activeWorkflowFilters.assignment) ||
     leadList.query.length > 0 ||
     leadList.activeFilter !== "all" ||
+    Boolean(leadList.activeWorkflowFilters.fit) ||
+    Boolean(leadList.activeWorkflowFilters.property) ||
+    Boolean(leadList.activeWorkflowFilters.source) ||
+    Boolean(leadList.activeWorkflowFilters.status) ||
     leadList.sort !== "last-activity-desc" ||
     leadList.showArchived;
+  const currentListParams = {
+    assignment: leadList.activeWorkflowFilters.assignment,
+    filter: leadList.activeFilter,
+    fit: leadList.activeWorkflowFilters.fit,
+    page: leadList.page,
+    pageSize: leadList.pageSize,
+    property: leadList.activeWorkflowFilters.property,
+    query: leadList.query,
+    showArchived: leadList.showArchived,
+    sort: leadList.sort,
+    source: leadList.activeWorkflowFilters.source,
+    status: leadList.activeWorkflowFilters.status,
+  };
   const archivedToggleHref = buildLeadsHref({
     filter:
       leadList.activeFilter === "archived" && leadList.showArchived
         ? "all"
         : leadList.activeFilter,
     page: 1,
-    pageSize: leadList.pageSize,
-    query: leadList.query,
+    pageSize: currentListParams.pageSize,
+    property: currentListParams.property,
+    query: currentListParams.query,
+    assignment: currentListParams.assignment,
+    fit: currentListParams.fit,
     showArchived:
       leadList.activeFilter === "archived" && leadList.showArchived
         ? false
         : !leadList.showArchived,
-    sort: leadList.sort,
+    sort: currentListParams.sort,
+    source: currentListParams.source,
+    status: currentListParams.status,
   });
-  const currentListHref = buildLeadsHref({
-    filter: leadList.activeFilter,
-    page: leadList.page,
-    pageSize: leadList.pageSize,
-    query: leadList.query,
-    showArchived: leadList.showArchived,
-    sort: leadList.sort,
-  });
+  const currentListHref = buildLeadsHref(currentListParams);
   const summaryCards = [
     {
       filter: "all" as LeadListFilter,
@@ -230,13 +267,18 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
     href: buildLeadsHref({
       filter: leadListFilter.value,
       page: 1,
-      pageSize: leadList.pageSize,
-      query: leadList.query,
+      pageSize: currentListParams.pageSize,
+      property: currentListParams.property,
+      query: currentListParams.query,
+      assignment: currentListParams.assignment,
+      fit: currentListParams.fit,
       showArchived:
         leadListFilter.value === "archived"
           ? true
           : leadList.showArchived,
-      sort: leadList.sort,
+      sort: currentListParams.sort,
+      source: currentListParams.source,
+      status: currentListParams.status,
     }),
     label: leadListFilter.label,
     value: leadListFilter.value,
@@ -250,6 +292,9 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
         description={copy.header.description}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link className={secondaryActionClassName} href="/app/settings/integrations#csv-import">
+              {copy.actions.importLeads}
+            </Link>
             <Link className={secondaryActionClassName} href="/app/inbox">
               {copy.actions.openInbox}
             </Link>
@@ -268,10 +313,15 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
             href={buildLeadsHref({
               filter: summaryCard.filter,
               page: 1,
-              pageSize: leadList.pageSize,
+              pageSize: currentListParams.pageSize,
+              property: currentListParams.property,
+              assignment: currentListParams.assignment,
+              fit: currentListParams.fit,
               query: "",
+              source: currentListParams.source,
+              status: currentListParams.status,
               showArchived: leadList.showArchived,
-              sort: leadList.sort,
+              sort: currentListParams.sort,
             })}
             scroll={false}
           >
@@ -282,8 +332,18 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
         ))}
       </div>
 
+      <div className="mb-6 flex flex-wrap items-center gap-2 rounded-[1.6rem] border border-[var(--color-line)] bg-[rgba(255,255,255,0.82)] px-4 py-3 text-sm text-[var(--color-muted)] shadow-[0_12px_28px_rgba(62,43,28,0.05)]">
+        <span className="rounded-full border border-[rgba(39,110,78,0.18)] bg-[rgb(225,244,233)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[rgb(39,110,78)]">
+          V1 view
+        </span>
+        <span>List view remains the operational source of truth for v1.</span>
+        <span className="rounded-full border border-[rgba(184,88,51,0.16)] bg-[rgba(184,88,51,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[var(--color-accent-strong)]">
+          Board view deferred
+        </span>
+      </div>
+
       <div className="mb-6 rounded-[2rem] border border-[var(--color-line)] bg-[var(--color-panel)] p-5 shadow-[var(--shadow-panel)]">
-        <form className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_repeat(3,minmax(0,0.55fr))_auto]" method="get">
+        <form className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_repeat(4,minmax(0,0.55fr))]" method="get">
           <label className="space-y-2">
             <span className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
               {copy.form.search}
@@ -314,6 +374,23 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
           </label>
           <label className="space-y-2">
             <span className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
+              {copy.form.property}
+            </span>
+            <select
+              className={filterControlClassName}
+              defaultValue={leadList.activeWorkflowFilters.property ?? ""}
+              name="property"
+            >
+              <option value="">{copy.form.allProperties}</option>
+              {leadList.filterOptions.properties.map((propertyOption) => (
+                <option key={propertyOption.value} value={propertyOption.value}>
+                  {propertyOption.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-2">
+            <span className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
               {copy.form.sort}
             </span>
             <select
@@ -328,23 +405,93 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
               ))}
             </select>
           </label>
-          <label className="space-y-2">
-            <span className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
-              {copy.form.rows}
-            </span>
-            <select
-              className={filterControlClassName}
-              defaultValue={String(leadList.pageSize)}
-              name="pageSize"
-            >
-              {pageSizeOptions.map((pageSizeOption) => (
-                <option key={pageSizeOption} value={pageSizeOption}>
-                  {copy.form.rowsPerPage(pageSizeOption)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="flex items-end gap-2">
+          <div className="xl:col-span-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <label className="space-y-2">
+              <span className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                {copy.form.status}
+              </span>
+              <select
+                className={filterControlClassName}
+                defaultValue={leadList.activeWorkflowFilters.status ?? ""}
+                name="status"
+              >
+                <option value="">{copy.form.allStatuses}</option>
+                {leadList.filterOptions.statuses.map((statusOption) => (
+                  <option key={statusOption.value} value={statusOption.value}>
+                    {statusOption.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                {copy.form.fit}
+              </span>
+              <select
+                className={filterControlClassName}
+                defaultValue={leadList.activeWorkflowFilters.fit ?? ""}
+                name="fit"
+              >
+                <option value="">{copy.form.allFits}</option>
+                {leadList.filterOptions.fits.map((fitOption) => (
+                  <option key={fitOption.value} value={fitOption.value}>
+                    {fitOption.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                {copy.form.source}
+              </span>
+              <select
+                className={filterControlClassName}
+                defaultValue={leadList.activeWorkflowFilters.source ?? ""}
+                name="source"
+              >
+                <option value="">{copy.form.allSources}</option>
+                {leadList.filterOptions.sources.map((sourceOption) => (
+                  <option key={sourceOption.value} value={sourceOption.value}>
+                    {sourceOption.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                {copy.form.assignment}
+              </span>
+              <select
+                className={filterControlClassName}
+                defaultValue={leadList.activeWorkflowFilters.assignment ?? ""}
+                name="assignment"
+              >
+                <option value="">{copy.form.allAssignments}</option>
+                {leadList.filterOptions.assignments.map((assignmentOption) => (
+                  <option key={assignmentOption.value} value={assignmentOption.value}>
+                    {assignmentOption.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                {copy.form.rows}
+              </span>
+              <select
+                className={filterControlClassName}
+                defaultValue={String(leadList.pageSize)}
+                name="pageSize"
+              >
+                {pageSizeOptions.map((pageSizeOption) => (
+                  <option key={pageSizeOption} value={pageSizeOption}>
+                    {copy.form.rowsPerPage(pageSizeOption)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="xl:col-span-5 flex items-end gap-2">
             <button className={primaryActionClassName} type="submit">
               {copy.actions.apply}
             </button>
@@ -431,23 +578,15 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
           filter={leadList.activeFilter}
           locale={locale}
           nextHref={buildLeadsHref({
-            filter: leadList.activeFilter,
+            ...currentListParams,
             page: Math.min(leadList.page + 1, leadList.pageCount),
-            pageSize: leadList.pageSize,
-            query: leadList.query,
-            showArchived: leadList.showArchived,
-            sort: leadList.sort,
           })}
           page={leadList.page}
           pageCount={leadList.pageCount}
           pageSize={leadList.pageSize}
           previousHref={buildLeadsHref({
-            filter: leadList.activeFilter,
+            ...currentListParams,
             page: Math.max(leadList.page - 1, 1),
-            pageSize: leadList.pageSize,
-            query: leadList.query,
-            showArchived: leadList.showArchived,
-            sort: leadList.sort,
           })}
           query={leadList.query}
           showArchived={leadList.showArchived}
@@ -472,11 +611,8 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                   <SortableHeader
                     currentSort={leadList.sort}
                     href={buildLeadsHref({
-                      filter: leadList.activeFilter,
+                      ...currentListParams,
                       page: 1,
-                      pageSize: leadList.pageSize,
-                      query: leadList.query,
-                      showArchived: leadList.showArchived,
                       sort: getNextSortableColumnSort(leadList.sort, "name"),
                     })}
                     label={copy.table.lead}
@@ -485,11 +621,8 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                   <SortableHeader
                     currentSort={leadList.sort}
                     href={buildLeadsHref({
-                      filter: leadList.activeFilter,
+                      ...currentListParams,
                       page: 1,
-                      pageSize: leadList.pageSize,
-                      query: leadList.query,
-                      showArchived: leadList.showArchived,
                       sort: getNextSortableColumnSort(leadList.sort, "property"),
                     })}
                     label={copy.table.property}
@@ -498,11 +631,8 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                   <SortableHeader
                     currentSort={leadList.sort}
                     href={buildLeadsHref({
-                      filter: leadList.activeFilter,
+                      ...currentListParams,
                       page: 1,
-                      pageSize: leadList.pageSize,
-                      query: leadList.query,
-                      showArchived: leadList.showArchived,
                       sort: getNextSortableColumnSort(leadList.sort, "assignee"),
                     })}
                     label={copy.table.assignee}
@@ -515,11 +645,8 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                   <SortableHeader
                     currentSort={leadList.sort}
                     href={buildLeadsHref({
-                      filter: leadList.activeFilter,
+                      ...currentListParams,
                       page: 1,
-                      pageSize: leadList.pageSize,
-                      query: leadList.query,
-                      showArchived: leadList.showArchived,
                       sort: getNextSortableColumnSort(leadList.sort, "last-activity"),
                     })}
                     label={copy.table.lastActivity}
@@ -539,12 +666,7 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                       <Link
                         className="block cursor-pointer truncate font-medium underline decoration-[var(--color-line)] underline-offset-4"
                         href={buildLeadDetailHref(lead.id, {
-                          filter: leadList.activeFilter,
-                          page: leadList.page,
-                          pageSize: leadList.pageSize,
-                          query: leadList.query,
-                          showArchived: leadList.showArchived,
-                          sort: leadList.sort,
+                          ...currentListParams,
                         })}
                         prefetch={false}
                         title={lead.name}
@@ -555,6 +677,25 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                       <div className="mt-2 truncate text-xs text-[var(--color-muted)]" title={[lead.email, lead.phone].filter(Boolean).join(" | ") || copy.common.noContactMethodSaved}>
                         {[lead.email, lead.phone].filter(Boolean).join(" | ") || copy.common.noContactMethodSaved}
                       </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className={getNextActionChipClassName(lead.nextActionTone)}>
+                          {lead.nextActionLabel}
+                        </span>
+                        {lead.nextActionDetail ? (
+                          <span className="rounded-full border border-[rgba(184,88,51,0.16)] bg-[rgba(255,255,255,0.82)] px-3 py-1 text-xs font-medium text-[var(--color-muted)]">
+                            {lead.nextActionDetail}
+                          </span>
+                        ) : null}
+                      </div>
+                      {lead.badges.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {lead.badges.map((badge) => (
+                            <span key={`${lead.id}-${badge.label}`} className={getLeadWorkflowBadgeClassName(badge.tone)}>
+                              {badge.label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-5 py-4 transition-colors duration-150">
                       <div className="truncate" title={lead.property}>{lead.property}</div>
@@ -599,24 +740,26 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                       <div className="truncate">{lead.lastActivity}</div>
                     </td>
                     <td className="px-5 py-4 transition-colors duration-150">
-                      {lead.canArchive || lead.canUnarchive ? (
-                        <LeadLifecycleActionControl
-                          archiveLabel={copy.actions.archive}
-                          leadId={lead.id}
-                          isArchived={lead.isArchived}
-                          redirectTo={buildLeadsHref({
-                            filter: leadList.activeFilter,
-                            page: leadList.page,
-                            pageSize: leadList.pageSize,
-                            query: leadList.query,
-                            showArchived: leadList.showArchived,
-                            sort: leadList.sort,
-                          })}
-                          unarchiveLabel={copy.actions.unarchive}
-                        />
-                      ) : (
-                        <span className="text-xs text-[var(--color-muted)]">-</span>
-                      )}
+                      <div className="flex flex-col items-start gap-2">
+                        <Link
+                          className={rowActionButtonClassName}
+                          href={buildLeadQuickActionHref(lead.id, lead.nextActionKind, currentListParams)}
+                          prefetch={false}
+                        >
+                          {lead.nextActionLabel}
+                        </Link>
+                        {lead.canArchive || lead.canUnarchive ? (
+                          <LeadLifecycleActionControl
+                            archiveLabel={copy.actions.archive}
+                            leadId={lead.id}
+                            isArchived={lead.isArchived}
+                            redirectTo={buildLeadsHref({
+                              ...currentListParams,
+                            })}
+                            unarchiveLabel={copy.actions.unarchive}
+                          />
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -639,12 +782,7 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                     <Link
                       className="text-lg font-semibold underline decoration-[var(--color-line)] underline-offset-4"
                       href={buildLeadDetailHref(lead.id, {
-                        filter: leadList.activeFilter,
-                        page: leadList.page,
-                        pageSize: leadList.pageSize,
-                        query: leadList.query,
-                        showArchived: leadList.showArchived,
-                        sort: leadList.sort,
+                        ...currentListParams,
                       })}
                       prefetch={false}
                     >
@@ -667,7 +805,24 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                       {lead.slaSummary.label} · {lead.slaSummary.dueAt}
                     </span>
                   ) : null}
+                  <span className={getNextActionChipClassName(lead.nextActionTone)}>
+                    {lead.nextActionLabel}
+                  </span>
                 </div>
+                {lead.nextActionDetail ? (
+                  <div className="mt-3 text-sm text-[var(--color-muted)]">
+                    {copy.mobile.nextAction}: {lead.nextActionDetail}
+                  </div>
+                ) : null}
+                {lead.badges.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {lead.badges.map((badge) => (
+                      <span key={`${lead.id}-${badge.label}`} className={getLeadWorkflowBadgeClassName(badge.tone)}>
+                        {badge.label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="mt-4 grid gap-3 text-sm text-[var(--color-muted)] sm:grid-cols-2">
                   <div>
                     <div className="text-xs uppercase tracking-[0.14em]">{copy.mobile.assignee}</div>
@@ -705,13 +860,15 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Link
                     className={compactSecondaryActionClassName}
+                    href={buildLeadQuickActionHref(lead.id, lead.nextActionKind, currentListParams)}
+                    prefetch={false}
+                  >
+                    {lead.nextActionLabel}
+                  </Link>
+                  <Link
+                    className={compactSecondaryActionClassName}
                     href={buildLeadDetailHref(lead.id, {
-                      filter: leadList.activeFilter,
-                      page: leadList.page,
-                      pageSize: leadList.pageSize,
-                      query: leadList.query,
-                      showArchived: leadList.showArchived,
-                      sort: leadList.sort,
+                      ...currentListParams,
                     })}
                     prefetch={false}
                   >
@@ -723,12 +880,7 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                       leadId={lead.id}
                       isArchived={lead.isArchived}
                       redirectTo={buildLeadsHref({
-                        filter: leadList.activeFilter,
-                        page: leadList.page,
-                        pageSize: leadList.pageSize,
-                        query: leadList.query,
-                        showArchived: leadList.showArchived,
-                        sort: leadList.sort,
+                        ...currentListParams,
                       })}
                       unarchiveLabel={copy.actions.unarchive}
                     />
@@ -778,10 +930,15 @@ function SortableHeader(params: {
 }
 
 function buildLeadsHref(params: {
+  assignment?: string;
   filter: LeadListFilter;
+  fit?: string;
   page: number;
   pageSize: number;
+  property?: string;
   query: string;
+  source?: string;
+  status?: string;
   showArchived: boolean;
   sort: LeadListSort;
 }) {
@@ -803,6 +960,26 @@ function buildLeadsHref(params: {
     searchParameters.set("q", params.query.trim());
   }
 
+  if (params.property) {
+    searchParameters.set("property", params.property);
+  }
+
+  if (params.status) {
+    searchParameters.set("status", params.status);
+  }
+
+  if (params.fit) {
+    searchParameters.set("fit", params.fit);
+  }
+
+  if (params.source) {
+    searchParameters.set("source", params.source);
+  }
+
+  if (params.assignment) {
+    searchParameters.set("assignment", params.assignment);
+  }
+
   if (params.showArchived) {
     searchParameters.set("showArchived", "1");
   }
@@ -819,20 +996,63 @@ function buildLeadsHref(params: {
 function buildLeadDetailHref(
   leadId: string,
   params: {
+    assignment?: string;
+    compose?: string;
     filter: LeadListFilter;
+    fit?: string;
     page: number;
     pageSize: number;
+    property?: string;
     query: string;
+    source?: string;
+    status?: string;
     showArchived: boolean;
     sort: LeadListSort;
   },
 ) {
   const listHref = buildLeadsHref(params);
-  const queryString = listHref.split("?")[1] ?? "";
+  const searchParameters = new URLSearchParams(listHref.split("?")[1] ?? "");
+
+  if (params.compose) {
+    searchParameters.set("compose", params.compose);
+  }
+
+  const queryString = searchParameters.toString();
 
   return queryString.length > 0
     ? `/app/leads/${leadId}?${queryString}`
     : `/app/leads/${leadId}`;
+}
+
+function buildLeadQuickActionHref(
+  leadId: string,
+  actionKind: "missing-info" | "open-lead" | "review",
+  params: {
+    assignment?: string;
+    filter: LeadListFilter;
+    fit?: string;
+    page: number;
+    pageSize: number;
+    property?: string;
+    query: string;
+    source?: string;
+    status?: string;
+    showArchived: boolean;
+    sort: LeadListSort;
+  },
+) {
+  if (actionKind === "missing-info") {
+    return buildLeadDetailHref(leadId, {
+      ...params,
+      compose: "missing-info",
+    });
+  }
+
+  if (actionKind === "review") {
+    return `${buildLeadDetailHref(leadId, params)}#routing-controls`;
+  }
+
+  return buildLeadDetailHref(leadId, params);
 }
 
 function getFitChipClassName(fitValue: string) {
@@ -867,6 +1087,28 @@ function getStatusChipClassName(statusValue: string) {
       return "rounded-full border border-[rgba(71,85,105,0.28)] bg-[rgba(148,163,184,0.18)] px-3 py-1 text-xs font-semibold text-[rgb(71,85,105)]";
     default:
       return "rounded-full border border-[rgba(71,85,105,0.22)] bg-[rgba(241,245,249,0.9)] px-3 py-1 text-xs font-semibold text-[rgb(71,85,105)]";
+  }
+}
+
+function getNextActionChipClassName(tone: "attention" | "muted" | "review") {
+  switch (tone) {
+    case "attention":
+      return "rounded-full border border-[rgba(184,88,51,0.24)] bg-[rgba(184,88,51,0.1)] px-3 py-1 text-xs font-semibold text-[var(--color-accent-strong)]";
+    case "review":
+      return "rounded-full border border-[rgba(180,83,9,0.28)] bg-[rgba(245,158,11,0.14)] px-3 py-1 text-xs font-semibold text-[rgb(180,83,9)]";
+    default:
+      return "rounded-full border border-[var(--color-line)] bg-[rgba(255,255,255,0.88)] px-3 py-1 text-xs font-semibold text-[var(--color-muted)]";
+  }
+}
+
+function getLeadWorkflowBadgeClassName(tone: "attention" | "muted" | "review") {
+  switch (tone) {
+    case "attention":
+      return "rounded-full border border-[rgba(184,88,51,0.22)] bg-[rgba(184,88,51,0.08)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-accent-strong)]";
+    case "review":
+      return "rounded-full border border-[rgba(180,83,9,0.24)] bg-[rgba(245,158,11,0.12)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[rgb(180,83,9)]";
+    default:
+      return "rounded-full border border-[var(--color-line)] bg-[rgba(255,255,255,0.82)] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]";
   }
 }
 
@@ -941,6 +1183,36 @@ function parsePositiveInteger(value: string | undefined) {
   const parsedValue = Number.parseInt(value, 10);
 
   return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : null;
+}
+
+function normalizeLeadListScopedFilterValue(value: string | undefined) {
+  const trimmedValue = value?.trim();
+
+  return trimmedValue ? trimmedValue : undefined;
+}
+
+function normalizeLeadListStatusValue(value: string | undefined) {
+  return [
+    "NEW",
+    "AWAITING_RESPONSE",
+    "INCOMPLETE",
+    "UNDER_REVIEW",
+    "QUALIFIED",
+    "CAUTION",
+    "TOUR_SCHEDULED",
+    "APPLICATION_SENT",
+    "DECLINED",
+    "ARCHIVED",
+    "CLOSED",
+  ].includes(value ?? "")
+    ? value
+    : undefined;
+}
+
+function normalizeLeadListFitValue(value: string | undefined) {
+  return ["UNKNOWN", "PASS", "CAUTION", "MISMATCH"].includes(value ?? "")
+    ? value
+    : undefined;
 }
 
 function parseBooleanSearchParam(value: string | undefined) {

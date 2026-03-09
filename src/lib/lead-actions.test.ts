@@ -562,6 +562,116 @@ test("handleSendManualOutboundMessageAction marks unresolved providers for confi
   assert.equal(persistedActivities.length, 1);
 });
 
+test("handleSendManualOutboundMessageAction rejects throttled missing-info draft sends", async () => {
+  const { handleSendManualOutboundMessageAction } = getLeadActionsModule();
+  const formData = new FormData();
+  formData.set("manualChannel", MessageChannel.EMAIL);
+  formData.set("manualBody", "A few details are still missing.");
+  formData.set("manualWorkflowIntent", "missing-info");
+
+  const dependencies: SendManualOutboundMessageActionDependencies = {
+    assertLeadActionPermission: async () => undefined,
+    createConversation: async () => ({ id: "conversation-1" }),
+    createMessage: async () => ({ id: "message-1" }),
+    executeWorkflowActionWithErrorRedirect: async ({ executeAction }) => {
+      await executeAction();
+    },
+    findLeadForManualOutbound: async () => ({
+      auditEvents: [
+        {
+          createdAt: new Date(),
+          eventType: "missing information requested",
+        },
+      ],
+      contact: null,
+      conversation: { id: "conversation-1" },
+      email: "lead@example.com",
+      fullName: "Lead Prospect",
+      id: "lead-1",
+      propertyId: "property-1",
+      phone: null,
+      status: LeadStatus.NEW,
+      workspace: {
+        missingInfoPromptThrottleMinutes: 180,
+      },
+    }),
+    findWorkspaceMembersForInternalNotes: async () => [],
+    getActionContext: async () => createActionContext(),
+    isLeadChannelOptedOut: () => false,
+    isProviderConfigurationError: () => false,
+    markMessageDeliveryFailure: async () => undefined,
+    markMessageProviderUnresolved: async () => undefined,
+    persistManualOutboundActivity: async () => undefined,
+    resolveInternalNoteMentions: ({ noteBody }) => ({
+      availableMentions: [],
+      mentions: [],
+      normalizedNoteBody: noteBody,
+    }),
+    sendQueuedMessage: async () => undefined,
+  };
+
+  await assert.rejects(
+    handleSendManualOutboundMessageAction("lead-1", formData, dependencies),
+    (error: unknown) =>
+      error instanceof LeadWorkflowError && error.code === "MISSING_INFO_PROMPT_THROTTLED",
+  );
+});
+
+test("handleSendManualOutboundMessageAction records missing-info workflow intent for status routing", async () => {
+  const { handleSendManualOutboundMessageAction } = getLeadActionsModule();
+  const persistedActivities: unknown[] = [];
+  const formData = new FormData();
+  formData.set("manualChannel", MessageChannel.EMAIL);
+  formData.set("manualBody", "Please send over your move-in date and budget.");
+  formData.set("manualWorkflowIntent", "missing-info");
+
+  const dependencies: SendManualOutboundMessageActionDependencies = {
+    assertLeadActionPermission: async () => undefined,
+    createConversation: async () => ({ id: "conversation-1" }),
+    createMessage: async () => ({ id: "message-1" }),
+    executeWorkflowActionWithErrorRedirect: async ({ executeAction }) => {
+      await executeAction();
+    },
+    findLeadForManualOutbound: async () => ({
+      auditEvents: [],
+      contact: null,
+      conversation: { id: "conversation-1" },
+      email: "lead@example.com",
+      fullName: "Lead Prospect",
+      id: "lead-1",
+      propertyId: "property-1",
+      phone: null,
+      status: LeadStatus.NEW,
+      workspace: {
+        missingInfoPromptThrottleMinutes: 180,
+      },
+    }),
+    findWorkspaceMembersForInternalNotes: async () => [],
+    getActionContext: async () => createActionContext(),
+    isLeadChannelOptedOut: () => false,
+    isProviderConfigurationError: () => false,
+    markMessageDeliveryFailure: async () => undefined,
+    markMessageProviderUnresolved: async () => undefined,
+    persistManualOutboundActivity: async (input) => {
+      persistedActivities.push(input);
+    },
+    resolveInternalNoteMentions: ({ noteBody }) => ({
+      availableMentions: [],
+      mentions: [],
+      normalizedNoteBody: noteBody,
+    }),
+    sendQueuedMessage: async () => undefined,
+  };
+
+  await handleSendManualOutboundMessageAction("lead-1", formData, dependencies);
+
+  assert.equal(persistedActivities.length, 1);
+  assert.equal(
+    (persistedActivities[0] as { workflowIntent: string | null }).workflowIntent,
+    "missing-info",
+  );
+});
+
 test("handleUpdateLeadChannelOptOutAction validates channel input and persists opt-out changes", async () => {
   const { handleUpdateLeadChannelOptOutAction } = getLeadActionsModule();
 
