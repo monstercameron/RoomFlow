@@ -1,6 +1,6 @@
 "use client";
 
-import type { SVGProps } from "react";
+import { useEffect, useRef, useState, type SVGProps } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { appNav } from "@/lib/navigation";
@@ -203,6 +203,34 @@ function ExpandSidebarIcon(props: SidebarIconProps) {
   );
 }
 
+function ScrollHintUpIcon(props: SidebarIconProps) {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 16 16" {...props}>
+      <path
+        d="m4.25 9.75 3.75-3.75 3.75 3.75"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
+function ScrollHintDownIcon(props: SidebarIconProps) {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 16 16" {...props}>
+      <path
+        d="m4.25 6.25 3.75 3.75 3.75-3.75"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
 const navIcons = {
   analytics: AnalyticsIcon,
   audit: AuditIcon,
@@ -226,6 +254,41 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const SidebarToggleIcon = isCollapsed ? ExpandSidebarIcon : CollapseSidebarIcon;
+  const navRef = useRef<HTMLElement | null>(null);
+  const [canScrollUp, setCanScrollUp] = useState(false);
+  const [canScrollDown, setCanScrollDown] = useState(false);
+
+  useEffect(() => {
+    const navElement = navRef.current;
+
+    if (!navElement) {
+      return;
+    }
+
+    const updateScrollAffordances = () => {
+      const nextCanScrollUp = navElement.scrollTop > 6;
+      const nextCanScrollDown =
+        navElement.scrollTop + navElement.clientHeight < navElement.scrollHeight - 6;
+
+      setCanScrollUp(nextCanScrollUp);
+      setCanScrollDown(nextCanScrollDown);
+    };
+
+    updateScrollAffordances();
+
+    navElement.addEventListener("scroll", updateScrollAffordances, { passive: true });
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateScrollAffordances();
+    });
+
+    resizeObserver.observe(navElement);
+
+    return () => {
+      navElement.removeEventListener("scroll", updateScrollAffordances);
+      resizeObserver.disconnect();
+    };
+  }, [isCollapsed]);
 
   return (
     <aside
@@ -274,18 +337,52 @@ export function AppSidebar({
         ) : null}
       </div>
 
-      <nav
-        className={`mt-6 min-h-0 flex-1 scroll-smooth pb-2 [scrollbar-gutter:stable] ${
-          isCollapsed ? "flex flex-col items-center gap-2" : "flex flex-col gap-2.5"
-        }`}
-        style={{
-          overflowX: "visible",
-          overflowY: "auto",
-        }}
-        data-sidebar-nav-scroll-container
-        id="app-sidebar-navigation"
-      >
-        {appNav.map((item) => {
+      <div className="relative mt-6 min-h-0 flex-1 overflow-visible">
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-x-0 top-0 z-10 h-12 rounded-t-[1.4rem] bg-[linear-gradient(to_bottom,rgba(15,37,46,0.98),rgba(19,45,56,0.9)_38%,rgba(24,52,63,0.4)_72%,transparent)] transition-opacity duration-200 ease-out ${
+            canScrollUp ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <div className="mx-auto mt-2 flex w-fit items-center gap-2 rounded-full border border-[rgba(248,243,235,0.12)] bg-[rgba(248,243,235,0.06)] px-3 py-1 backdrop-blur-sm">
+            <span className="h-[3px] w-[3px] rounded-full bg-[rgba(248,243,235,0.58)]" />
+            <span className="flex items-center gap-1.5">
+              <span className="h-px w-6 rounded-full bg-[rgba(248,243,235,0.3)]" />
+              <ScrollHintUpIcon className="h-3.5 w-3.5 text-[rgba(248,243,235,0.72)]" />
+              <span className="h-px w-6 rounded-full bg-[rgba(248,243,235,0.3)]" />
+            </span>
+            <span className="h-[3px] w-[3px] rounded-full bg-[rgba(248,243,235,0.58)]" />
+          </div>
+        </div>
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 h-12 rounded-b-[1.4rem] bg-[linear-gradient(to_top,rgba(15,37,46,0.99),rgba(19,45,56,0.92)_38%,rgba(24,52,63,0.45)_72%,transparent)] transition-opacity duration-200 ease-out ${
+            canScrollDown ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <div className="mx-auto mt-6 flex w-fit items-center gap-2 rounded-full border border-[rgba(248,243,235,0.12)] bg-[rgba(248,243,235,0.06)] px-3 py-1 backdrop-blur-sm">
+            <span className="h-[3px] w-[3px] rounded-full bg-[rgba(248,243,235,0.58)]" />
+            <span className="flex items-center gap-1.5">
+              <span className="h-px w-6 rounded-full bg-[rgba(248,243,235,0.3)]" />
+              <ScrollHintDownIcon className="h-3.5 w-3.5 text-[rgba(248,243,235,0.72)]" />
+              <span className="h-px w-6 rounded-full bg-[rgba(248,243,235,0.3)]" />
+            </span>
+            <span className="h-[3px] w-[3px] rounded-full bg-[rgba(248,243,235,0.58)]" />
+          </div>
+        </div>
+        <nav
+          ref={navRef}
+          className={`min-h-0 h-full scroll-smooth pb-2 [scrollbar-gutter:stable] ${
+            isCollapsed ? "flex flex-col items-center gap-2" : "flex flex-col gap-2.5"
+          }`}
+          style={{
+            overflowX: "visible",
+            overflowY: "auto",
+          }}
+          data-sidebar-nav-scroll-container
+          id="app-sidebar-navigation"
+        >
+          {appNav.map((item) => {
           const Icon = navIcons[item.icon as keyof typeof navIcons];
           const isActive =
             pathname === item.href ||
@@ -373,8 +470,9 @@ export function AppSidebar({
               </div>
             </Link>
           );
-        })}
-      </nav>
+          })}
+        </nav>
+      </div>
 
       <div className={`mt-4 shrink-0 ${isCollapsed ? "flex justify-center" : ""}`}>
         <button
