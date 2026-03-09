@@ -8,6 +8,10 @@ import {
   QualificationFit,
   QuestionType,
   RuleSeverity,
+  ScreeningChargeMode,
+  ScreeningConnectionAuthState,
+  ScreeningProvider,
+  ScreeningRequestStatus,
   TemplateType,
   WorkspacePlanStatus,
   WorkspacePlanType,
@@ -16,6 +20,7 @@ import { auth } from "../src/lib/auth";
 import { isDevelopmentModeVerificationBypassEnabled } from "../src/lib/dev-auth-bypass";
 import { serializeDeliveryStatus } from "../src/lib/delivery-status";
 import { prisma } from "../src/lib/prisma";
+import { serializeScreeningPackageConfig } from "../src/lib/screening";
 import { getDefaultCapabilitiesForWorkspacePlan } from "../src/lib/workspace-plan";
 import { ensureWorkspaceForUser } from "../src/lib/workspaces";
 
@@ -149,6 +154,44 @@ async function main() {
         },
       }),
     ]);
+
+  const [checkrConnection] = await Promise.all([
+    prisma.screeningProviderConnection.create({
+      data: {
+        workspaceId: workspace.id,
+        provider: ScreeningProvider.CHECKR,
+        authState: ScreeningConnectionAuthState.ACTIVE,
+        connectedAccount: "Checkr production workspace",
+        defaultPackageKey: "essential_plus",
+        defaultPackageLabel: "Essential+",
+        packageConfig: serializeScreeningPackageConfig([
+          {
+            isDefault: true,
+            key: "essential_plus",
+            label: "Essential+",
+          },
+          {
+            isDefault: false,
+            key: "complete_criminal",
+            label: "Complete criminal",
+          },
+          {
+            isDefault: false,
+            key: "motor_vehicle",
+            label: "Motor vehicle add-on",
+          },
+        ]),
+        chargeMode: ScreeningChargeMode.LANDLORD_PAY,
+        disclosureStrategy: "Provider-hosted Checkr disclosure and authorization flow",
+        lastAuthorizedAt: hoursAgo(12),
+        lastSyncAt: hoursAgo(1),
+        metadata: {
+          launchMethod: "checkr_invitation",
+          supportedReports: ["national_criminal", "county_criminal", "sex_offender"],
+        },
+      },
+    }),
+  ]);
 
   const mapleHouse = await prisma.property.create({
     data: {
@@ -819,6 +862,148 @@ async function main() {
     ],
   });
 
+  const jordanScreeningRequest = await prisma.screeningRequest.create({
+    data: {
+      workspaceId: workspace.id,
+      leadId: jordan.id,
+      propertyId: mapleHouse.id,
+      screeningProviderConnectionId: checkrConnection.id,
+      status: ScreeningRequestStatus.REVIEWED,
+      packageKey: "essential_plus",
+      packageLabel: "Essential+",
+      chargeMode: ScreeningChargeMode.LANDLORD_PAY,
+      providerApplicantId: "cand_checkr_55120",
+      providerInvitationId: "inv_checkr_55120",
+      providerReportId: "rep_checkr_55120",
+      providerReportUrl: "https://reports.example.com/checkr/jordan-kim",
+      providerReference: "cand_checkr_55120",
+      providerUpdatedAt: hoursAgo(0.75),
+      requestedAt: hoursAgo(16),
+      inviteSentAt: hoursAgo(15.75),
+      consentCompletedAt: hoursAgo(14.5),
+      startedAt: hoursAgo(14),
+      completedAt: hoursAgo(2),
+      reviewedAt: hoursAgo(0.75),
+      chargeAmountCents: 4700,
+      chargeCurrency: "USD",
+      chargeReference: "checkr_charge_55120",
+      reviewNotes:
+        "Checkr report came back clear for the selected package. No flagged records require escalation before next-step decisions.",
+    },
+  });
+
+  await prisma.screeningStatusEvent.createMany({
+    data: [
+      {
+        screeningRequestId: jordanScreeningRequest.id,
+        status: ScreeningRequestStatus.REQUESTED,
+        detail: "Operator launched Checkr Essential+ package.",
+        providerTimestamp: hoursAgo(16),
+        payload: {
+          account: "Checkr production workspace",
+          candidateId: "cand_checkr_55120",
+          event: "invitation.created",
+          invitationId: "inv_checkr_55120",
+          package: "essential_plus",
+          provider: "CHECKR",
+        },
+      },
+      {
+        screeningRequestId: jordanScreeningRequest.id,
+        status: ScreeningRequestStatus.INVITE_SENT,
+        detail: "Checkr candidate invitation delivered.",
+        providerTimestamp: hoursAgo(15.75),
+        payload: {
+          candidateId: "cand_checkr_55120",
+          event: "invitation.sent",
+          invitationId: "inv_checkr_55120",
+          provider: "CHECKR",
+        },
+      },
+      {
+        screeningRequestId: jordanScreeningRequest.id,
+        status: ScreeningRequestStatus.CONSENT_COMPLETED,
+        detail: "Candidate finished Checkr disclosure and authorization.",
+        providerTimestamp: hoursAgo(14.5),
+        payload: {
+          candidateId: "cand_checkr_55120",
+          disclosureVersion: "checkr-disclosure-v2026-01",
+          event: "invitation.completed",
+        },
+      },
+      {
+        screeningRequestId: jordanScreeningRequest.id,
+        status: ScreeningRequestStatus.IN_PROGRESS,
+        detail: "Checkr started county, national, and registry searches.",
+        providerTimestamp: hoursAgo(14),
+        payload: {
+          event: "report.pending",
+          provider: "CHECKR",
+          screenings: ["county_criminal", "national_criminal", "sex_offender_search"],
+        },
+      },
+      {
+        screeningRequestId: jordanScreeningRequest.id,
+        status: ScreeningRequestStatus.COMPLETED,
+        detail: "Checkr finished the report and returned a clear result.",
+        providerTimestamp: hoursAgo(2),
+        payload: {
+          adjudication: "clear",
+          event: "report.completed",
+          reportId: "rep_checkr_55120",
+          result: "clear",
+        },
+      },
+      {
+        screeningRequestId: jordanScreeningRequest.id,
+        status: ScreeningRequestStatus.REVIEWED,
+        detail: "Operator reviewed the Checkr report and marked it clear to continue.",
+        providerTimestamp: hoursAgo(0.75),
+        payload: {
+          event: "screening.reviewed",
+          outcome: "clear_to_continue",
+          reviewedBy: TEST_EMAIL,
+        },
+      },
+    ],
+  });
+
+  await prisma.screeningConsentRecord.create({
+    data: {
+      screeningRequestId: jordanScreeningRequest.id,
+      consentedAt: hoursAgo(14.5),
+      source: "Checkr hosted disclosure and authorization",
+      disclosureVersion: "checkr-disclosure-v2026-01",
+      providerReference: "auth_checkr_55120",
+      payload: {
+        applicantAccepted: true,
+        candidateId: "cand_checkr_55120",
+        disclosureVersion: "checkr-disclosure-v2026-01",
+        event: "consent.captured",
+        ipCountry: "US",
+      },
+    },
+  });
+
+  await prisma.screeningAttachmentReference.createMany({
+    data: [
+      {
+        screeningRequestId: jordanScreeningRequest.id,
+        label: "Checkr report summary",
+        externalId: "doc_checkr_55120",
+        url: "https://reports.example.com/checkr/jordan-kim/summary",
+        contentType: "application/pdf",
+      },
+      {
+        screeningRequestId: jordanScreeningRequest.id,
+        label: "County search addendum",
+        externalId: "doc_checkr_county_55120",
+        url: "https://reports.example.com/checkr/jordan-kim/county-search",
+        contentType: "application/pdf",
+      },
+    ],
+  });
+
   await prisma.auditEvent.createMany({
     data: [
       {
@@ -854,6 +1039,14 @@ async function main() {
       },
       {
         workspaceId: workspace.id,
+        leadId: jordan.id,
+        propertyId: mapleHouse.id,
+        actorUserId: user.id,
+        eventType: "Jordan Kim screening reviewed and report linked",
+        createdAt: hoursAgo(0.75),
+      },
+      {
+        workspaceId: workspace.id,
         leadId: samira.id,
         propertyId: harborFlat.id,
         actorUserId: user.id,
@@ -881,7 +1074,7 @@ async function main() {
   console.log(`Seeded test user: ${TEST_EMAIL}`);
   console.log(`Password: ${TEST_PASSWORD}`);
   console.log(`Workspace: ${workspace.name}`);
-  console.log("Demo property, lead, rules, template, and activity records created.");
+  console.log("Demo property, lead, screening, rules, template, and activity records created.");
 }
 
 main()

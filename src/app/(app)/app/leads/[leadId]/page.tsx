@@ -1775,18 +1775,19 @@ export default async function LeadDetailPage({
         <section className={majorPanelClassName}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <div className="text-lg font-semibold">Screening and verification</div>
+              <div className={topActionEyebrowClassName}>Screening</div>
+              <div className="mt-2 text-lg font-semibold">Screening and verification</div>
               <p className="mt-2 max-w-3xl text-sm text-[var(--color-muted)]">
-                Launch provider-hosted screening from a qualified lead, then track consent, review readiness, report references, and adverse-action workflow steps here.
+                Start a provider-hosted background check from a qualified lead, then track invitation, authorization, report readiness, and final review here.
               </p>
             </div>
-            <div className="rounded-full border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-2 text-sm font-medium">
+            <div className="rounded-full border border-[rgba(184,88,51,0.18)] bg-[rgb(252,244,236)] px-4 py-2 text-sm font-medium text-[var(--color-ink)]">
               {lead.screeningRequests.length} screening request{lead.screeningRequests.length === 1 ? "" : "s"}
             </div>
           </div>
 
           {lead.screeningConnections.length === 0 ? (
-            <div className="mt-5 rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5 text-sm text-[var(--color-muted)]">
+            <div className={`mt-5 ${operatorWorkspaceInsetCardClassName} text-sm ${operatorWorkspaceMutedTextClassName}`}>
               No active screening providers are configured yet. Add one from settings before launching a screening request.
             </div>
           ) : (
@@ -1794,17 +1795,20 @@ export default async function LeadDetailPage({
               {lead.screeningConnections.map((screeningConnection) => (
                 <form
                   action={launchScreeningAction.bind(null, lead.id)}
-                  className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+                  className={operatorWorkspaceCardClassName}
                   key={screeningConnection.id}
                 >
-                  <div className="text-sm font-medium">Launch {screeningConnection.providerLabel}</div>
-                  <div className="mt-2 text-sm text-[var(--color-muted)]">
+                  <div className={topActionEyebrowClassName}>Provider ready</div>
+                  <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">
+                    Start {screeningConnection.providerLabel} background check
+                  </div>
+                  <div className={`mt-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                     {screeningConnection.summary}
                   </div>
-                  <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                  <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                     Package
                     <select
-                      className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      className={operatorWorkspaceInputClassName}
                       defaultValue={screeningConnection.packageOptions[0]?.key}
                       name="packageKey"
                     >
@@ -1815,33 +1819,33 @@ export default async function LeadDetailPage({
                       ))}
                     </select>
                   </label>
-                  <label className="mt-3 block text-sm text-[var(--color-muted)]">
+                  <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
                     Package label
                     <input
-                      className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      className={operatorWorkspaceInputClassName}
                       defaultValue={screeningConnection.packageOptions[0]?.label ?? ""}
                       name="packageLabel"
                       placeholder="Standard screening"
                       type="text"
                     />
                   </label>
-                  <label className="mt-3 block text-sm text-[var(--color-muted)]">
-                    Provider reference
+                  <label className={`mt-3 block text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                    Candidate reference
                     <input
-                      className="mt-2 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                      className={operatorWorkspaceInputClassName}
                       name="providerReference"
-                      placeholder="Invite or applicant reference"
+                      placeholder="Candidate or invitation reference"
                       type="text"
                     />
                   </label>
                   <input name="screeningConnectionId" type="hidden" value={screeningConnection.id} />
                     <input type="hidden" name="redirectTo" value={currentDetailHref} />
                   <button
-                    className="mt-4 rounded-2xl bg-[var(--color-accent)] px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className={`${primaryWorkflowButtonClassName} mt-4`}
                     disabled={!lead.actions.launchScreening}
                     type="submit"
                   >
-                    Launch screening
+                    Start check
                   </button>
                 </form>
               ))}
@@ -1852,25 +1856,27 @@ export default async function LeadDetailPage({
             <div className="mt-6 space-y-4 border-t border-[var(--color-line)] pt-5">
               {lead.screeningRequests.map((screeningRequest) => (
                 <div
-                  className="rounded-[1.5rem] border border-[var(--color-line)] bg-[var(--color-panel-strong)] p-5"
+                  className={operatorWorkspaceCardClassName}
                   key={screeningRequest.id}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-medium">{screeningRequest.summary}</div>
-                      <div className="mt-2 text-sm text-[var(--color-muted)]">
-                        Requested {screeningRequest.requestedAt} | Invite {screeningRequest.invitedAt}
+                      <div className={topActionEyebrowClassName}>Request record</div>
+                      <div className="mt-2 text-sm font-semibold text-[var(--color-ink)]">{screeningRequest.summary}</div>
+                      <div className={`mt-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                        Requested {screeningRequest.requestedAt} | Invitation {screeningRequest.invitedAt}
                       </div>
-                      <div className="mt-2 text-sm text-[var(--color-muted)]">
+                      <div className={`mt-2 text-sm ${operatorWorkspaceMutedTextClassName}`}>
                         Current status: {screeningRequest.currentStatus} | Charge mode: {screeningRequest.chargeMode}
                       </div>
                     </div>
-                    <div className="text-sm text-[var(--color-muted)]">
+                    <div className={`text-sm ${operatorWorkspaceMutedTextClassName}`}>
                       Provider: {screeningRequest.provider}
                     </div>
                   </div>
                   <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
+                    <div className={`${operatorWorkspaceInsetCardClassName} text-sm ${operatorWorkspaceMutedTextClassName}`}>
+                      <div className="font-medium text-[color:var(--color-ink)]">Current record</div>
                       <div>Consent completed: {screeningRequest.consentCompletedAt}</div>
                       <div className="mt-2">Started: {screeningRequest.startedAt}</div>
                       <div className="mt-2">Completed: {screeningRequest.completedAt}</div>
@@ -1893,7 +1899,7 @@ export default async function LeadDetailPage({
                         <div className="mt-2 break-all">Report url: {screeningRequest.providerReportUrl}</div>
                       ) : null}
                     </div>
-                    <div className="rounded-2xl border border-[var(--color-line)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
+                    <div className={`${operatorWorkspaceInsetCardClassName} text-sm ${operatorWorkspaceMutedTextClassName}`}>
                       <div className="font-medium text-[color:var(--color-ink)]">Status timeline</div>
                       <div className="mt-3 space-y-2">
                         {screeningRequest.statusEvents.map((statusEvent) => (
@@ -1963,12 +1969,12 @@ export default async function LeadDetailPage({
                       lead.id,
                       screeningRequest.id,
                     )}
-                    className="mt-4 grid gap-3 rounded-2xl border border-[var(--color-line)] bg-white p-4 md:grid-cols-2"
+                    className={`mt-4 grid gap-3 ${operatorWorkspaceInsetCardClassName} md:grid-cols-2`}
                   >
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Update status</span>
                       <select
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         defaultValue={screeningRequest.currentStatusValue}
                         name="status"
                       >
@@ -1984,7 +1990,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Status detail</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         name="detail"
                         placeholder="Provider webhook, manual operator note, or review outcome"
                         type="text"
@@ -1993,7 +1999,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Provider reference</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         defaultValue={screeningRequest.providerReference ?? ""}
                         name="providerReference"
                         type="text"
@@ -2002,7 +2008,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Report id</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         defaultValue={screeningRequest.providerReportId ?? ""}
                         name="providerReportId"
                         type="text"
@@ -2011,7 +2017,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2 md:col-span-2">
                       <span className="text-sm font-medium">Report url</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         defaultValue={screeningRequest.providerReportUrl ?? ""}
                         name="providerReportUrl"
                         type="url"
@@ -2020,7 +2026,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Provider timestamp</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         name="providerTimestamp"
                         type="datetime-local"
                       />
@@ -2028,7 +2034,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Consent source</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         name="consentSource"
                         placeholder="Provider-hosted authorization"
                         type="text"
@@ -2037,7 +2043,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Disclosure version</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         name="disclosureVersion"
                         placeholder="v1"
                         type="text"
@@ -2046,7 +2052,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Charge amount</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         defaultValue={screeningRequest.chargeAmountValue}
                         min="0"
                         name="chargeAmount"
@@ -2058,7 +2064,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Charge currency</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 uppercase outline-none"
+                        className={`${operatorWorkspaceInputClassName} uppercase`}
                         defaultValue={screeningRequest.chargeCurrency}
                         maxLength={3}
                         name="chargeCurrency"
@@ -2069,7 +2075,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2 md:col-span-2">
                       <span className="text-sm font-medium">Charge reference</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         defaultValue={screeningRequest.chargeReference ?? ""}
                         name="chargeReference"
                         placeholder="Provider invoice or charge id"
@@ -2079,7 +2085,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Reference label</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         name="attachmentLabel"
                         placeholder="Tenant-safe report reference"
                         type="text"
@@ -2088,7 +2094,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2">
                       <span className="text-sm font-medium">Reference external id</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         name="attachmentExternalId"
                         placeholder="doc_123"
                         type="text"
@@ -2097,7 +2103,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2 md:col-span-2">
                       <span className="text-sm font-medium">Reference url</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         name="attachmentUrl"
                         placeholder="https://provider.example/reports/abc"
                         type="url"
@@ -2106,7 +2112,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2 md:col-span-2">
                       <span className="text-sm font-medium">Reference content type</span>
                       <input
-                        className="w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={operatorWorkspaceInputClassName}
                         name="attachmentContentType"
                         placeholder="application/pdf"
                         type="text"
@@ -2115,7 +2121,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2 md:col-span-2">
                       <span className="text-sm font-medium">Review notes</span>
                       <textarea
-                        className="min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={`${operatorWorkspaceInputClassName} min-h-24`}
                         defaultValue={screeningRequest.reviewNotes ?? ""}
                         name="reviewNotes"
                       />
@@ -2123,7 +2129,7 @@ export default async function LeadDetailPage({
                     <label className="space-y-2 md:col-span-2">
                       <span className="text-sm font-medium">Adverse action notes</span>
                       <textarea
-                        className="min-h-24 w-full rounded-2xl border border-[var(--color-line)] bg-white px-4 py-3 outline-none"
+                        className={`${operatorWorkspaceInputClassName} min-h-24`}
                         defaultValue={screeningRequest.adverseActionNotes ?? ""}
                         name="adverseActionNotes"
                       />
@@ -2131,7 +2137,7 @@ export default async function LeadDetailPage({
                     <input type="hidden" name="redirectTo" value={currentDetailHref} />
                     <div className="md:col-span-2 flex justify-end">
                       <button
-                        className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                        className={primaryWorkflowButtonClassName}
                         disabled={!lead.actions.manageScreening}
                         type="submit"
                       >
